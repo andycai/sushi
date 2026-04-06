@@ -6,7 +6,7 @@ pub async fn users_page() -> Html<&'static str> {
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Users — Sushi Admin</title>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-<link href="https://cdn.jsdelivr.net/npm/tailwindcss@3/dist/tailwind.min.css" rel="stylesheet"></head>
+<link href="https://cdn.tailwindcss.com" rel="stylesheet"></head>
 <body class="bg-gray-100 min-h-screen">
 <div class="flex h-screen">
   <nav class="w-60 bg-gray-900 text-white flex-shrink-0">
