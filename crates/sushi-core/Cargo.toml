@@ -1,0 +1,18 @@
+[package]
+name = "sushi-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mlua = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rusqlite = { workspace = true }
+jsonwebtoken = { workspace = true }
+argon2 = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }

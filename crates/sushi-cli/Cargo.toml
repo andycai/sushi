@@ -1,0 +1,11 @@
+[package]
+name = "sushi-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sushi-core = { path = "../sushi-core" }
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
