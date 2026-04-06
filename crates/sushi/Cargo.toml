@@ -12,6 +12,7 @@ sushi-core = { path = "../sushi-core" }
 sushi-api = { path = "../sushi-api" }
 sushi-admin = { path = "../sushi-admin" }
 sushi-cli = { path = "../sushi-cli" }
+clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
