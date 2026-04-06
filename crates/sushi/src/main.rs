@@ -117,9 +117,19 @@ async fn main() -> Result<()> {
             let api_router = sushi_api::router::build_api_router(&ctx);
             let admin_router = sushi_admin::router::build_admin_router();
 
+            // Redirect trailing-slash variants to non-trailing (browsers add trailing slash)
+            let redirect = |path: &'static str| {
+                axum::routing::get(axum::response::Redirect::temporary(path))
+            };
+
             let mut app = axum::Router::new()
                 .merge(api_router)
-                .nest("/admin", admin_router);
+                .nest("/admin", admin_router)
+                .route("/admin/", redirect("/admin"))
+                .route("/admin/plugins/", redirect("/admin/plugins"))
+                .route("/admin/users/", redirect("/admin/users"))
+                .route("/admin/config/", redirect("/admin/config"))
+                .route("/admin/logs/", redirect("/admin/logs"));
 
             // Conditionally include admin-only or api-only mode
             if args.api_only {
