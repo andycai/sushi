@@ -3,7 +3,9 @@
 
 function sushi.init()
     -- Register a hello API route
-    sushi.api.route("GET", "/api/hello")
+    sushi.api.route("GET", "/api/hello", function()
+        return "hello from example plugin"
+    end)
     sushi.log.info("example plugin: registered GET /api/hello")
 
     -- Register a CLI command

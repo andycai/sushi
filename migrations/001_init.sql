@@ -28,4 +28,4 @@ CREATE TABLE IF NOT EXISTS plugin_state (
     loaded_at TEXT
 );
 
-INSERT INTO _sushi_migrations (id, name) VALUES (1, '001_init');
+INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (1, '001_init');
