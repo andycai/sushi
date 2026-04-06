@@ -1,3 +1,4 @@
+pub mod seed;
 pub mod serve;
 pub mod run;
 pub mod plugin;

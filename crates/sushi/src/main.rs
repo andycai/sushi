@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use sushi_core::auth::password;
+use sushi_core::auth::repository::UserRepository;
+use sushi_core::auth::model::UserRole;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
 use sushi_core::lua::loader::LuaPlugin;
@@ -28,6 +31,8 @@ enum Commands {
     Plugin(sushi_cli::commands::plugin::PluginArgs),
     /// Manage configuration
     Config(sushi_cli::commands::config_cmd::ConfigArgs),
+    /// Seed the database with an initial admin user
+    Seed(sushi_cli::commands::seed::SeedArgs),
 }
 
 #[tokio::main]
@@ -150,6 +155,35 @@ async fn main() -> Result<()> {
                 println!("sushi config set {}={} — placeholder", key, value);
             }
         },
+        Commands::Seed(args) => {
+            let config = ConfigStore::new(SushiConfig::default());
+            let db_path = {
+                let guard = config.get().await;
+                guard.database.path.clone()
+            };
+            if let Some(parent) = std::path::Path::new(&db_path).parent() {
+                tokio::fs::create_dir_all(parent).await.ok();
+            }
+            let storage = SqliteStorage::new(&db_path)
+                .await
+                .context("failed to open database")?;
+            storage.run_migrations(MIGRATION_SQL)
+                .await
+                .context("failed to run migrations")?;
+
+            let repo = UserRepository::new(&storage);
+            let password_hash = password::hash_password(&args.password)
+                .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?;
+
+            match repo.create_user(&args.username, &args.email, &password_hash, UserRole::Admin).await {
+                Ok(user) => {
+                    println!("✓ Admin user created: {} (id={})", user.username, user.id);
+                }
+                Err(e) => {
+                    anyhow::bail!("failed to create user: {e}");
+                }
+            }
+        }
     }
 
     Ok(())
