@@ -3,13 +3,13 @@ use std::path::PathBuf;
 
 #[derive(Args)]
 pub struct ServeArgs {
-    /// Host to bind
-    #[arg(long, default_value = "127.0.0.1")]
-    pub host: String,
+    /// Host to bind (overrides config)
+    #[arg(long)]
+    pub host: Option<String>,
 
-    /// Port to bind
-    #[arg(short, long, default_value_t = 3000)]
-    pub port: u16,
+    /// Port to bind (overrides config)
+    #[arg(short, long)]
+    pub port: Option<u16>,
 
     /// Only start API server
     #[arg(long)]

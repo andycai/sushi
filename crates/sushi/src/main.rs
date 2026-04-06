@@ -45,8 +45,6 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Serve(args) => {
-            tracing::info!("starting sushi server on {}:{}", args.host, args.port);
-
             // Load config (from file or defaults)
             let config = if args.config.exists() {
                 ConfigStore::load(&args.config)
@@ -57,11 +55,16 @@ async fn main() -> Result<()> {
                 ConfigStore::new(SushiConfig::default())
             };
 
-            // Read config values needed below
-            let db_path = {
-                let guard = config.get().await;
-                guard.database.path.clone()
+            // CLI args override config values
+            let (host, port, db_path) = {
+                let cfg = config.get().await;
+                (
+                    args.host.clone().unwrap_or_else(|| cfg.server.host.clone()),
+                    args.port.unwrap_or(cfg.server.port),
+                    cfg.database.path.clone(),
+                )
             };
+            tracing::info!("starting sushi server on {}:{}", host, port);
 
             // Ensure the data directory exists
             if let Some(parent) = std::path::Path::new(&db_path).parent() {
@@ -127,7 +130,7 @@ async fn main() -> Result<()> {
             }
 
             // Serve
-            let addr = format!("{}:{}", args.host, args.port);
+            let addr = format!("{}:{}", host, port);
             let listener = tokio::net::TcpListener::bind(&addr)
                 .await
                 .context(format!("failed to bind to {addr}"))?;
