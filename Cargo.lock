@@ -1314,6 +1314,7 @@ name = "sushi"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "sushi-admin",
  "sushi-api",
