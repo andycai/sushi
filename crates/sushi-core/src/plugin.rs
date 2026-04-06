@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::context::SushiContext;
+
 /// Error type for plugin operations.
 #[derive(Error, Debug)]
 pub enum PluginError {
@@ -128,6 +130,46 @@ impl<'de> serde::Deserialize<'de> for DatabasePermission {
 pub trait Plugin: Send + Sync {
     fn name(&self) -> &str;
     fn version(&self) -> &str;
+
+    /// Initialise the plugin with access to the global SushiContext.
+    async fn init(&self, _ctx: &SushiContext) -> Result<(), PluginError> {
+        Ok(())
+    }
+}
+
+/// A simple function-based plugin that takes a closure for init.
+/// Useful for Rust built-in plugins that don't need a full struct.
+pub struct FnPlugin {
+    name: String,
+    version: String,
+    init_fn: Box<dyn Fn(&SushiContext) -> Result<(), PluginError> + Send + Sync>,
+}
+
+impl FnPlugin {
+    pub fn new<F>(name: impl Into<String>, version: impl Into<String>, init_fn: F) -> Self
+    where
+        F: Fn(&SushiContext) -> Result<(), PluginError> + Send + Sync + 'static,
+    {
+        Self {
+            name: name.into(),
+            version: version.into(),
+            init_fn: Box::new(init_fn),
+        }
+    }
+}
+
+#[async_trait]
+impl Plugin for FnPlugin {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn version(&self) -> &str {
+        &self.version
+    }
+
+    async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
+        (self.init_fn)(ctx)
+    }
 }
 
 #[cfg(test)]

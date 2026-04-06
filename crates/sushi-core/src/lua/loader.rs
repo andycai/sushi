@@ -1,0 +1,234 @@
+use crate::context::SushiContext;
+use crate::lua::bindings::inject_sushi_api;
+use crate::lua::vm::create_sandboxed_vm;
+use crate::plugin::{Plugin, PluginError, PluginManifest};
+use async_trait::async_trait;
+use std::path::{Path, PathBuf};
+
+/// A Lua-based plugin loaded from the filesystem.
+pub struct LuaPlugin {
+    manifest: PluginManifest,
+    lua: mlua::Lua,
+    plugin_dir: PathBuf,
+}
+
+impl LuaPlugin {
+    /// Scan a directory for plugins. Returns one LuaPlugin per subdirectory with a plugin.toml.
+    pub async fn scan_dir(dir: &Path) -> Result<Vec<Self>, PluginError> {
+        let mut plugins = Vec::new();
+        let mut entries = tokio::fs::read_dir(dir)
+            .await
+            .map_err(PluginError::IoError)?;
+
+        while let Some(entry) = entries.next_entry().await.map_err(PluginError::IoError)? {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let manifest_path = path.join("plugin.toml");
+            if !manifest_path.exists() {
+                continue;
+            }
+
+            let manifest_content = tokio::fs::read_to_string(&manifest_path)
+                .await
+                .map_err(|e| {
+                    PluginError::ManifestError(format!("read {}: {e}", manifest_path.display()))
+                })?;
+            let manifest: PluginManifest = toml::from_str(&manifest_content).map_err(|e| {
+                PluginError::ManifestError(format!("parse {}: {e}", manifest_path.display()))
+            })?;
+
+            let lua = create_sandboxed_vm().map_err(|e| {
+                PluginError::LuaError(format!(
+                    "create VM for {}: {e}",
+                    manifest.plugin.name
+                ))
+            })?;
+
+            plugins.push(Self {
+                manifest,
+                lua,
+                plugin_dir: path,
+            });
+        }
+
+        Ok(plugins)
+    }
+
+    pub fn manifest(&self) -> &PluginManifest {
+        &self.manifest
+    }
+}
+
+#[async_trait]
+impl Plugin for LuaPlugin {
+    fn name(&self) -> &str {
+        &self.manifest.plugin.name
+    }
+    fn version(&self) -> &str {
+        &self.manifest.plugin.version
+    }
+
+    async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
+        // Inject sushi.* API into the Lua VM
+        inject_sushi_api(&self.lua, ctx, &self.manifest.permissions)
+            .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
+
+        // Load and execute the entry script
+        let entry_path = self.plugin_dir.join(&self.manifest.plugin.entry);
+        let code = tokio::fs::read_to_string(&entry_path)
+            .await
+            .map_err(|e| PluginError::LuaError(format!("read {}: {e}", entry_path.display())))?;
+
+        self.lua
+            .load(&code)
+            .exec()
+            .map_err(|e| PluginError::InitFailed(format!("{}: {e}", self.manifest.plugin.name)))?;
+
+        // Call sushi.init() if defined
+        let sushi: mlua::Table = self
+            .lua
+            .globals()
+            .get("sushi")
+            .map_err(|e| PluginError::LuaError(format!("no sushi global: {e}")))?;
+
+        if let Ok(init_fn) = sushi.get::<mlua::Function>("init") {
+            init_fn
+                .call::<()>(())
+                .map_err(|e| {
+                    PluginError::InitFailed(format!("{}.init(): {e}", self.manifest.plugin.name))
+                })?;
+        }
+
+        tracing::info!(
+            "plugin loaded: {} v{}",
+            self.manifest.plugin.name,
+            self.manifest.plugin.version
+        );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::jwt::JwtService;
+    use crate::config::ConfigStore;
+    use crate::storage::sqlite::SqliteStorage;
+    use tempfile::TempDir;
+
+    async fn test_context() -> SushiContext {
+        let config = ConfigStore::new(crate::config::SushiConfig::default());
+        let db = SqliteStorage::new_in_memory().await.unwrap();
+        let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+        SushiContext::new(config, db, jwt)
+    }
+
+    fn create_plugin_dir(parent: &Path, name: &str) -> PathBuf {
+        let dir = parent.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let manifest_content = format!(
+            r#"
+[plugin]
+name = "{name}"
+version = "0.1.0"
+entry = "init.lua"
+
+[permissions]
+routes = true
+"#,
+        );
+        std::fs::write(dir.join("plugin.toml"), manifest_content).unwrap();
+
+        let init_lua = r#"
+sushi.log.info("hello from plugin")
+sushi.api.route("GET", "/api/test")
+"#;
+        std::fs::write(dir.join("init.lua"), init_lua).unwrap();
+
+        dir
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_finds_plugins() {
+        let tmp = TempDir::new().unwrap();
+        create_plugin_dir(tmp.path(), "my_plugin");
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name(), "my_plugin");
+        assert_eq!(plugins[0].version(), "0.1.0");
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_skips_dirs_without_manifest() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("no_manifest");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("init.lua"), "print('hello')").unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        assert_eq!(plugins.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_lua_plugin_init_executes_entry_script() {
+        let tmp = TempDir::new().unwrap();
+        create_plugin_dir(tmp.path(), "test_plugin");
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+
+        // init() should succeed without error
+        plugins[0].init(&ctx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_lua_plugin_init_calls_sushi_init() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("init_fn_plugin");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "init_fn_plugin"
+version = "0.1.0"
+entry = "init.lua"
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    sushi.log.info("init called!")
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+
+        plugins[0].init(&ctx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_lua_plugin_init_bad_manifest() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("bad_plugin");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Invalid TOML
+        std::fs::write(dir.join("plugin.toml"), "this is not valid toml [[[[").unwrap();
+
+        let result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(result.is_err());
+    }
+}
