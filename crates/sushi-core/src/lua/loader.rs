@@ -102,6 +102,59 @@ impl Plugin for LuaPlugin {
                 })?;
         }
 
+        // Read pending routes from Lua VM and register them
+        if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
+            let len = pending.raw_len();
+            for i in 1..=len {
+                if let Ok(entry) = pending.get::<mlua::Table>(i) {
+                    let method: String = entry.get("method").unwrap_or_default();
+                    let path: String = entry.get("path").unwrap_or_default();
+                    ctx.api.register_route(&method, &path).await;
+                    tracing::debug!(
+                        "plugin {} registered route {} {}",
+                        self.manifest.plugin.name,
+                        method,
+                        path
+                    );
+                }
+            }
+        }
+
+        // Read pending commands from Lua VM and register them
+        if let Ok(pending) = sushi.get::<mlua::Table>("__pending_commands") {
+            let len = pending.raw_len();
+            for i in 1..=len {
+                if let Ok(entry) = pending.get::<mlua::Table>(i) {
+                    let name: String = entry.get("name").unwrap_or_default();
+                    let desc: String = entry.get("description").unwrap_or_default();
+                    ctx.cli.register_command(&name, &desc).await;
+                    tracing::debug!(
+                        "plugin {} registered command {}",
+                        self.manifest.plugin.name,
+                        name
+                    );
+                }
+            }
+        }
+
+        // Read pending pages from Lua VM and register them
+        if let Ok(pending) = sushi.get::<mlua::Table>("__pending_pages") {
+            let len = pending.raw_len();
+            for i in 1..=len {
+                if let Ok(entry) = pending.get::<mlua::Table>(i) {
+                    let path: String = entry.get("path").unwrap_or_default();
+                    let title: String = entry.get("title").unwrap_or_default();
+                    ctx.admin.register_page(&path, &title).await;
+                    tracing::debug!(
+                        "plugin {} registered page {} ({})",
+                        self.manifest.plugin.name,
+                        path,
+                        title
+                    );
+                }
+            }
+        }
+
         tracing::info!(
             "plugin loaded: {} v{}",
             self.manifest.plugin.name,
@@ -145,7 +198,9 @@ routes = true
 
         let init_lua = r#"
 sushi.log.info("hello from plugin")
-sushi.api.route("GET", "/api/test")
+sushi.api.route("GET", "/api/test", function()
+    return "ok"
+end)
 "#;
         std::fs::write(dir.join("init.lua"), init_lua).unwrap();
 
