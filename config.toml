@@ -1,0 +1,14 @@
+[server]
+host = "127.0.0.1"
+port = 3000
+
+[database]
+path = "data/sushi.db"
+
+[jwt]
+secret = "change-me-in-production-at-least-32-chars"
+access_ttl = 3600
+refresh_ttl = 604800
+
+[plugins]
+directory = "plugins"
