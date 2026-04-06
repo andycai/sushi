@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use axum::{routing::get, Router};
 use clap::{Parser, Subcommand};
 use sushi_core::auth::password;
 use sushi_core::auth::repository::UserRepository;
@@ -117,19 +118,14 @@ async fn main() -> Result<()> {
             let api_router = sushi_api::router::build_api_router(&ctx);
             let admin_router = sushi_admin::router::build_admin_router();
 
-            // Redirect trailing-slash variants to non-trailing (browsers add trailing slash)
-            let redirect = |path: &'static str| {
-                axum::routing::get(axum::response::Redirect::temporary(path))
-            };
+            // Login page at /admin-login (outside auth-protected /admin group)
+            let login_router = Router::new()
+                .route("/admin-login", get(sushi_admin::routes::login::login_page));
 
             let mut app = axum::Router::new()
                 .merge(api_router)
-                .nest("/admin", admin_router)
-                .route("/admin/", redirect("/admin"))
-                .route("/admin/plugins/", redirect("/admin/plugins"))
-                .route("/admin/users/", redirect("/admin/users"))
-                .route("/admin/config/", redirect("/admin/config"))
-                .route("/admin/logs/", redirect("/admin/logs"));
+                .merge(login_router)
+                .merge(admin_router);
 
             // Conditionally include admin-only or api-only mode
             if args.api_only {

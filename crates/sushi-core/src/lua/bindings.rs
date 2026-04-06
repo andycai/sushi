@@ -46,18 +46,21 @@ pub fn inject_sushi_api(
         let api_table = lua.create_table()?;
         api_table.set(
             "route",
-            lua.create_function(move |lua, (method, path): (String, String)| {
-                let pending: mlua::Table = lua
-                    .globals()
-                    .get::<mlua::Table>("sushi")?
-                    .get("__pending_routes")?;
-                let entry = lua.create_table()?;
-                entry.set("method", method)?;
-                entry.set("path", path)?;
-                let len = pending.raw_len();
-                pending.set(len + 1, entry)?;
-                Ok(())
-            })?,
+            lua.create_function(
+                move |lua, (method, path, handler): (String, String, mlua::Function)| {
+                    let pending: mlua::Table = lua
+                        .globals()
+                        .get::<mlua::Table>("sushi")?
+                        .get("__pending_routes")?;
+                    let entry = lua.create_table()?;
+                    entry.set("method", method)?;
+                    entry.set("path", path)?;
+                    entry.set("handler", handler)?;
+                    let len = pending.raw_len();
+                    pending.set(len + 1, entry)?;
+                    Ok(())
+                },
+            )?,
         )?;
         sushi.set("api", api_table)?;
     }
@@ -261,8 +264,12 @@ mod tests {
 
         inject_sushi_api(&lua, &ctx, &permissions).unwrap();
 
-        lua.load("sushi.api.route('GET', '/api/test')").exec().unwrap();
-        lua.load("sushi.api.route('POST', '/api/items')").exec().unwrap();
+        lua.load("sushi.api.route('GET', '/api/test', function() end)")
+            .exec()
+            .unwrap();
+        lua.load("sushi.api.route('POST', '/api/items', function() end)")
+            .exec()
+            .unwrap();
 
         let pending: mlua::Table = lua
             .globals()
@@ -277,5 +284,8 @@ mod tests {
         let path: String = first.get("path").unwrap();
         assert_eq!(method, "GET");
         assert_eq!(path, "/api/test");
+
+        // Verify handler is stored as a function
+        let _handler: mlua::Function = first.get("handler").unwrap();
     }
 }

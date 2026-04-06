@@ -1,12 +1,13 @@
 use axum::response::Html;
 
 pub async fn logs_page() -> Html<&'static str> {
-    Html(r#"<!DOCTYPE html>
+    Html(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Logs — Sushi Admin</title>
-<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-<link href="https://cdn.tailwindcss.com" rel="stylesheet"></head>
+<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <body class="bg-gray-100 min-h-screen">
 <div class="flex h-screen">
   <nav class="w-60 bg-gray-900 text-white flex-shrink-0">
@@ -86,5 +87,6 @@ function logsPage() {
   };
 }
 </script>
-</body></html>"#)
+</body></html>"#,
+    )
 }
