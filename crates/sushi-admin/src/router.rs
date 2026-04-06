@@ -1,4 +1,4 @@
-use crate::routes::{dashboard, plugins, users, config, logs};
+use crate::routes::{dashboard, plugins, users, config, logs, kv};
 use axum::{
     extract::Request,
     middleware::Next,
@@ -16,6 +16,7 @@ pub fn build_admin_router() -> Router {
         .route("/admin/users", get(users::users_page))
         .route("/admin/config", get(config::config_page))
         .route("/admin/logs", get(logs::logs_page))
+        .route("/admin/kv", get(kv::kv_page))
         .route("/admin/api/plugins", get(list_plugins_api))
         .layer(axum::middleware::from_fn(admin_auth_middleware))
 }

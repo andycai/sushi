@@ -5,3 +5,4 @@ pub mod storage;
 pub mod auth;
 pub mod lua;
 pub mod context;
+pub mod kv;

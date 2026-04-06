@@ -14,6 +14,7 @@ use tracing_subscriber::EnvFilter;
 
 /// Embed the initial migration SQL at compile time.
 const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
+const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
 
 #[derive(Parser)]
 #[command(name = "sushi", version, about = "A modular application platform")]
@@ -84,6 +85,10 @@ async fn main() -> Result<()> {
                 .run_migrations(MIGRATION_SQL)
                 .await
                 .map_err(|e| anyhow::anyhow!("failed to run migrations: {e}"))?;
+            storage
+                .run_migrations(KV_MIGRATION_SQL)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to run kv migrations: {e}"))?;
 
             // Init JWT service
             let jwt = {
@@ -179,6 +184,9 @@ async fn main() -> Result<()> {
             storage.run_migrations(MIGRATION_SQL)
                 .await
                 .context("failed to run migrations")?;
+            storage.run_migrations(KV_MIGRATION_SQL)
+                .await
+                .context("failed to run kv migrations")?;
 
             let repo = UserRepository::new(&storage);
             let password_hash = password::hash_password(&args.password)

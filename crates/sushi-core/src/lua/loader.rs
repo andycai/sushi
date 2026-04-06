@@ -74,6 +74,7 @@ impl Plugin for LuaPlugin {
     async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
         // Inject sushi.* API into the Lua VM
         inject_sushi_api(&self.lua, ctx, &self.manifest.permissions)
+            .await
             .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
 
         // Load and execute the entry script

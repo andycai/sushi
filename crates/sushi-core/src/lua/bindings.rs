@@ -1,12 +1,15 @@
+use std::sync::Arc;
+
 use crate::context::SushiContext;
+use crate::kv::KvStore;
 use crate::plugin::Permissions;
 use mlua::Lua;
 
 /// Inject the `sushi` global table into the Lua VM.
 /// Only namespaces permitted by the plugin's permissions are injected.
-pub fn inject_sushi_api(
+pub async fn inject_sushi_api(
     lua: &Lua,
-    _ctx: &SushiContext,
+    ctx: &SushiContext,
     permissions: &Permissions,
 ) -> Result<(), mlua::Error> {
     let sushi = lua.create_table()?;
@@ -113,6 +116,78 @@ pub fn inject_sushi_api(
         sushi.set("admin", admin_table)?;
     }
 
+    // sushi.kv -- if database permitted (not None)
+    if permissions.database != crate::plugin::DatabasePermission::None {
+        let kv_store = KvStore::new(ctx.db.clone());
+        let kv_table = lua.create_table()?;
+
+        let kv_store_get = kv_store.clone();
+        kv_table.set(
+            "get",
+            lua.create_async_function(move |lua: Lua, key: String| {
+                let kv = kv_store_get.clone();
+                async move {
+                    match kv.get(&key).await {
+                        Ok(Some(value)) => Ok(mlua::Value::String(lua.create_string(&value).unwrap())),
+                        Ok(None) => Ok(mlua::Value::Nil),
+                        Err(e) => Err(mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>)),
+                    }
+                }
+            })?,
+        )?;
+
+        let kv_store_set = kv_store.clone();
+        kv_table.set(
+            "set",
+            lua.create_async_function(move |_lua: Lua, (key, value): (String, String)| {
+                let kv = kv_store_set.clone();
+                async move {
+                    kv.set(&key, &value)
+                        .await
+                        .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
+                }
+            })?,
+        )?;
+
+        let kv_store_del = kv_store.clone();
+        kv_table.set(
+            "delete",
+            lua.create_async_function(move |_lua: Lua, key: String| {
+                let kv = kv_store_del.clone();
+                async move {
+                    kv.delete(&key)
+                        .await
+                        .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
+                }
+            })?,
+        )?;
+
+        let kv_store_list = kv_store.clone();
+        kv_table.set(
+            "list",
+            lua.create_async_function(move |lua: Lua, ()| {
+                let kv = kv_store_list.clone();
+                async move {
+                    match kv.list().await {
+                        Ok(items) => {
+                            let table = lua.create_table()?;
+                            for (i, (k, v)) in items.into_iter().enumerate() {
+                                let entry = lua.create_table()?;
+                                entry.set("key", k)?;
+                                entry.set("value", v)?;
+                                table.set(i + 1, entry)?;
+                            }
+                            Ok(mlua::Value::Table(table))
+                        }
+                        Err(e) => Err(mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>)),
+                    }
+                }
+            })?,
+        )?;
+
+        sushi.set("kv", kv_table)?;
+    }
+
     // sushi.config -- always available (read-only stub)
     {
         let config_table = lua.create_table()?;
@@ -174,7 +249,7 @@ mod tests {
         let ctx = test_context().await;
         let permissions = Permissions::default();
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
 
@@ -192,7 +267,7 @@ mod tests {
         let mut permissions = Permissions::default();
         permissions.routes = true;
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(sushi.contains_key("api").unwrap());
@@ -206,7 +281,7 @@ mod tests {
         let mut permissions = Permissions::default();
         permissions.commands = true;
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(sushi.contains_key("cli").unwrap());
@@ -220,7 +295,7 @@ mod tests {
         let mut permissions = Permissions::default();
         permissions.admin = true;
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(sushi.contains_key("admin").unwrap());
@@ -233,7 +308,7 @@ mod tests {
         let ctx = test_context().await;
         let permissions = Permissions::default();
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(!sushi.contains_key("api").unwrap());
@@ -247,7 +322,7 @@ mod tests {
         let ctx = test_context().await;
         let permissions = Permissions::default();
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         // Should not error — logging functions just trace
         lua.load("sushi.log.info('hello from lua')").exec().unwrap();
@@ -262,7 +337,7 @@ mod tests {
         let mut permissions = Permissions::default();
         permissions.routes = true;
 
-        inject_sushi_api(&lua, &ctx, &permissions).unwrap();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
         lua.load("sushi.api.route('GET', '/api/test', function() end)")
             .exec()

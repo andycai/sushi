@@ -4,3 +4,4 @@ pub mod users;
 pub mod config;
 pub mod logs;
 pub mod login;
+pub mod kv;
