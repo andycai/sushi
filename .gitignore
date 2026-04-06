@@ -1,0 +1,34 @@
+# Build output
+/target/
+*.rlib
+*.so
+*.dylib
+
+# Runtime data
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# IDE
+/.vscode/
+/.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+/logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.tmp
+*.bak
