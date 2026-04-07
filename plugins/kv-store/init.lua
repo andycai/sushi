@@ -4,88 +4,11 @@
 
 local JSON_CONTENT = "application/json"
 
--- JSON helpers (simple encode/decode for basic types)
-local function json_encode(t)
-    if type(t) == "string" then return '"' .. t:gsub('"', '\\"') .. '"' end
-    if type(t) == "number" then return tostring(t) end
-    if type(t) == "boolean" then return t and "true" or "false" end
-    if t == nil then return "null" end
-    if type(t) == "table" then
-        -- Array-like table
-        local is_array = true
-        local max_idx = 0
-        for k, _ in pairs(t) do
-            if type(k) ~= "number" or k < 1 or math.floor(k) ~= k then
-                is_array = false
-                break
-            end
-            if k > max_idx then max_idx = k end
-        end
-        if is_array and max_idx == #t then
-            local parts = {}
-            for i = 1, #t do
-                parts[i] = json_encode(t[i])
-            end
-            return "[" .. table.concat(parts, ",") .. "]"
-        end
-        -- Object-like table
-        local parts = {}
-        for k, v in pairs(t) do
-            parts[#parts + 1] = '"' .. tostring(k) .. '":' .. json_encode(v)
-        end
-        return "{" .. table.concat(parts, ",") .. "}"
-    end
-    return "null"
-end
-
+-- JSON helpers (using native sushi bindings)
+local json_encode = sushi.json.encode
 local function json_parse(s)
-    -- Very simple JSON parser for {key:"...", value:"..."} patterns
-    -- Handles: strings, objects with string values
-    local function parse_value(str, pos)
-        pos = pos or 1
-        -- skip whitespace
-        while pos <= #str and str:sub(pos, pos):match("%s") do pos = pos + 1 end
-
-        if str:sub(pos, pos) == '"' then
-            -- string
-            local end_pos = pos + 1
-            while end_pos <= #str do
-                if str:sub(end_pos, end_pos) == '"' and str:sub(end_pos - 1, end_pos - 1) ~= "\\" then
-                    break
-                end
-                end_pos = end_pos + 1
-            end
-            return str:sub(pos + 1, end_pos - 1), end_pos + 1
-        elseif str:sub(pos, pos) == "{" then
-            -- object
-            local obj = {}
-            pos = pos + 1 -- skip {
-            while pos <= #str do
-                while pos <= #str and str:sub(pos, pos):match("%s") do pos = pos + 1 end
-                if str:sub(pos, pos) == "}" then break end
-                if str:sub(pos, pos) == "," then pos = pos + 1 end
-                while pos <= #str and str:sub(pos, pos):match("%s") do pos = pos + 1 end
-                local key, new_pos = parse_value(str, pos)
-                pos = new_pos
-                while pos <= #str and str:sub(pos, pos):match("%s") do pos = pos + 1 end
-                if str:sub(pos, pos) == ":" then pos = pos + 1 end
-                while pos <= #str and str:sub(pos, pos):match("%s") do pos = pos + 1 end
-                local val, new_pos2 = parse_value(str, pos)
-                pos = new_pos2
-                obj[key] = val
-            end
-            return obj, pos + 1
-        elseif str:sub(pos, pos + 3) == "null" then
-            return nil, pos + 4
-        elseif str:sub(pos, pos + 3) == "true" then
-            return true, pos + 4
-        elseif str:sub(pos, pos + 4) == "false" then
-            return false, pos + 5
-        end
-        return nil, pos
-    end
-    local ok, result = pcall(parse_value, s, 1)
-    if ok then return result end
+    local ok, res = pcall(sushi.json.decode, s)
+    if ok then return res end
     return nil
 end
 

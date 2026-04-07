@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 /// Manages loaded Lua plugin VMs and dispatches handler calls.
 #[derive(Clone, Default)]
 pub struct PluginManager {
-    vms: Arc<Mutex<HashMap<String, mlua::Lua>>>,
-    api_handlers: Arc<Mutex<HashMap<(String, String), (String, String)>>>,
-    cli_handlers: Arc<Mutex<HashMap<String, (String, String)>>>,
-    admin_handlers: Arc<Mutex<HashMap<String, (String, String)>>>,
+    vms: Arc<RwLock<HashMap<String, mlua::Lua>>>,
+    api_handlers: Arc<RwLock<HashMap<(String, String), (String, String)>>>,
+    cli_handlers: Arc<RwLock<HashMap<String, (String, String)>>>,
+    admin_handlers: Arc<RwLock<HashMap<String, (String, String)>>>,
 }
 
 impl PluginManager {
@@ -18,7 +18,7 @@ impl PluginManager {
 
     /// Store a loaded Lua VM for a plugin.
     pub async fn register_vm(&self, plugin_name: &str, lua: mlua::Lua) {
-        self.vms.lock().await.insert(plugin_name.to_string(), lua);
+        self.vms.write().await.insert(plugin_name.to_string(), lua);
     }
 
     /// Register an API route handler.
@@ -29,7 +29,7 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) {
-        self.api_handlers.lock().await.insert(
+        self.api_handlers.write().await.insert(
             (method.to_uppercase(), path.to_string()),
             (plugin_name.to_string(), handler_key.to_string()),
         );
@@ -42,7 +42,7 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) {
-        self.cli_handlers.lock().await.insert(
+        self.cli_handlers.write().await.insert(
             command_name.to_string(),
             (plugin_name.to_string(), handler_key.to_string()),
         );
@@ -55,7 +55,7 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) {
-        self.admin_handlers.lock().await.insert(
+        self.admin_handlers.write().await.insert(
             page_path.to_string(),
             (plugin_name.to_string(), handler_key.to_string()),
         );
@@ -71,24 +71,27 @@ impl PluginManager {
         body: Option<String>,
     ) -> Option<Result<String, String>> {
         let method_upper = method.to_uppercase();
-        let map = self.api_handlers.lock().await;
+        let map = self.api_handlers.read().await;
 
         // Try exact match first
         let (plugin_name, handler_key) = if let Some(v) = map.get(&(method_upper.clone(), path.to_string())) {
             v.clone()
         } else {
             // Try prefix wildcard match: find entries where path ends with *
-            let mut found = None;
+            let mut best_match = None;
+            let mut longest_prefix_len = 0;
             for ((m, prefix), val) in map.iter() {
                 if m == &method_upper && prefix.ends_with('*') {
                     let prefix_str = &prefix[..prefix.len() - 1];
                     if path.starts_with(prefix_str) {
-                        found = Some(val.clone());
-                        break;
+                        if prefix_str.len() > longest_prefix_len {
+                            longest_prefix_len = prefix_str.len();
+                            best_match = Some(val.clone());
+                        }
                     }
                 }
             }
-            found?
+            best_match?
         };
         drop(map);
 
@@ -107,7 +110,7 @@ impl PluginManager {
         args: &[String],
     ) -> Option<Result<String, String>> {
         let (plugin_name, handler_key) = {
-            let map = self.cli_handlers.lock().await;
+            let map = self.cli_handlers.read().await;
             map.get(command_name).cloned()?
         };
         Some(self.call_handler_with_args(&plugin_name, &handler_key, args).await)
@@ -116,7 +119,7 @@ impl PluginManager {
     /// Call an admin page handler, returns HTML String.
     pub async fn call_admin_handler(&self, page_path: &str) -> Option<Result<String, String>> {
         let (plugin_name, handler_key) = {
-            let map = self.admin_handlers.lock().await;
+            let map = self.admin_handlers.read().await;
             map.get(page_path).cloned()?
         };
         Some(self.call_handler_no_args(&plugin_name, &handler_key).await)
@@ -125,7 +128,7 @@ impl PluginManager {
     /// List all registered API routes.
     pub async fn list_api_routes(&self) -> Vec<(String, String)> {
         self.api_handlers
-            .lock()
+            .read()
             .await
             .keys()
             .map(|(m, p)| (m.clone(), p.clone()))
@@ -134,12 +137,12 @@ impl PluginManager {
 
     /// List all registered CLI commands.
     pub async fn list_cli_commands(&self) -> Vec<String> {
-        self.cli_handlers.lock().await.keys().cloned().collect()
+        self.cli_handlers.read().await.keys().cloned().collect()
     }
 
     /// List all registered admin pages.
     pub async fn list_admin_pages(&self) -> Vec<String> {
-        self.admin_handlers.lock().await.keys().cloned().collect()
+        self.admin_handlers.read().await.keys().cloned().collect()
     }
 
     // -- private helpers --
@@ -149,7 +152,7 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) -> Result<String, String> {
-        let vms = self.vms.lock().await;
+        let vms = self.vms.read().await;
         let lua = vms
             .get(plugin_name)
             .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;
@@ -166,7 +169,7 @@ impl PluginManager {
         handler_key: &str,
         args: &[String],
     ) -> Result<String, String> {
-        let vms = self.vms.lock().await;
+        let vms = self.vms.read().await;
         let lua = vms
             .get(plugin_name)
             .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::context::SushiContext;
 use crate::kv::KvStore;
 use crate::plugin::Permissions;
-use mlua::Lua;
+use mlua::{Lua, LuaSerdeExt};
 
 static HANDLER_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -209,6 +209,31 @@ pub async fn inject_sushi_api(
         )?;
 
         sushi.set("kv", kv_table)?;
+    }
+
+    // sushi.json -- always available
+    {
+        let json_table = lua.create_table()?;
+
+        json_table.set(
+            "encode",
+            lua.create_function(|lua, value: mlua::Value| {
+                let json_val: serde_json::Value = lua.from_value(value)?;
+                serde_json::to_string(&json_val)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("json encode error: {e}")))
+            })?,
+        )?;
+
+        json_table.set(
+            "decode",
+            lua.create_function(|lua, json_str: String| {
+                let json_val: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("json decode error: {e}")))?;
+                lua.to_value(&json_val)
+            })?,
+        )?;
+
+        sushi.set("json", json_table)?;
     }
 
     // sushi.config -- always available (read-only stub)
