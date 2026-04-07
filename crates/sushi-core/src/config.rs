@@ -164,11 +164,22 @@ impl ConfigStore {
     }
 
     pub async fn load(path: &Path) -> anyhow::Result<Self> {
+        // Check if config file exists
+        if !path.exists() {
+            tracing::warn!(
+                "Config file not found at {}, using defaults",
+                path.display()
+            );
+            return Ok(Self::new(SushiConfig::default()));
+        }
+        
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("failed to read config {}: {e}", path.display()))?;
+        
         let config: SushiConfig = toml::from_str(&content)
             .map_err(|e| anyhow::anyhow!("failed to parse config: {e}"))?;
+        
         Ok(Self::new(config))
     }
 

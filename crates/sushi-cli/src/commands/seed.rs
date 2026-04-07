@@ -21,7 +21,7 @@ pub struct SeedArgs {
 
 pub async fn run(args: SeedArgs) -> Result<()> {
     let ctx = crate::app::bootstrap(None).await?;
-    let repo = UserRepository::new(&ctx.db);
+    let repo = UserRepository::new(ctx.db.clone());
     let password_hash = password::hash_password(&args.password)
         .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?;
 

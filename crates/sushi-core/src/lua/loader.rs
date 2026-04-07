@@ -90,6 +90,22 @@ impl Plugin for LuaPlugin {
 
         // Load and execute the entry script
         let entry_path = self.plugin_dir.join(&self.manifest.plugin.entry);
+        
+        // Check file size limit (1MB max)
+        const MAX_PLUGIN_SIZE: u64 = 1024 * 1024;  // 1MB
+        let metadata = tokio::fs::metadata(&entry_path)
+            .await
+            .map_err(|e| PluginError::LuaError(format!("stat {}: {e}", entry_path.display())))?;
+        
+        if metadata.len() > MAX_PLUGIN_SIZE {
+            return Err(PluginError::LuaError(format!(
+                "plugin {} code too large: {} bytes (max: {} bytes)",
+                self.manifest.plugin.name,
+                metadata.len(),
+                MAX_PLUGIN_SIZE
+            )));
+        }
+        
         let code = tokio::fs::read_to_string(&entry_path)
             .await
             .map_err(|e| PluginError::LuaError(format!("read {}: {e}", entry_path.display())))?;

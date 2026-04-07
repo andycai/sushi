@@ -13,11 +13,11 @@ use sushi_core::auth::middleware::AuthUser;
 use sushi_core::auth::model::{LoginRequest, TokenResponse};
 use sushi_core::auth::password;
 use sushi_core::auth::repository::UserRepository;
-use sushi_core::storage::sqlite::SqliteStorage;
+use sushi_core::storage::Storage;
 
 #[derive(Clone)]
 pub struct AuthRouteState {
-    pub storage: Arc<SqliteStorage>,
+    pub storage: Arc<dyn Storage>,
     pub jwt: Arc<JwtService>,
 }
 
@@ -33,7 +33,7 @@ async fn login(
     State(state): State<AuthRouteState>,
     Json(req): Json<LoginRequest>,
 ) -> impl IntoResponse {
-    let repo = UserRepository::new(&state.storage);
+    let repo = UserRepository::new(Arc::clone(&state.storage));
     match repo.find_by_username(&req.username).await {
         Ok(Some(user)) => {
             if password::verify_password(&req.password, &user.password_hash).unwrap_or(false) {

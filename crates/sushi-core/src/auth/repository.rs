@@ -1,15 +1,15 @@
 use crate::auth::model::{User, UserRole};
-use crate::storage::sqlite::SqliteStorage;
 use crate::storage::Storage;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use std::sync::Arc;
 
-pub struct UserRepository<'a> {
-    storage: &'a SqliteStorage,
+pub struct UserRepository {
+    storage: Arc<dyn Storage>,
 }
 
-impl<'a> UserRepository<'a> {
-    pub fn new(storage: &'a SqliteStorage) -> Self {
+impl UserRepository {
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
         Self { storage }
     }
 
@@ -63,6 +63,14 @@ impl<'a> UserRepository<'a> {
     pub async fn list_users(&self) -> Result<Vec<User>, String> {
         let rows = self.storage.query("SELECT * FROM users ORDER BY id", vec![])
             .await.map_err(|e| e.to_string())?;
+        rows.into_iter().map(row_to_user).collect()
+    }
+    
+    pub async fn list_users_paginated(&self, limit: usize, offset: usize) -> Result<Vec<User>, String> {
+        let rows = self.storage.query(
+            "SELECT * FROM users ORDER BY id LIMIT ?1 OFFSET ?2",
+            vec![Value::Number((limit as i64).into()), Value::Number((offset as i64).into())],
+        ).await.map_err(|e| e.to_string())?;
         rows.into_iter().map(row_to_user).collect()
     }
 

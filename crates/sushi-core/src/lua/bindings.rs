@@ -143,7 +143,9 @@ pub async fn inject_sushi_api(
     if permissions.database != crate::plugin::DatabasePermission::None {
         let kv_store = KvStore::new(ctx.db.clone());
         let kv_table = lua.create_table()?;
+        let db_permission = permissions.database.clone();
 
+        // GET and LIST: allowed for ReadOnly, Write, and Admin
         let kv_store_get = kv_store.clone();
         kv_table.set(
             "get",
@@ -155,32 +157,6 @@ pub async fn inject_sushi_api(
                         Ok(None) => Ok(mlua::Value::Nil),
                         Err(e) => Err(mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>)),
                     }
-                }
-            })?,
-        )?;
-
-        let kv_store_set = kv_store.clone();
-        kv_table.set(
-            "set",
-            lua.create_async_function(move |_lua: Lua, (key, value): (String, String)| {
-                let kv = kv_store_set.clone();
-                async move {
-                    kv.set(&key, &value)
-                        .await
-                        .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
-                }
-            })?,
-        )?;
-
-        let kv_store_del = kv_store.clone();
-        kv_table.set(
-            "delete",
-            lua.create_async_function(move |_lua: Lua, key: String| {
-                let kv = kv_store_del.clone();
-                async move {
-                    kv.delete(&key)
-                        .await
-                        .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
                 }
             })?,
         )?;
@@ -207,6 +183,37 @@ pub async fn inject_sushi_api(
                 }
             })?,
         )?;
+
+        // SET and DELETE: only allowed for Write and Admin
+        if db_permission == crate::plugin::DatabasePermission::Write 
+            || db_permission == crate::plugin::DatabasePermission::Admin {
+            let kv_store_set = kv_store.clone();
+            kv_table.set(
+                "set",
+                lua.create_async_function(move |_lua: Lua, (key, value): (String, String)| {
+                    let kv = kv_store_set.clone();
+                    async move {
+                        kv.set(&key, &value)
+                            .await
+                            .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
+                    }
+                })?,
+            )?;
+
+            let kv_store_del = kv_store.clone();
+            kv_table.set(
+                "delete",
+                lua.create_async_function(move |_lua: Lua, key: String| {
+                    let kv = kv_store_del.clone();
+                    async move {
+                        kv.delete(&key)
+                            .await
+                            .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
+                    }
+                })?,
+            )?;
+        }
+
 
         sushi.set("kv", kv_table)?;
     }

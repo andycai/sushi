@@ -2,17 +2,18 @@ use crate::routes::auth;
 use crate::routes::users;
 use axum::response::IntoResponse;
 use axum::Router;
+use std::sync::Arc;
 use sushi_core::auth::middleware::require_auth;
 use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::PluginManager;
 
 pub fn build_api_router(ctx: &SushiContext) -> Router {
     let auth_route_state = auth::AuthRouteState {
-        storage: std::sync::Arc::clone(&ctx.db),
+        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
         jwt: std::sync::Arc::clone(&ctx.jwt),
     };
     let users_route_state = users::UsersRouteState {
-        storage: std::sync::Arc::clone(&ctx.db),
+        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
     };
 
     Router::new()
@@ -24,11 +25,11 @@ pub fn build_app(ctx: &SushiContext) -> Router {
     let auth_state = ctx.auth_state();
 
     let auth_route_state = auth::AuthRouteState {
-        storage: std::sync::Arc::clone(&ctx.db),
+        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
         jwt: std::sync::Arc::clone(&ctx.jwt),
     };
     let users_route_state = users::UsersRouteState {
-        storage: std::sync::Arc::clone(&ctx.db),
+        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
     };
 
     Router::new()

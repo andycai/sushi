@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get},
@@ -12,11 +12,23 @@ use std::sync::Arc;
 use sushi_core::auth::model::UserRole;
 use sushi_core::auth::password;
 use sushi_core::auth::repository::UserRepository;
-use sushi_core::storage::sqlite::SqliteStorage;
+use sushi_core::storage::Storage;
 
 #[derive(Clone)]
 pub struct UsersRouteState {
-    pub storage: Arc<SqliteStorage>,
+    pub storage: Arc<dyn Storage>,
+}
+
+#[derive(Deserialize)]
+pub struct PaginationParams {
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+fn default_limit() -> usize {
+    50
 }
 
 pub fn users_routes(state: UsersRouteState) -> Router {
@@ -28,9 +40,15 @@ pub fn users_routes(state: UsersRouteState) -> Router {
 
 async fn list_users(
     State(state): State<UsersRouteState>,
+    Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
-    let repo = UserRepository::new(&state.storage);
-    match repo.list_users().await {
+    let repo = UserRepository::new(Arc::clone(&state.storage));
+    
+    // Validate pagination parameters
+    let limit = pagination.limit.min(100).max(1);  // Cap at 100
+    let offset = pagination.offset;
+    
+    match repo.list_users_paginated(limit, offset).await {
         Ok(users) => {
             let response: Vec<Value> = users
                 .into_iter()
@@ -44,7 +62,11 @@ async fn list_users(
                     })
                 })
                 .collect();
-            (StatusCode::OK, Json(json!(response))).into_response()
+            (StatusCode::OK, Json(json!({
+                "users": response,
+                "limit": limit,
+                "offset": offset,
+            }))).into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e }))).into_response(),
     }
@@ -101,7 +123,7 @@ async fn create_user(
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response();
     }
     
-    let repo = UserRepository::new(&state.storage);
+    let repo = UserRepository::new(Arc::clone(&state.storage));
 
     let role = match req.role.as_deref() {
         Some("admin") => UserRole::Admin,
@@ -134,7 +156,7 @@ async fn delete_user(
     State(state): State<UsersRouteState>,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
-    let repo = UserRepository::new(&state.storage);
+    let repo = UserRepository::new(Arc::clone(&state.storage));
     match repo.delete_user(id).await {
         Ok(()) => (StatusCode::NO_CONTENT, Json(json!(null))).into_response(),
         Err(e) => (StatusCode::NOT_FOUND, Json(json!({ "error": e }))).into_response(),
