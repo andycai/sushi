@@ -86,10 +86,28 @@ async fn plugin_api_dispatch(
     let body = if method == "GET" {
         None
     } else {
-        axum::body::to_bytes(req.into_body(), 1024 * 64)
-            .await
-            .ok()
-            .and_then(|b| String::from_utf8(b.to_vec()).ok())
+        match axum::body::to_bytes(req.into_body(), 1024 * 64).await {
+            Ok(b) => match String::from_utf8(b.to_vec()) {
+                Ok(s) => Some(s),
+                Err(_) => {
+                    // TODO: add mechanism to handle binary file streams for Lua plugins
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+                        "bad request: binary or non-utf8 bodies are not supported yet",
+                    )
+                        .into_response();
+                }
+            },
+            Err(_) => {
+                return (
+                    axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+                    [(axum::http::header::CONTENT_TYPE, "text/plain")],
+                    "request body too large (limit: 64KB)",
+                )
+                    .into_response();
+            }
+        }
     };
 
     match pm.call_api_handler(&method, &path, body).await {
