@@ -42,18 +42,33 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     };
     tracing::info!("starting sushi server on {}:{}", host, port);
 
-    let api_router = sushi_api::router::build_api_router(&ctx);
-    let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
-    let login_router = Router::new()
-        .route("/admin-login", get(sushi_admin::routes::login::login_page));
+    // Build the plugin API router (always needed unless admin_only)
     let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
         .await
         .with_state(ctx.plugins.clone());
-    let admin_router = admin_router.with_state(ctx.plugins.clone());
 
     let app = if args.api_only {
-        sushi_api::router::build_app(&ctx)
+        // API-only: Rust API routes + plugin routes, no admin UI
+        // Uses require_auth middleware via build_app, then merge plugin routes
+        sushi_api::router::build_app(&ctx).merge(plugin_api_router)
+    } else if args.admin_only {
+        // Admin-only: admin UI + login page, no API or plugin API routes
+        let admin_router = sushi_admin::router::build_admin_router(&ctx)
+            .await
+            .with_state(ctx.plugins.clone());
+        let login_router = Router::new()
+            .route("/admin-login", get(sushi_admin::routes::login::login_page));
+        axum::Router::new()
+            .merge(login_router)
+            .merge(admin_router)
     } else {
+        // Default: everything
+        let api_router = sushi_api::router::build_api_router(&ctx);
+        let admin_router = sushi_admin::router::build_admin_router(&ctx)
+            .await
+            .with_state(ctx.plugins.clone());
+        let login_router = Router::new()
+            .route("/admin-login", get(sushi_admin::routes::login::login_page));
         axum::Router::new()
             .merge(api_router)
             .merge(login_router)

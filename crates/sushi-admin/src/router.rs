@@ -43,8 +43,18 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router<PluginManager> {
     router.layer(axum::middleware::from_fn(admin_auth_middleware))
 }
 
-async fn list_plugins_api() -> impl IntoResponse {
-    axum::Json(json!([]))
+async fn list_plugins_api(
+    axum::extract::State(pm): axum::extract::State<PluginManager>,
+) -> impl IntoResponse {
+    let routes = pm.list_api_routes().await;
+    let commands = pm.list_cli_commands().await;
+    let pages = pm.list_admin_pages().await;
+
+    axum::Json(json!({
+        "routes": routes.iter().map(|(m, p)| json!({"method": m, "path": p})).collect::<Vec<_>>(),
+        "commands": commands,
+        "pages": pages,
+    }))
 }
 
 async fn admin_auth_middleware(req: Request, next: Next) -> impl IntoResponse {
