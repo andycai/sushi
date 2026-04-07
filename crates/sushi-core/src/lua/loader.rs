@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// A Lua-based plugin loaded from the filesystem.
 pub struct LuaPlugin {
     manifest: PluginManifest,
-    lua: mlua::Lua,
+    lua: Option<mlua::Lua>,
     plugin_dir: PathBuf,
 }
 
@@ -49,7 +49,7 @@ impl LuaPlugin {
 
             plugins.push(Self {
                 manifest,
-                lua,
+                lua: Some(lua),
                 plugin_dir: path,
             });
         }
@@ -59,6 +59,12 @@ impl LuaPlugin {
 
     pub fn manifest(&self) -> &PluginManifest {
         &self.manifest
+    }
+
+    /// Take the Lua VM out of the plugin after init.
+    /// This transfers ownership to the caller (typically PluginManager).
+    pub fn into_vm(self) -> Option<mlua::Lua> {
+        self.lua
     }
 }
 
@@ -72,8 +78,13 @@ impl Plugin for LuaPlugin {
     }
 
     async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
+        // Take the Lua VM out of self (init should only be called once)
+        let lua = self.lua.as_ref().ok_or_else(|| {
+            PluginError::InitFailed(format!("{}: already initialized", self.manifest.plugin.name))
+        })?;
+
         // Inject sushi.* API into the Lua VM
-        inject_sushi_api(&self.lua, ctx, &self.manifest.permissions)
+        inject_sushi_api(lua, ctx, &self.manifest.permissions)
             .await
             .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
 
@@ -83,14 +94,12 @@ impl Plugin for LuaPlugin {
             .await
             .map_err(|e| PluginError::LuaError(format!("read {}: {e}", entry_path.display())))?;
 
-        self.lua
-            .load(&code)
+        lua.load(&code)
             .exec()
             .map_err(|e| PluginError::InitFailed(format!("{}: {e}", self.manifest.plugin.name)))?;
 
         // Call sushi.init() if defined
-        let sushi: mlua::Table = self
-            .lua
+        let sushi: mlua::Table = lua
             .globals()
             .get("sushi")
             .map_err(|e| PluginError::LuaError(format!("no sushi global: {e}")))?;
@@ -103,62 +112,76 @@ impl Plugin for LuaPlugin {
                 })?;
         }
 
-        // Read pending routes from Lua VM and register them
+        let plugin_name = &self.manifest.plugin.name;
+
+        // Read pending routes, register with both ApiRegistry and PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
                     let method: String = entry.get("method").unwrap_or_default();
                     let path: String = entry.get("path").unwrap_or_default();
+                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     ctx.api.register_route(&method, &path).await;
+                    ctx.plugins
+                        .register_api_handler(&method, &path, plugin_name, &handler_key)
+                        .await;
                     tracing::debug!(
-                        "plugin {} registered route {} {}",
-                        self.manifest.plugin.name,
-                        method,
-                        path
+                        "plugin {} registered route {} {} (handler: {})",
+                        plugin_name, method, path, handler_key
                     );
                 }
             }
         }
 
-        // Read pending commands from Lua VM and register them
+        // Read pending commands, register with both CliRegistry and PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_commands") {
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
                     let name: String = entry.get("name").unwrap_or_default();
                     let desc: String = entry.get("description").unwrap_or_default();
+                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     ctx.cli.register_command(&name, &desc).await;
+                    ctx.plugins
+                        .register_cli_handler(&name, plugin_name, &handler_key)
+                        .await;
                     tracing::debug!(
-                        "plugin {} registered command {}",
-                        self.manifest.plugin.name,
-                        name
+                        "plugin {} registered command {} (handler: {})",
+                        plugin_name, name, handler_key
                     );
                 }
             }
         }
 
-        // Read pending pages from Lua VM and register them
+        // Read pending pages, register with both AdminRegistry and PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_pages") {
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
                     let path: String = entry.get("path").unwrap_or_default();
                     let title: String = entry.get("title").unwrap_or_default();
+                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     ctx.admin.register_page(&path, &title).await;
+                    ctx.plugins
+                        .register_admin_handler(&path, plugin_name, &handler_key)
+                        .await;
                     tracing::debug!(
-                        "plugin {} registered page {} ({})",
-                        self.manifest.plugin.name,
-                        path,
-                        title
+                        "plugin {} registered page {} ({}) (handler: {})",
+                        plugin_name, path, title, handler_key
                     );
                 }
             }
         }
 
+        // Store the Lua VM in the PluginManager so handlers can be called later
+        // We clone the lua ref (it's behind Option) — but we actually need to take ownership
+        // Since Plugin trait uses &self, we use a workaround: register the VM separately
+        drop(sushi);
+
         tracing::info!(
             "plugin loaded: {} v{}",
-            self.manifest.plugin.name,
+            plugin_name,
             self.manifest.plugin.version
         );
         Ok(())

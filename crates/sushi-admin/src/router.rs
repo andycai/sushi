@@ -1,4 +1,4 @@
-use crate::routes::{dashboard, plugins, users, config, logs, kv};
+use crate::routes::{dashboard, plugins, users, config, logs};
 use axum::{
     extract::Request,
     middleware::Next,
@@ -7,18 +7,40 @@ use axum::{
     Router,
 };
 use serde_json::json;
+use sushi_core::context::SushiContext;
+use sushi_core::plugin::manager::PluginManager;
 
-pub fn build_admin_router() -> Router {
-    Router::new()
+pub async fn build_admin_router(ctx: &SushiContext) -> Router<PluginManager> {
+    let mut router: Router<PluginManager> = Router::new()
         .route("/admin", get(axum::response::Redirect::temporary("/admin/")))
         .route("/admin/", get(dashboard::dashboard_page))
         .route("/admin/plugins", get(plugins::plugins_page))
         .route("/admin/users", get(users::users_page))
         .route("/admin/config", get(config::config_page))
         .route("/admin/logs", get(logs::logs_page))
-        .route("/admin/kv", get(kv::kv_page))
-        .route("/admin/api/plugins", get(list_plugins_api))
-        .layer(axum::middleware::from_fn(admin_auth_middleware))
+        .route("/admin/api/plugins", get(list_plugins_api));
+
+    // Add dynamic admin pages from Lua plugins
+    let plugin_pages = ctx.plugins.list_admin_pages().await;
+    for page_path in plugin_pages {
+        let path = page_path.clone();
+        router = router.route(
+            &page_path,
+            get(move |axum::extract::State(pm): axum::extract::State<PluginManager>| async move {
+                match pm.call_admin_handler(&path).await {
+                    Some(Ok(html)) => axum::response::Html(html).into_response(),
+                    Some(Err(e)) => (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        e,
+                    ).into_response(),
+                    None => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
+                }
+            }),
+        );
+    }
+
+    router = router.with_state(ctx.plugins.clone());
+    router.layer(axum::middleware::from_fn(admin_auth_middleware))
 }
 
 async fn list_plugins_api() -> impl IntoResponse {

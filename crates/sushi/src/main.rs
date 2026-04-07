@@ -112,25 +112,41 @@ async fn main() -> Result<()> {
                 let lua_plugins = LuaPlugin::scan_dir(&plugins_dir)
                     .await
                     .context("failed to scan plugins directory")?;
-                for plugin in &lua_plugins {
+                for plugin in lua_plugins {
+                    let plugin_name = plugin.name().to_string();
                     if let Err(e) = plugin.init(&ctx).await {
-                        tracing::warn!("failed to init plugin {}: {e}", plugin.name());
+                        tracing::warn!("failed to init plugin {plugin_name}: {e}");
+                        continue;
+                    }
+                    // Transfer the Lua VM to PluginManager so handlers can be called later
+                    if let Some(lua) = plugin.into_vm() {
+                        ctx.plugins.register_vm(&plugin_name, lua).await;
+                        tracing::debug!("registered VM for plugin {plugin_name}");
                     }
                 }
             }
 
             // Build Axum app
             let api_router = sushi_api::router::build_api_router(&ctx);
-            let admin_router = sushi_admin::router::build_admin_router();
+            let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
 
             // Login page at /admin-login (outside auth-protected /admin group)
             let login_router = Router::new()
                 .route("/admin-login", get(sushi_admin::routes::login::login_page));
 
+            // Build plugin API routes (dynamic routes from Lua plugins)
+            let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
+                .await
+                .with_state(ctx.plugins.clone());
+
+            // Admin router uses PluginManager as state for dynamic plugin pages
+            let admin_router = admin_router.with_state(ctx.plugins.clone());
+
             let mut app = axum::Router::new()
                 .merge(api_router)
                 .merge(login_router)
-                .merge(admin_router);
+                .merge(admin_router)
+                .merge(plugin_api_router);
 
             // Conditionally include admin-only or api-only mode
             if args.api_only {
@@ -151,9 +167,58 @@ async fn main() -> Result<()> {
                 .context("server error")?;
         }
         Commands::Run(args) => {
-            tracing::info!("running plugin: {}", args.plugin_name);
-            // TODO: load plugin and execute
-            println!("sushi run placeholder — plugin={}", args.plugin_name);
+            // Load config, storage, and context to access PluginManager
+            let config = ConfigStore::new(SushiConfig::default());
+            let db_path = {
+                let guard = config.get().await;
+                guard.database.path.clone()
+            };
+            if let Some(parent) = std::path::Path::new(&db_path).parent() {
+                tokio::fs::create_dir_all(parent).await.ok();
+            }
+            let storage = SqliteStorage::new(&db_path)
+                .await
+                .context("failed to open database")?;
+            storage.run_migrations(MIGRATION_SQL)
+                .await
+                .context("failed to run migrations")?;
+            storage.run_migrations(KV_MIGRATION_SQL)
+                .await
+                .context("failed to run kv migrations")?;
+
+            let jwt = {
+                let guard = config.get().await;
+                JwtService::new(&guard.jwt.secret, guard.jwt.access_ttl, guard.jwt.refresh_ttl)
+            };
+            let ctx = SushiContext::new(config, storage, jwt);
+
+            // Load plugins
+            let plugins_dir = {
+                let guard = ctx.config.get().await;
+                std::path::PathBuf::from(&guard.plugins.directory)
+            };
+            if plugins_dir.exists() {
+                let lua_plugins = LuaPlugin::scan_dir(&plugins_dir)
+                    .await
+                    .context("failed to scan plugins directory")?;
+                for plugin in lua_plugins {
+                    let plugin_name = plugin.name().to_string();
+                    if let Err(e) = plugin.init(&ctx).await {
+                        tracing::warn!("failed to init plugin {plugin_name}: {e}");
+                        continue;
+                    }
+                    if let Some(lua) = plugin.into_vm() {
+                        ctx.plugins.register_vm(&plugin_name, lua).await;
+                    }
+                }
+            }
+
+            // Dispatch to the CLI handler
+            match ctx.plugins.call_cli_handler(&args.plugin_name, &args.args).await {
+                Some(Ok(output)) => println!("{output}"),
+                Some(Err(e)) => anyhow::bail!("plugin error: {e}"),
+                None => anyhow::bail!("command '{}' not found in any plugin", args.plugin_name),
+            }
         }
         Commands::Plugin(args) => match args.command {
             sushi_cli::commands::plugin::PluginCommand::List => {

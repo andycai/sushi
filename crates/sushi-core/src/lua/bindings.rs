@@ -1,9 +1,16 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::context::SushiContext;
 use crate::kv::KvStore;
 use crate::plugin::Permissions;
 use mlua::Lua;
+
+static HANDLER_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn next_handler_key() -> String {
+    format!("h_{}", HANDLER_COUNTER.fetch_add(1, Ordering::Relaxed))
+}
 
 /// Inject the `sushi` global table into the Lua VM.
 /// Only namespaces permitted by the plugin's permissions are injected.
@@ -13,6 +20,10 @@ pub async fn inject_sushi_api(
     permissions: &Permissions,
 ) -> Result<(), mlua::Error> {
     let sushi = lua.create_table()?;
+
+    // sushi.__handlers — stores actual handler functions keyed by unique ID
+    let handlers_table = lua.create_table()?;
+    sushi.set("__handlers", handlers_table)?;
 
     // sushi.log -- always available
     {
@@ -51,14 +62,16 @@ pub async fn inject_sushi_api(
             "route",
             lua.create_function(
                 move |lua, (method, path, handler): (String, String, mlua::Function)| {
-                    let pending: mlua::Table = lua
-                        .globals()
-                        .get::<mlua::Table>("sushi")?
-                        .get("__pending_routes")?;
+                    let handler_key = next_handler_key();
+                    let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    let handlers: mlua::Table = sushi.get("__handlers")?;
+                    handlers.set(&*handler_key, handler)?;
+
+                    let pending: mlua::Table = sushi.get("__pending_routes")?;
                     let entry = lua.create_table()?;
                     entry.set("method", method)?;
                     entry.set("path", path)?;
-                    entry.set("handler", handler)?;
+                    entry.set("handler_key", handler_key)?;
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
                     Ok(())
@@ -76,18 +89,23 @@ pub async fn inject_sushi_api(
         let cli_table = lua.create_table()?;
         cli_table.set(
             "command",
-            lua.create_function(move |lua, (name, desc): (String, String)| {
-                let pending: mlua::Table = lua
-                    .globals()
-                    .get::<mlua::Table>("sushi")?
-                    .get("__pending_commands")?;
-                let entry = lua.create_table()?;
-                entry.set("name", name)?;
-                entry.set("description", desc)?;
-                let len = pending.raw_len();
-                pending.set(len + 1, entry)?;
-                Ok(())
-            })?,
+            lua.create_function(
+                move |lua, (name, desc, handler): (String, String, mlua::Function)| {
+                    let handler_key = next_handler_key();
+                    let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    let handlers: mlua::Table = sushi.get("__handlers")?;
+                    handlers.set(&*handler_key, handler)?;
+
+                    let pending: mlua::Table = sushi.get("__pending_commands")?;
+                    let entry = lua.create_table()?;
+                    entry.set("name", name)?;
+                    entry.set("description", desc)?;
+                    entry.set("handler_key", handler_key)?;
+                    let len = pending.raw_len();
+                    pending.set(len + 1, entry)?;
+                    Ok(())
+                },
+            )?,
         )?;
         sushi.set("cli", cli_table)?;
     }
@@ -100,18 +118,23 @@ pub async fn inject_sushi_api(
         let admin_table = lua.create_table()?;
         admin_table.set(
             "page",
-            lua.create_function(move |lua, (path, title): (String, String)| {
-                let pending: mlua::Table = lua
-                    .globals()
-                    .get::<mlua::Table>("sushi")?
-                    .get("__pending_pages")?;
-                let entry = lua.create_table()?;
-                entry.set("path", path)?;
-                entry.set("title", title)?;
-                let len = pending.raw_len();
-                pending.set(len + 1, entry)?;
-                Ok(())
-            })?,
+            lua.create_function(
+                move |lua, (path, title, handler): (String, String, mlua::Function)| {
+                    let handler_key = next_handler_key();
+                    let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    let handlers: mlua::Table = sushi.get("__handlers")?;
+                    handlers.set(&*handler_key, handler)?;
+
+                    let pending: mlua::Table = sushi.get("__pending_pages")?;
+                    let entry = lua.create_table()?;
+                    entry.set("path", path)?;
+                    entry.set("title", title)?;
+                    entry.set("handler_key", handler_key)?;
+                    let len = pending.raw_len();
+                    pending.set(len + 1, entry)?;
+                    Ok(())
+                },
+            )?,
         )?;
         sushi.set("admin", admin_table)?;
     }
@@ -258,6 +281,8 @@ mod tests {
         assert!(sushi.contains_key("config").unwrap());
         assert!(sushi.contains_key("event").unwrap());
         assert!(sushi.contains_key("auth").unwrap());
+        // __handlers table always created
+        assert!(sushi.contains_key("__handlers").unwrap());
     }
 
     #[tokio::test]
@@ -339,10 +364,10 @@ mod tests {
 
         inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
 
-        lua.load("sushi.api.route('GET', '/api/test', function() end)")
+        lua.load("sushi.api.route('GET', '/api/test', function() return 'ok' end)")
             .exec()
             .unwrap();
-        lua.load("sushi.api.route('POST', '/api/items', function() end)")
+        lua.load("sushi.api.route('POST', '/api/items', function() return 'created' end)")
             .exec()
             .unwrap();
 
@@ -357,10 +382,18 @@ mod tests {
         let first: mlua::Table = pending.get(1).unwrap();
         let method: String = first.get("method").unwrap();
         let path: String = first.get("path").unwrap();
+        let handler_key: String = first.get("handler_key").unwrap();
         assert_eq!(method, "GET");
         assert_eq!(path, "/api/test");
+        assert!(handler_key.starts_with("h_"));
 
-        // Verify handler is stored as a function
-        let _handler: mlua::Function = first.get("handler").unwrap();
+        // Verify handler function is stored in sushi.__handlers
+        let handlers: mlua::Table = lua
+            .globals()
+            .get::<mlua::Table>("sushi")
+            .unwrap()
+            .get("__handlers")
+            .unwrap();
+        let _handler: mlua::Function = handlers.get(&*handler_key).unwrap();
     }
 }

@@ -1,6 +1,7 @@
 use crate::auth::jwt::JwtService;
 use crate::auth::middleware::AuthState;
 use crate::config::ConfigStore;
+use crate::plugin::manager::PluginManager;
 use crate::registry::event::EventBus;
 use crate::registry::{AdminRegistry, ApiRegistry, CliRegistry};
 use crate::storage::sqlite::SqliteStorage;
@@ -17,6 +18,7 @@ pub struct SushiContext {
     pub db: Arc<SqliteStorage>,
     pub event: EventBus,
     pub jwt: Arc<JwtService>,
+    pub plugins: PluginManager,
 }
 
 impl SushiContext {
@@ -31,6 +33,7 @@ impl SushiContext {
             db: Arc::new(db),
             event: EventBus::new(),
             jwt: Arc::new(jwt),
+            plugins: PluginManager::new(),
         }
     }
 
