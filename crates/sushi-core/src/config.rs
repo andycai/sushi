@@ -21,6 +21,8 @@ pub struct ServerConfig {
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_body_size_limit")]
+    pub body_size_limit: usize,  // in bytes
 }
 
 impl Default for ServerConfig {
@@ -28,6 +30,7 @@ impl Default for ServerConfig {
         Self {
             host: default_host(),
             port: default_port(),
+            body_size_limit: default_body_size_limit(),
         }
     }
 }
@@ -37,6 +40,9 @@ fn default_host() -> String {
 }
 fn default_port() -> u16 {
     3000
+}
+fn default_body_size_limit() -> usize {
+    1024 * 64  // 64KB default
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +84,35 @@ impl Default for JwtConfig {
 }
 
 fn default_jwt_secret() -> String {
-    "change-me-in-production-at-least-32-chars".to_string()
+    // Generate a random secret if not configured
+    use std::sync::OnceLock;
+    static GENERATED_SECRET: OnceLock<String> = OnceLock::new();
+    
+    let secret = GENERATED_SECRET.get_or_init(|| {
+        tracing::warn!(
+            "JWT secret not configured - using generated secret. \
+             Set jwt.secret in config.toml for production use."
+        );
+        generate_random_secret()
+    });
+    secret.clone()
+}
+
+fn generate_random_secret() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    
+    // Generate a cryptographically random secret
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u128(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos());
+    hasher.write_u64(std::process::id() as u64);
+    
+    // Create a 32-character hex string (16 bytes of entropy)
+    format!("{:032x}", hasher.finish())
 }
 fn default_access_ttl() -> i64 {
     3600

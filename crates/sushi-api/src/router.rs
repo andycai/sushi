@@ -41,13 +41,14 @@ pub fn build_app(ctx: &SushiContext) -> Router {
 #[derive(Clone)]
 pub struct PluginApiState {
     pub plugins: PluginManager,
+    pub body_size_limit: usize,
     pub route_map: Vec<(String, String)>, // (method, path) pairs
 }
 
 /// Build a router that dispatches plugin API routes.
 /// Each plugin route gets its own Axum route entry.
 /// Lua wildcard paths ending with `/*` are converted to Axum `{*path}` catch-all.
-pub async fn build_plugin_api_routes(ctx: &SushiContext) -> Router<PluginManager> {
+pub async fn build_plugin_api_routes(ctx: &SushiContext) -> Router<PluginApiState> {
     let routes = ctx.plugins.list_api_routes().await;
     let mut router = Router::new();
 
@@ -77,7 +78,7 @@ pub async fn build_plugin_api_routes(ctx: &SushiContext) -> Router<PluginManager
 /// Generic plugin API handler — reads method+path+body from the request
 /// and dispatches to the appropriate Lua handler.
 async fn plugin_api_dispatch(
-    axum::extract::State(pm): axum::extract::State<PluginManager>,
+    axum::extract::State(state): axum::extract::State<PluginApiState>,
     req: axum::extract::Request,
 ) -> impl axum::response::IntoResponse {
     let method = req.method().to_string();
@@ -87,7 +88,7 @@ async fn plugin_api_dispatch(
     let body = if method == "GET" {
         None
     } else {
-        match axum::body::to_bytes(req.into_body(), 1024 * 64).await {
+        match axum::body::to_bytes(req.into_body(), state.body_size_limit).await {
             Ok(b) => match String::from_utf8(b.to_vec()) {
                 Ok(s) => Some(s),
                 Err(_) => {
@@ -101,17 +102,18 @@ async fn plugin_api_dispatch(
                 }
             },
             Err(_) => {
+                let limit_kb = state.body_size_limit / 1024;
                 return (
                     axum::http::StatusCode::PAYLOAD_TOO_LARGE,
                     [(axum::http::header::CONTENT_TYPE, "text/plain")],
-                    "request body too large (limit: 64KB)",
+                    format!("request body too large (limit: {}KB)", limit_kb),
                 )
                     .into_response();
             }
         }
     };
 
-    match pm.call_api_handler(&method, &path, body).await {
+    match state.plugins.call_api_handler(&method, &path, body).await {
         Some(Ok(response_body)) => (
             axum::http::StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, "application/json")],

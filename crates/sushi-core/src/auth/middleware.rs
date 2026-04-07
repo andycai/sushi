@@ -33,6 +33,11 @@ pub async fn require_auth(
 
     match state.jwt_service.verify_token(token) {
         Ok(claims) => {
+            // Validate token type - only access tokens are allowed for API access
+            if claims.token_type != "access" {
+                return (StatusCode::UNAUTHORIZED, "{\"error\":\"Invalid token type. Use access token for API access.\"}").into_response();
+            }
+            
             let role = match claims.role.as_str() {
                 "admin" => UserRole::Admin,
                 "editor" => UserRole::Editor,

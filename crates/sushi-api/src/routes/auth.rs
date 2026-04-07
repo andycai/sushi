@@ -88,7 +88,15 @@ async fn refresh(
     Json(req): Json<RefreshRequest>,
 ) -> impl IntoResponse {
     match state.jwt.verify_token(&req.refresh_token) {
-        Ok(claims) if claims.token_type == "refresh" => {
+        Ok(claims) => {
+            // Validate token type immediately after verification
+            if claims.token_type != "refresh" {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({ "error": "Invalid token type. Expected refresh token." })),
+                ).into_response();
+            }
+            
             match state.jwt.create_access_token(
                 claims.sub.parse().unwrap_or(0),
                 &claims.username,
@@ -109,9 +117,9 @@ async fn refresh(
                     .into_response(),
             }
         }
-        _ => (
+        Err(e) => (
             StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Invalid refresh token" })),
+            Json(json!({ "error": format!("Invalid refresh token: {}", e) })),
         )
             .into_response(),
     }

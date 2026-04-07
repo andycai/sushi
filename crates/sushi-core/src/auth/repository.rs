@@ -82,6 +82,15 @@ fn row_to_user(row: std::collections::HashMap<String, Value>) -> Result<User, St
         "editor" => UserRole::Editor,
         _ => UserRole::Viewer,
     };
+    
+    // Parse SQLite datetime format: YYYY-MM-DD HH:MM:SS
+    let parse_sqlite_datetime = |s: &str| {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+            .ok()
+            .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+            .unwrap_or_default()
+    };
+    
     Ok(User {
         id: row.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
         username: row.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string(),
@@ -89,12 +98,10 @@ fn row_to_user(row: std::collections::HashMap<String, Value>) -> Result<User, St
         password_hash: row.get("password_hash").and_then(|v| v.as_str()).unwrap_or("").to_string(),
         role,
         created_at: row.get("created_at").and_then(|v| v.as_str())
-            .and_then(|s| DateTime::parse_from_rfc3339(&format!("{s}Z")).ok())
-            .map(|dt| dt.with_timezone(&Utc))
+            .map(parse_sqlite_datetime)
             .unwrap_or_default(),
         updated_at: row.get("updated_at").and_then(|v| v.as_str())
-            .and_then(|s| DateTime::parse_from_rfc3339(&format!("{s}Z")).ok())
-            .map(|dt| dt.with_timezone(&Utc))
+            .map(parse_sqlite_datetime)
             .unwrap_or_default(),
     })
 }

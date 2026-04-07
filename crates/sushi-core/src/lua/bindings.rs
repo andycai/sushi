@@ -248,24 +248,78 @@ pub async fn inject_sushi_api(
 
     // sushi.event -- always available
     {
+        let event_bus = ctx.event.clone();
         let event_table = lua.create_table()?;
+        
+        // Store Lua handlers in a table for potential future use
+        let handlers_table = lua.create_table()?;
+        sushi.set("__event_handlers", handlers_table)?;
+        
         event_table.set(
             "on",
-            lua.create_function(|_, (_event, _callback): (String, mlua::Function)| Ok(()))?,
+            lua.create_function(|lua, (event, callback): (String, mlua::Function)| {
+                // Store the handler for potential future use
+                let sushi: mlua::Table = lua.globals().get("sushi")?;
+                let handlers: mlua::Table = sushi.get("__event_handlers")?;
+                
+                // Create or get event handler list
+                let event_handlers: mlua::Table = handlers.get(event.clone()).unwrap_or_else(|_| lua.create_table().unwrap());
+                let len = event_handlers.raw_len();
+                event_handlers.set(len + 1, callback)?;
+                handlers.set(event, event_handlers)?;
+                
+                tracing::debug!("Lua event handler registered (note: full async event support requires architectural changes)");
+                Ok(())
+            })?,
         )?;
+        
+        let event_bus_emit = event_bus.clone();
         event_table.set(
             "emit",
-            lua.create_function(|_, (_event, _data): (String, mlua::Value)| Ok(()))?,
+            lua.create_async_function(move |_lua: Lua, (event, data): (String, mlua::Value)| {
+                let bus = event_bus_emit.clone();
+                async move {
+                    // Convert Lua value to JSON
+                    let json_data: serde_json::Value = match _lua.from_value(data.clone()) {
+                        Ok(v) => v,
+                        Err(_) => serde_json::Value::Null,
+                    };
+                    
+                    // Emit to event bus (async)
+                    bus.emit(&event, &json_data).await;
+                    
+                    tracing::debug!("Lua event emitted: {}", event);
+                    Ok(())
+                }
+            })?,
         )?;
         sushi.set("event", event_table)?;
     }
 
     // sushi.auth -- always available
     {
+        let jwt = ctx.jwt.clone();
         let auth_table = lua.create_table()?;
         auth_table.set(
             "verify_token",
-            lua.create_function(|_, _token: String| Ok(mlua::Value::Nil))?,
+            lua.create_function(move |lua, token: String| {
+                match jwt.verify_token(&token) {
+                    Ok(claims) => {
+                        // Return claims as a Lua table
+                        let claims_table = lua.create_table()?;
+                        claims_table.set("sub", claims.sub.clone())?;
+                        claims_table.set("username", claims.username.clone())?;
+                        claims_table.set("role", claims.role.clone())?;
+                        claims_table.set("token_type", claims.token_type.clone())?;
+                        Ok(mlua::Value::Table(claims_table))
+                    }
+                    Err(e) => {
+                        // Return nil on error (could also return error)
+                        tracing::warn!("JWT verification failed in Lua: {}", e);
+                        Ok(mlua::Value::Nil)
+                    }
+                }
+            })?,
         )?;
         sushi.set("auth", auth_table)?;
     }

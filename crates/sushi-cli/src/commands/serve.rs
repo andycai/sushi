@@ -43,9 +43,20 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     tracing::info!("starting sushi server on {}:{}", host, port);
 
     // Build the plugin API router (always needed unless admin_only)
+    let body_size_limit = {
+        let cfg = ctx.config.get().await;
+        cfg.server.body_size_limit
+    };
+    
+    let plugin_api_state = sushi_api::router::PluginApiState {
+        plugins: ctx.plugins.clone(),
+        body_size_limit,
+        route_map: vec![],
+    };
+    
     let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
         .await
-        .with_state(ctx.plugins.clone());
+        .with_state(plugin_api_state);
 
     let app = if args.api_only {
         // API-only: Rust API routes + plugin routes, no admin UI
@@ -53,9 +64,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         sushi_api::router::build_app(&ctx).merge(plugin_api_router)
     } else if args.admin_only {
         // Admin-only: admin UI + login page, no API or plugin API routes
-        let admin_router = sushi_admin::router::build_admin_router(&ctx)
-            .await
-            .with_state(ctx.plugins.clone());
+        let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
         let login_router = Router::new()
             .route("/admin-login", get(sushi_admin::routes::login::login_page));
         axum::Router::new()
@@ -64,9 +73,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     } else {
         // Default: everything
         let api_router = sushi_api::router::build_api_router(&ctx);
-        let admin_router = sushi_admin::router::build_admin_router(&ctx)
-            .await
-            .with_state(ctx.plugins.clone());
+        let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
         let login_router = Router::new()
             .route("/admin-login", get(sushi_admin::routes::login::login_page));
         axum::Router::new()

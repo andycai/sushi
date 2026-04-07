@@ -58,10 +58,49 @@ pub struct CreateUserRequest {
     pub role: Option<String>,
 }
 
+impl CreateUserRequest {
+    /// Validate user input fields
+    fn validate(&self) -> Result<(), String> {
+        // Validate username (3-32 chars, alphanumeric and underscore only)
+        if self.username.len() < 3 || self.username.len() > 32 {
+            return Err("Username must be between 3 and 32 characters".to_string());
+        }
+        if !self.username.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Err("Username can only contain letters, numbers, and underscores".to_string());
+        }
+        
+        // Validate email (basic format check)
+        if self.email.is_empty() {
+            return Err("Email is required".to_string());
+        }
+        if !self.email.contains('@') || !self.email.contains('.') {
+            return Err("Invalid email format".to_string());
+        }
+        if self.email.len() > 255 {
+            return Err("Email must be less than 255 characters".to_string());
+        }
+        
+        // Validate password (min 8 chars)
+        if self.password.len() < 8 {
+            return Err("Password must be at least 8 characters".to_string());
+        }
+        if self.password.len() > 128 {
+            return Err("Password must be less than 128 characters".to_string());
+        }
+        
+        Ok(())
+    }
+}
+
 async fn create_user(
     State(state): State<UsersRouteState>,
     Json(req): Json<CreateUserRequest>,
 ) -> impl IntoResponse {
+    // Validate input
+    if let Err(e) = req.validate() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response();
+    }
+    
     let repo = UserRepository::new(&state.storage);
 
     let role = match req.role.as_deref() {
