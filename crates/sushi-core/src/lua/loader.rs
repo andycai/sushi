@@ -114,7 +114,7 @@ impl Plugin for LuaPlugin {
 
         let plugin_name = &self.manifest.plugin.name;
 
-        // Read pending routes, register with both ApiRegistry and PluginManager
+        // Read pending routes, register with PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
             let len = pending.raw_len();
             for i in 1..=len {
@@ -122,7 +122,6 @@ impl Plugin for LuaPlugin {
                     let method: String = entry.get("method").unwrap_or_default();
                     let path: String = entry.get("path").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    ctx.api.register_route(&method, &path).await;
                     ctx.plugins
                         .register_api_handler(&method, &path, plugin_name, &handler_key)
                         .await;
@@ -134,15 +133,13 @@ impl Plugin for LuaPlugin {
             }
         }
 
-        // Read pending commands, register with both CliRegistry and PluginManager
+        // Read pending commands, register with PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_commands") {
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
                     let name: String = entry.get("name").unwrap_or_default();
-                    let desc: String = entry.get("description").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    ctx.cli.register_command(&name, &desc).await;
                     ctx.plugins
                         .register_cli_handler(&name, plugin_name, &handler_key)
                         .await;
@@ -154,7 +151,7 @@ impl Plugin for LuaPlugin {
             }
         }
 
-        // Read pending pages, register with both AdminRegistry and PluginManager
+        // Read pending pages, register with PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_pages") {
             let len = pending.raw_len();
             for i in 1..=len {
@@ -162,7 +159,6 @@ impl Plugin for LuaPlugin {
                     let path: String = entry.get("path").unwrap_or_default();
                     let title: String = entry.get("title").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    ctx.admin.register_page(&path, &title).await;
                     ctx.plugins
                         .register_admin_handler(&path, plugin_name, &handler_key)
                         .await;

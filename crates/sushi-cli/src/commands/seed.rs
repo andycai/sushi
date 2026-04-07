@@ -1,4 +1,8 @@
+use anyhow::Result;
 use clap::Args;
+use sushi_core::auth::model::UserRole;
+use sushi_core::auth::password;
+use sushi_core::auth::repository::UserRepository;
 
 #[derive(Args)]
 pub struct SeedArgs {
@@ -13,4 +17,21 @@ pub struct SeedArgs {
     /// Email for the admin user
     #[arg(long, default_value = "admin@sushi.local")]
     pub email: String,
+}
+
+pub async fn run(args: SeedArgs) -> Result<()> {
+    let ctx = crate::app::bootstrap(None).await?;
+    let repo = UserRepository::new(&ctx.db);
+    let password_hash = password::hash_password(&args.password)
+        .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?;
+
+    match repo
+        .create_user(&args.username, &args.email, &password_hash, UserRole::Admin)
+        .await
+    {
+        Ok(user) => println!("✓ Admin user created: {} (id={})", user.username, user.id),
+        Err(e) => anyhow::bail!("failed to create user: {e}"),
+    }
+
+    Ok(())
 }

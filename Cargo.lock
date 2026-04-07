@@ -1395,7 +1395,10 @@ name = "sushi-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
+ "sushi-admin",
+ "sushi-api",
  "sushi-core",
  "tokio",
  "tracing",

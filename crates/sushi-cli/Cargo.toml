@@ -5,7 +5,10 @@ edition = "2021"
 
 [dependencies]
 sushi-core = { path = "../sushi-core" }
+sushi-api = { path = "../sushi-api" }
+sushi-admin = { path = "../sushi-admin" }
 clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+axum = { workspace = true }

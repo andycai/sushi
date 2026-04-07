@@ -1,5 +1,6 @@
 use crate::routes::auth;
 use crate::routes::users;
+use axum::response::IntoResponse;
 use axum::Router;
 use sushi_core::auth::middleware::require_auth;
 use sushi_core::context::SushiContext;
@@ -115,16 +116,19 @@ async fn plugin_api_dispatch(
             axum::http::StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, "application/json")],
             response_body,
-        ),
+        )
+            .into_response(),
         Some(Err(e)) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             [(axum::http::header::CONTENT_TYPE, "text/plain")],
             e,
-        ),
+        )
+            .into_response(),
         None => (
             axum::http::StatusCode::NOT_FOUND,
             [(axum::http::header::CONTENT_TYPE, "text/plain")],
             "not found".to_string(),
-        ),
+        )
+            .into_response(),
     }
 }
