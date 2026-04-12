@@ -18,6 +18,7 @@ use tower::ServiceExt;
 const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
 const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
 const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
+const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -203,6 +204,10 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
         .run_migrations(RBAC_MIGRATION_SQL)
         .await
         .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 004_menu");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -376,6 +381,36 @@ async fn plugins_api_returns_list_payload() {
         .expect("failed to read body");
     let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
     assert!(payload.is_array(), "expected array payload, got: {payload}");
+}
+
+#[tokio::test]
+async fn menu_api_returns_menu_items() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/menu")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+
+    let menu = payload.get("menu").and_then(Value::as_array).expect("menu array missing");
+    assert!(!menu.is_empty(), "menu should have items");
+
+    // 验证 Dashboard 存在
+    let dashboard = menu.iter().find(|m| m.get("label").and_then(Value::as_str) == Some("Dashboard"));
+    assert!(dashboard.is_some(), "Dashboard menu item should exist");
 }
 
 #[tokio::test]
