@@ -25,9 +25,6 @@ pub struct ServeArgs {
     #[arg(short, long, default_value = "config.toml")]
     pub config: PathBuf,
 
-    /// Dev mode: serve admin UI from local ui/src/ directory
-    #[arg(long)]
-    pub admin_dev: bool,
 }
 
 pub async fn run(args: ServeArgs) -> Result<()> {

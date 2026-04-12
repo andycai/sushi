@@ -33,6 +33,7 @@
 - Post-plan stale asset cleanup:
   - Removed legacy `crates/sushi-admin/templates/` directory (runtime now only uses `web/templates`)
   - Removed redundant built-in KV page assets (`web/templates/admin/kv.html`, `web/static/admin/js/kv.js`) and corresponding admin route module
+  - Removed stale `ui/` workspace artifacts and dead `--admin-dev` flag in `serve` command
 
 ## File Structure Map
 
