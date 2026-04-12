@@ -6,5 +6,4 @@ pub mod db;
 pub mod auth;
 pub mod lua;
 pub mod context;
-pub mod kv;
 pub mod web;

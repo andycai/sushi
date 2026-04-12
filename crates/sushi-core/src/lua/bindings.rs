@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use crate::context::SushiContext;
 use crate::db::{DbGatewayError, DbPermission};
-use crate::kv::KvStore;
 use crate::plugin::Permissions;
 use mlua::{Lua, LuaSerdeExt};
 
@@ -305,11 +304,8 @@ pub async fn inject_sushi_api(
         sushi.set("web", web_table)?;
     }
 
-    // sushi.db and sushi.kv -- only when a database permission is granted
+    // sushi.db -- only when a database permission is granted
     if let Some(gateway_permission) = map_db_permission(&permissions.database) {
-        let kv_store = KvStore::new(ctx.db.clone());
-        let kv_table = lua.create_table()?;
-        let plugin_db_permission = permissions.database.clone();
         let db_gateway = ctx.db_gateway.with_permission(gateway_permission);
 
         let db_table = lua.create_table()?;
@@ -344,88 +340,6 @@ pub async fn inject_sushi_api(
         )?;
 
         sushi.set("db", db_table)?;
-
-        // sushi.kv GET and LIST: allowed for ReadOnly, Write, and Admin
-        let kv_store_get = kv_store.clone();
-        kv_table.set(
-            "get",
-            lua.create_async_function(move |lua: Lua, key: String| {
-                let kv = kv_store_get.clone();
-                async move {
-                    match kv.get(&key).await {
-                        Ok(Some(value)) => {
-                            Ok(mlua::Value::String(lua.create_string(&value).unwrap()))
-                        }
-                        Ok(None) => Ok(mlua::Value::Nil),
-                        Err(e) => Err(mlua::Error::ExternalError(
-                            Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
-                        )),
-                    }
-                }
-            })?,
-        )?;
-
-        let kv_store_list = kv_store.clone();
-        kv_table.set(
-            "list",
-            lua.create_async_function(move |lua: Lua, ()| {
-                let kv = kv_store_list.clone();
-                async move {
-                    match kv.list().await {
-                        Ok(items) => {
-                            let table = lua.create_table()?;
-                            for (i, (k, v)) in items.into_iter().enumerate() {
-                                let entry = lua.create_table()?;
-                                entry.set("key", k)?;
-                                entry.set("value", v)?;
-                                table.set(i + 1, entry)?;
-                            }
-                            Ok(mlua::Value::Table(table))
-                        }
-                        Err(e) => Err(mlua::Error::ExternalError(
-                            Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
-                        )),
-                    }
-                }
-            })?,
-        )?;
-
-        // sushi.kv SET and DELETE: only allowed for Write and Admin
-        if plugin_db_permission == crate::plugin::DatabasePermission::Write
-            || plugin_db_permission == crate::plugin::DatabasePermission::Admin
-        {
-            let kv_store_set = kv_store.clone();
-            kv_table.set(
-                "set",
-                lua.create_async_function(move |_lua: Lua, (key, value): (String, String)| {
-                    let kv = kv_store_set.clone();
-                    async move {
-                        kv.set(&key, &value).await.map_err(|e| {
-                            mlua::Error::ExternalError(
-                                Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
-                            )
-                        })
-                    }
-                })?,
-            )?;
-
-            let kv_store_del = kv_store.clone();
-            kv_table.set(
-                "delete",
-                lua.create_async_function(move |_lua: Lua, key: String| {
-                    let kv = kv_store_del.clone();
-                    async move {
-                        kv.delete(&key).await.map_err(|e| {
-                            mlua::Error::ExternalError(
-                                Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
-                            )
-                        })
-                    }
-                })?,
-            )?;
-        }
-
-        sushi.set("kv", kv_table)?;
     }
 
     // sushi.json -- always available
