@@ -1,8 +1,6 @@
 -- KV Store Plugin
 -- Provides API routes, admin page, and CLI commands for key-value management
--- using sushi.kv.* bindings backed by SQLite.
-
-local JSON_CONTENT = "application/json"
+-- using sushi.db.* bindings backed by SQLite.
 
 -- JSON helpers (using native sushi bindings)
 local json_encode = sushi.json.encode
@@ -12,12 +10,31 @@ local function json_parse(s)
     return nil
 end
 
-local function make_response(status, body)
-    return json_encode({ status = status, body = body })
+local function error_response(status, msg)
+    return sushi.web.json(status, { error = tostring(msg) })
 end
 
-local function error_response(msg)
-    return json_encode({ error = msg })
+local function db_query(sql, params)
+    local ok, rows = pcall(function()
+        return sushi.db.query(sql, params)
+    end)
+    if not ok then return nil, tostring(rows) end
+    return rows
+end
+
+local function db_execute(sql, params)
+    local ok, err = pcall(function()
+        return sushi.db.execute(sql, params)
+    end)
+    if not ok then return nil, tostring(err) end
+    return true
+end
+
+local function kv_upsert(key, value)
+    return db_execute(
+        "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+        { key, value }
+    )
 end
 
 -- ========================
@@ -26,51 +43,57 @@ end
 
 -- GET /api/kv — list all entries
 local function api_list()
-    local ok, items = pcall(function() return sushi.kv.list() end)
-    if not ok then return error_response(items) end
-    return json_encode(items)
+    local rows, err = db_query("SELECT key, value FROM kv_store ORDER BY key", nil)
+    if not rows then return error_response(500, err) end
+    return json_encode(rows)
 end
 
 -- POST /api/kv — create entry {key, value}
 local function api_create(path, body)
     local data = json_parse(body)
     if not data or not data.key or not data.value then
-        return error_response("missing key or value")
+        return error_response(400, "missing key or value")
     end
-    local ok, err = pcall(function() sushi.kv.set(data.key, data.value) end)
-    if not ok then return error_response(err) end
+    if data.key == "" then
+        return error_response(400, "key cannot be empty")
+    end
+    local ok, err = kv_upsert(data.key, data.value)
+    if not ok then return error_response(500, err) end
     return json_encode({ key = data.key, value = data.value })
 end
 
 -- GET /api/kv/{key} — get single entry
 local function api_get_key(path)
     local key = path:match("^/api/kv/(.+)$")
-    if not key then return error_response("invalid path") end
-    local ok, value = pcall(function() return sushi.kv.get(key) end)
-    if not ok then return error_response(value) end
-    if value == nil then return error_response("key not found") end
-    return json_encode({ key = key, value = value })
+    if not key then return error_response(400, "invalid path") end
+    local rows, err = db_query("SELECT value FROM kv_store WHERE key = ?1", { key })
+    if not rows then return error_response(500, err) end
+    if #rows == 0 then return error_response(404, "key not found") end
+    return json_encode({ key = key, value = rows[1].value })
 end
 
 -- PUT /api/kv/{key} — update entry
 local function api_update_key(path, body)
     local key = path:match("^/api/kv/(.+)$")
-    if not key then return error_response("invalid path") end
+    if not key then return error_response(400, "invalid path") end
     local data = json_parse(body)
     if not data or not data.value then
-        return error_response("missing value")
+        return error_response(400, "missing value")
     end
-    local ok, err = pcall(function() sushi.kv.set(key, data.value) end)
-    if not ok then return error_response(err) end
+    if key == "" then
+        return error_response(400, "key cannot be empty")
+    end
+    local ok, err = kv_upsert(key, data.value)
+    if not ok then return error_response(500, err) end
     return json_encode({ key = key, value = data.value })
 end
 
 -- DELETE /api/kv/{key} — delete entry
 local function api_delete_key(path)
     local key = path:match("^/api/kv/(.+)$")
-    if not key then return error_response("invalid path") end
-    local ok, err = pcall(function() sushi.kv.delete(key) end)
-    if not ok then return error_response(err) end
+    if not key then return error_response(400, "invalid path") end
+    local ok, err = db_execute("DELETE FROM kv_store WHERE key = ?1", { key })
+    if not ok then return error_response(500, err) end
     return json_encode({ ok = true })
 end
 
@@ -93,7 +116,7 @@ local function kv_api_dispatch(args)
             return api_get_key(path)
         end
     end
-    return error_response("not found")
+    return error_response(404, "not found")
 end
 
 -- DELETE dispatch for /api/kv/* (no body)
@@ -106,169 +129,17 @@ end
 -- Admin Handler
 -- ========================
 
-local KV_ADMIN_HTML = [[<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KV Store — Sushi Admin</title>
-<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
-<script src="https://cdn.tailwindcss.com/3.4.17"></script>
-</head>
-<body class="bg-gray-100 min-h-screen">
-<div class="flex h-screen">
-  <nav class="w-60 bg-gray-900 text-white flex-shrink-0">
-    <div class="p-4 text-xl font-bold border-b border-gray-700">Sushi Admin</div>
-    <div class="mt-4">
-      <a href="/admin/" class="block px-4 py-2 hover:bg-gray-700">Dashboard</a>
-      <a href="/admin/plugins" class="block px-4 py-2 hover:bg-gray-700">Plugins</a>
-      <a href="/admin/users" class="block px-4 py-2 hover:bg-gray-700">Users</a>
-      <a href="/admin/config" class="block px-4 py-2 hover:bg-gray-700">Config</a>
-      <a href="/admin/logs" class="block px-4 py-2 hover:bg-gray-700">Logs</a>
-      <a href="/admin/kv" class="block px-4 py-2 bg-gray-700">KV Store</a>
-    </div>
-  </nav>
-  <main class="flex-1 p-6 overflow-auto" x-data="kvPage()">
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold">KV Store</h1>
-      <button @click="showAddModal = true; form = {key: '', value: ''}"
-        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Add Entry</button>
-    </div>
-    <div x-show="error" class="mb-4 p-3 bg-red-100 text-red-700 rounded" x-text="error"></div>
-    <div x-show="loading" class="text-gray-500">Loading...</div>
-    <div x-show="!loading">
-      <div class="bg-white rounded shadow overflow-hidden">
-        <table class="w-full">
-          <thead class="bg-gray-50 border-b">
-            <tr>
-              <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Key</th>
-              <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Value</th>
-              <th class="px-4 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="item in items" :key="item.key">
-              <tr class="border-b hover:bg-gray-50">
-                <td class="px-4 py-3 font-mono text-sm" x-text="item.key"></td>
-                <td class="px-4 py-3 font-mono text-sm truncate max-w-xs" x-text="item.value"></td>
-                <td class="px-4 py-3 text-right">
-                  <button @click="editItem(item)" class="text-blue-600 hover:text-blue-800 mr-3 text-sm font-medium">Edit</button>
-                  <button @click="deleteItem(item.key)" class="text-red-600 hover:text-red-800 text-sm font-medium">Delete</button>
-                </td>
-              </tr>
-            </template>
-            <tr x-show="items.length === 0">
-              <td colspan="3" class="px-4 py-8 text-center text-gray-500">No entries found. Add one to get started.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div x-show="showAddModal || showEditModal" x-transition
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none">
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="px-6 py-4 border-b">
-          <h2 class="text-lg font-semibold" x-text="showAddModal ? 'Add Entry' : 'Edit Entry'"></h2>
-        </div>
-        <form @submit.prevent="saveItem()" class="px-6 py-4 space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Key</label>
-            <input type="text" x-model="form.key" :disabled="showEditModal"
-              class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              :class="showEditModal ? 'bg-gray-100' : ''" required>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Value</label>
-            <input type="text" x-model="form.value"
-              class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-          </div>
-          <div class="flex justify-end gap-3 pt-2">
-            <button type="button" @click="closeModal()"
-              class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-            <button type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </main>
-</div>
-<script>
-function kvPage() {
-  return {
-    items: [],
-    loading: true,
-    error: null,
-    showAddModal: false,
-    showEditModal: false,
-    form: { key: '', value: '' },
-    async init() { await this.loadItems(); this.loading = false; },
-    async loadItems() {
-      try {
-        const resp = await fetch('/api/kv');
-        if (!resp.ok) throw new Error('Failed to load entries');
-        this.items = await resp.json();
-        this.error = null;
-      } catch (e) {
-        this.error = 'Could not load KV entries: ' + e.message;
-      }
-    },
-    editItem(item) {
-      this.form = { key: item.key, value: item.value };
-      this.showEditModal = true;
-    },
-    async deleteItem(key) {
-      if (!confirm('Delete "' + key + '"?')) return;
-      try {
-        const resp = await fetch('/api/kv/' + encodeURIComponent(key), { method: 'DELETE' });
-        if (!resp.ok) throw new Error('Failed to delete');
-        await this.loadItems();
-      } catch (e) {
-        this.error = 'Failed to delete: ' + e.message;
-      }
-    },
-    async saveItem() {
-      try {
-        let resp;
-        if (this.showAddModal) {
-          resp = await fetch('/api/kv', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.form)
-          });
-        } else {
-          resp = await fetch('/api/kv/' + encodeURIComponent(this.form.key), {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value: this.form.value })
-          });
-        }
-        if (!resp.ok) throw new Error('Failed to save');
-        this.closeModal();
-        await this.loadItems();
-      } catch (e) {
-        this.error = 'Failed to save: ' + e.message;
-      }
-    },
-    closeModal() {
-      this.showAddModal = false;
-      this.showEditModal = false;
-      this.form = { key: '', value: '' };
-    }
-  };
-}
-</script>
-</body></html>]]
-
 -- ========================
 -- CLI Handlers
 -- ========================
 
 local function cli_kv_list(args)
-    local ok, items = pcall(function() return sushi.kv.list() end)
-    if not ok then return "Error: " .. items end
-    if #items == 0 then return "No KV entries found." end
+    local rows, err = db_query("SELECT key, value FROM kv_store ORDER BY key", nil)
+    if not rows then return "Error: " .. tostring(err) end
+    if #rows == 0 then return "No KV entries found." end
     local lines = {}
-    for i = 1, #items do
-        lines[#lines + 1] = items[i].key .. " = " .. items[i].value
+    for i = 1, #rows do
+        lines[#lines + 1] = rows[i].key .. " = " .. rows[i].value
     end
     return table.concat(lines, "\n")
 end
@@ -276,23 +147,23 @@ end
 local function cli_kv_get(args)
     if not args[1] then return "Usage: sushi run kv-get <key>" end
     local key = args[1]
-    local ok, value = pcall(function() return sushi.kv.get(key) end)
-    if not ok then return "Error: " .. value end
-    if value == nil then return "Key not found: " .. key end
-    return value
+    local rows, err = db_query("SELECT value FROM kv_store WHERE key = ?1", { key })
+    if not rows then return "Error: " .. tostring(err) end
+    if #rows == 0 then return "Key not found: " .. key end
+    return rows[1].value
 end
 
 local function cli_kv_set(args)
     if not args[1] or not args[2] then return "Usage: sushi run kv-set <key> <value>" end
-    local ok, err = pcall(function() sushi.kv.set(args[1], args[2]) end)
-    if not ok then return "Error: " .. err end
+    local ok, err = kv_upsert(args[1], args[2])
+    if not ok then return "Error: " .. tostring(err) end
     return "OK: " .. args[1] .. " = " .. args[2]
 end
 
 local function cli_kv_delete(args)
     if not args[1] then return "Usage: sushi run kv-del <key>" end
-    local ok, err = pcall(function() sushi.kv.delete(args[1]) end)
-    if not ok then return "Error: " .. err end
+    local ok, err = db_execute("DELETE FROM kv_store WHERE key = ?1", { args[1] })
+    if not ok then return "Error: " .. tostring(err) end
     return "Deleted: " .. args[1]
 end
 
@@ -309,9 +180,7 @@ function sushi.init()
     sushi.api.route("DELETE", "/api/kv/*", kv_api_delete_dispatch)
 
     -- Admin page
-    sushi.admin.page("/admin/kv", "KV Store", function()
-        return KV_ADMIN_HTML
-    end)
+    sushi.web.page("/admin/kv", "plugins/kv-store/kv.html", { title = "KV Store" })
 
     -- CLI commands
     sushi.cli.command("kv-list", "List all KV entries", cli_kv_list)

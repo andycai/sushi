@@ -31,20 +31,18 @@ impl LuaPlugin {
                 continue;
             }
 
-            let manifest_content = tokio::fs::read_to_string(&manifest_path)
-                .await
-                .map_err(|e| {
-                    PluginError::ManifestError(format!("read {}: {e}", manifest_path.display()))
-                })?;
+            let manifest_content =
+                tokio::fs::read_to_string(&manifest_path)
+                    .await
+                    .map_err(|e| {
+                        PluginError::ManifestError(format!("read {}: {e}", manifest_path.display()))
+                    })?;
             let manifest: PluginManifest = toml::from_str(&manifest_content).map_err(|e| {
                 PluginError::ManifestError(format!("parse {}: {e}", manifest_path.display()))
             })?;
 
             let lua = create_sandboxed_vm().map_err(|e| {
-                PluginError::LuaError(format!(
-                    "create VM for {}: {e}",
-                    manifest.plugin.name
-                ))
+                PluginError::LuaError(format!("create VM for {}: {e}", manifest.plugin.name))
             })?;
 
             plugins.push(Self {
@@ -80,7 +78,10 @@ impl Plugin for LuaPlugin {
     async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
         // Take the Lua VM out of self (init should only be called once)
         let lua = self.lua.as_ref().ok_or_else(|| {
-            PluginError::InitFailed(format!("{}: already initialized", self.manifest.plugin.name))
+            PluginError::InitFailed(format!(
+                "{}: already initialized",
+                self.manifest.plugin.name
+            ))
         })?;
 
         // Inject sushi.* API into the Lua VM
@@ -90,13 +91,13 @@ impl Plugin for LuaPlugin {
 
         // Load and execute the entry script
         let entry_path = self.plugin_dir.join(&self.manifest.plugin.entry);
-        
+
         // Check file size limit (1MB max)
-        const MAX_PLUGIN_SIZE: u64 = 1024 * 1024;  // 1MB
+        const MAX_PLUGIN_SIZE: u64 = 1024 * 1024; // 1MB
         let metadata = tokio::fs::metadata(&entry_path)
             .await
             .map_err(|e| PluginError::LuaError(format!("stat {}: {e}", entry_path.display())))?;
-        
+
         if metadata.len() > MAX_PLUGIN_SIZE {
             return Err(PluginError::LuaError(format!(
                 "plugin {} code too large: {} bytes (max: {} bytes)",
@@ -105,7 +106,7 @@ impl Plugin for LuaPlugin {
                 MAX_PLUGIN_SIZE
             )));
         }
-        
+
         let code = tokio::fs::read_to_string(&entry_path)
             .await
             .map_err(|e| PluginError::LuaError(format!("read {}: {e}", entry_path.display())))?;
@@ -121,11 +122,9 @@ impl Plugin for LuaPlugin {
             .map_err(|e| PluginError::LuaError(format!("no sushi global: {e}")))?;
 
         if let Ok(init_fn) = sushi.get::<mlua::Function>("init") {
-            init_fn
-                .call::<()>(())
-                .map_err(|e| {
-                    PluginError::InitFailed(format!("{}.init(): {e}", self.manifest.plugin.name))
-                })?;
+            init_fn.call::<()>(()).map_err(|e| {
+                PluginError::InitFailed(format!("{}.init(): {e}", self.manifest.plugin.name))
+            })?;
         }
 
         let plugin_name = &self.manifest.plugin.name;
@@ -143,7 +142,10 @@ impl Plugin for LuaPlugin {
                         .await;
                     tracing::debug!(
                         "plugin {} registered route {} {} (handler: {})",
-                        plugin_name, method, path, handler_key
+                        plugin_name,
+                        method,
+                        path,
+                        handler_key
                     );
                 }
             }
@@ -161,7 +163,9 @@ impl Plugin for LuaPlugin {
                         .await;
                     tracing::debug!(
                         "plugin {} registered command {} (handler: {})",
-                        plugin_name, name, handler_key
+                        plugin_name,
+                        name,
+                        handler_key
                     );
                 }
             }
@@ -180,7 +184,10 @@ impl Plugin for LuaPlugin {
                         .await;
                     tracing::debug!(
                         "plugin {} registered page {} ({}) (handler: {})",
-                        plugin_name, path, title, handler_key
+                        plugin_name,
+                        path,
+                        title,
+                        handler_key
                     );
                 }
             }
@@ -206,13 +213,35 @@ mod tests {
     use crate::auth::jwt::JwtService;
     use crate::config::ConfigStore;
     use crate::storage::sqlite::SqliteStorage;
+    use crate::web::template_service::TemplateService;
+    use std::ops::Deref;
     use tempfile::TempDir;
 
-    async fn test_context() -> SushiContext {
+    struct TestContext {
+        ctx: SushiContext,
+        _templates_dir: TempDir,
+    }
+
+    impl Deref for TestContext {
+        type Target = SushiContext;
+
+        fn deref(&self) -> &Self::Target {
+            &self.ctx
+        }
+    }
+
+    async fn test_context() -> TestContext {
         let config = ConfigStore::new(crate::config::SushiConfig::default());
         let db = SqliteStorage::new_in_memory().await.unwrap();
         let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
-        SushiContext::new(config, db, jwt)
+
+        let templates_dir = tempfile::tempdir().unwrap();
+        let templates = TemplateService::new(templates_dir.path()).unwrap();
+
+        TestContext {
+            ctx: SushiContext::new(config, db, jwt, templates),
+            _templates_dir: templates_dir,
+        }
     }
 
     fn create_plugin_dir(parent: &Path, name: &str) -> PathBuf {
@@ -241,6 +270,35 @@ end)
         std::fs::write(dir.join("init.lua"), init_lua).unwrap();
 
         dir
+    }
+
+    #[test]
+    fn kv_store_plugin_no_longer_embeds_html() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let plugin_source = std::fs::read_to_string(&plugin_path).unwrap();
+
+        assert!(!plugin_source.contains("<!DOCTYPE html>"));
+        assert!(!plugin_source.contains("<html"));
+        assert!(!plugin_source.contains("sushi.admin.page"));
+        assert!(plugin_source.contains("sushi.web.page"));
+        assert!(plugin_source.contains("plugins/kv-store/kv.html"));
+
+        let template_path = repo_root.join("web/templates/plugins/kv-store/kv.html");
+        assert!(template_path.exists());
+        let template_source = std::fs::read_to_string(&template_path).unwrap();
+        assert!(template_source.contains("{% extends \"base.html\" %}"));
+        assert!(!template_source.contains("http://"));
+        assert!(!template_source.contains("https://"));
+
+        let static_path = repo_root.join("web/static/plugins/kv-store/kv.js");
+        assert!(static_path.exists());
+        let static_source = std::fs::read_to_string(&static_path).unwrap();
+        assert!(static_source.contains("kvPage"));
+        assert!(!static_source.contains("http://"));
+        assert!(!static_source.contains("https://"));
     }
 
     #[tokio::test]

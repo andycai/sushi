@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::context::SushiContext;
+use crate::db::{DbGatewayError, DbPermission};
 use crate::kv::KvStore;
 use crate::plugin::Permissions;
 use mlua::{Lua, LuaSerdeExt};
@@ -10,6 +11,56 @@ static HANDLER_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn next_handler_key() -> String {
     format!("h_{}", HANDLER_COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+fn map_db_permission(permission: &crate::plugin::DatabasePermission) -> Option<DbPermission> {
+    match permission {
+        crate::plugin::DatabasePermission::ReadOnly => Some(DbPermission::ReadOnly),
+        crate::plugin::DatabasePermission::Write => Some(DbPermission::Write),
+        crate::plugin::DatabasePermission::Admin => Some(DbPermission::Admin),
+        crate::plugin::DatabasePermission::None => None,
+    }
+}
+
+fn lua_params(lua: &Lua, params: Option<mlua::Value>) -> Result<Vec<serde_json::Value>, mlua::Error> {
+    match params {
+        None | Some(mlua::Value::Nil) => Ok(Vec::new()),
+        Some(value) => lua.from_value(value),
+    }
+}
+
+fn map_db_gateway_error(err: DbGatewayError) -> mlua::Error {
+    match err {
+        DbGatewayError::PermissionDenied(message) => mlua::Error::RuntimeError(message),
+        other => mlua::Error::ExternalError(
+            Arc::new(other) as Arc<dyn std::error::Error + Send + Sync>
+        ),
+    }
+}
+
+fn build_web_context(
+    lua: &Lua,
+    context: Option<mlua::Table>,
+    static_url_prefix: &str,
+) -> Result<serde_json::Value, mlua::Error> {
+    let mut json_ctx = match context {
+        Some(table) => lua.from_value(mlua::Value::Table(table))?,
+        None => serde_json::Value::Object(serde_json::Map::new()),
+    };
+
+    match &mut json_ctx {
+        serde_json::Value::Object(map) => {
+            map.insert(
+                "static_url_prefix".to_string(),
+                serde_json::Value::String(static_url_prefix.to_string()),
+            );
+            Ok(json_ctx)
+        }
+        _ => Ok(serde_json::json!({
+            "static_url_prefix": static_url_prefix,
+            "data": json_ctx,
+        })),
+    }
 }
 
 /// Inject the `sushi` global table into the Lua VM.
@@ -139,13 +190,162 @@ pub async fn inject_sushi_api(
         sushi.set("admin", admin_table)?;
     }
 
-    // sushi.kv -- if database permitted (not None)
-    if permissions.database != crate::plugin::DatabasePermission::None {
+    if permissions.admin || permissions.routes {
+        let static_url_prefix = {
+            let cfg = ctx.config.get().await;
+            cfg.web.static_url_prefix.clone()
+        };
+        let templates = ctx.templates.clone();
+
+        let web_table = lua.create_table()?;
+
+        let render_templates = templates.clone();
+        let render_prefix = static_url_prefix.clone();
+        web_table.set(
+            "render",
+            lua.create_function(
+                move |lua, (name, context): (String, Option<mlua::Table>)| {
+                    let json_ctx = build_web_context(lua, context, &render_prefix)?;
+                    render_templates
+                        .render(&name, json_ctx)
+                        .map_err(|e| mlua::Error::RuntimeError(format!("web render error: {e}")))
+                },
+            )?,
+        )?;
+
+        let page_templates = templates.clone();
+        let page_prefix = static_url_prefix.clone();
+        let page_admin = permissions.admin;
+        web_table.set(
+            "page",
+            lua.create_function(
+                move |lua,
+                      (path, template_name, opts): (String, String, Option<mlua::Table>)| {
+                    if !page_admin {
+                        return Err(mlua::Error::RuntimeError(
+                            "sushi.web.page requires admin permission".to_string(),
+                        ));
+                    }
+
+                    let (title, context_table) = match opts {
+                        Some(table) => {
+                            let title = match table.get::<mlua::Value>("title")? {
+                                mlua::Value::Nil => template_name.clone(),
+                                mlua::Value::String(value) => value.to_str()?.to_string(),
+                                _ => {
+                                    return Err(mlua::Error::RuntimeError(
+                                        "sushi.web.page opts.title must be a string".to_string(),
+                                    ))
+                                }
+                            };
+                            let context = match table.get::<mlua::Value>("context")? {
+                                mlua::Value::Nil => None,
+                                mlua::Value::Table(ctx) => Some(ctx),
+                                _ => {
+                                    return Err(mlua::Error::RuntimeError(
+                                        "sushi.web.page opts.context must be a table".to_string(),
+                                    ))
+                                }
+                            };
+                            (title, context)
+                        }
+                        None => (template_name.clone(), None),
+                    };
+
+                    let json_ctx = build_web_context(lua, context_table, &page_prefix)?;
+                    let handler_key = next_handler_key();
+
+                    let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    let handlers: mlua::Table = sushi.get("__handlers")?;
+                    let pending: mlua::Table = sushi.get("__pending_pages")?;
+
+                    let handler_templates = page_templates.clone();
+                    let handler_template_name = template_name.clone();
+                    let handler_context = json_ctx.clone();
+                    let handler = lua.create_async_function(move |_lua: Lua, ()| {
+                        let templates = handler_templates.clone();
+                        let template_name = handler_template_name.clone();
+                        let context = handler_context.clone();
+                        async move {
+                            templates
+                                .render(&template_name, context)
+                                .map_err(|e| {
+                                    mlua::Error::RuntimeError(format!("web render error: {e}"))
+                                })
+                        }
+                    })?;
+
+                    handlers.set(&*handler_key, handler)?;
+
+                    let entry = lua.create_table()?;
+                    entry.set("path", path)?;
+                    entry.set("title", title)?;
+                    entry.set("handler_key", handler_key)?;
+                    let len = pending.raw_len();
+                    pending.set(len + 1, entry)?;
+                    Ok(())
+                },
+            )?,
+        )?;
+
+        web_table.set(
+            "json",
+            lua.create_function(|lua, (status, data): (u16, mlua::Value)| {
+                let json_data: serde_json::Value = lua.from_value(data)?;
+                let envelope = serde_json::json!({
+                    "__sushi_web_json": true,
+                    "status": status,
+                    "body": json_data,
+                });
+                serde_json::to_string(&envelope)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("json encode error: {e}")))
+            })?,
+        )?;
+
+        sushi.set("web", web_table)?;
+    }
+
+    // sushi.db and sushi.kv -- only when a database permission is granted
+    if let Some(gateway_permission) = map_db_permission(&permissions.database) {
         let kv_store = KvStore::new(ctx.db.clone());
         let kv_table = lua.create_table()?;
-        let db_permission = permissions.database.clone();
+        let plugin_db_permission = permissions.database.clone();
+        let db_gateway = ctx.db_gateway.with_permission(gateway_permission);
 
-        // GET and LIST: allowed for ReadOnly, Write, and Admin
+        let db_table = lua.create_table()?;
+
+        let db_query_gateway = db_gateway.clone();
+        db_table.set(
+            "query",
+            lua.create_async_function(move |lua, (sql, params): (String, Option<mlua::Value>)| {
+                let gateway = db_query_gateway.clone();
+                async move {
+                    let params = lua_params(&lua, params)?;
+                    let rows = gateway.query(&sql, params).await.map_err(map_db_gateway_error)?;
+                    lua.to_value(&rows)
+                }
+            })?,
+        )?;
+
+        let db_execute_gateway = db_gateway.clone();
+        db_table.set(
+            "execute",
+            lua.create_async_function(move |lua, (sql, params): (String, Option<mlua::Value>)| {
+                let gateway = db_execute_gateway.clone();
+                async move {
+                    let params = lua_params(&lua, params)?;
+                    gateway
+                        .execute(&sql, params)
+                        .await
+                        .map_err(map_db_gateway_error)?;
+                    Ok(())
+                }
+            })?,
+        )?;
+
+        sushi.set("db", db_table)?;
+
+        // sushi.kv GET and LIST: allowed for ReadOnly, Write, and Admin
         let kv_store_get = kv_store.clone();
         kv_table.set(
             "get",
@@ -153,9 +353,13 @@ pub async fn inject_sushi_api(
                 let kv = kv_store_get.clone();
                 async move {
                     match kv.get(&key).await {
-                        Ok(Some(value)) => Ok(mlua::Value::String(lua.create_string(&value).unwrap())),
+                        Ok(Some(value)) => {
+                            Ok(mlua::Value::String(lua.create_string(&value).unwrap()))
+                        }
                         Ok(None) => Ok(mlua::Value::Nil),
-                        Err(e) => Err(mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>)),
+                        Err(e) => Err(mlua::Error::ExternalError(
+                            Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
+                        )),
                     }
                 }
             })?,
@@ -178,24 +382,29 @@ pub async fn inject_sushi_api(
                             }
                             Ok(mlua::Value::Table(table))
                         }
-                        Err(e) => Err(mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>)),
+                        Err(e) => Err(mlua::Error::ExternalError(
+                            Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
+                        )),
                     }
                 }
             })?,
         )?;
 
-        // SET and DELETE: only allowed for Write and Admin
-        if db_permission == crate::plugin::DatabasePermission::Write 
-            || db_permission == crate::plugin::DatabasePermission::Admin {
+        // sushi.kv SET and DELETE: only allowed for Write and Admin
+        if plugin_db_permission == crate::plugin::DatabasePermission::Write
+            || plugin_db_permission == crate::plugin::DatabasePermission::Admin
+        {
             let kv_store_set = kv_store.clone();
             kv_table.set(
                 "set",
                 lua.create_async_function(move |_lua: Lua, (key, value): (String, String)| {
                     let kv = kv_store_set.clone();
                     async move {
-                        kv.set(&key, &value)
-                            .await
-                            .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
+                        kv.set(&key, &value).await.map_err(|e| {
+                            mlua::Error::ExternalError(
+                                Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
+                            )
+                        })
                     }
                 })?,
             )?;
@@ -206,14 +415,15 @@ pub async fn inject_sushi_api(
                 lua.create_async_function(move |_lua: Lua, key: String| {
                     let kv = kv_store_del.clone();
                     async move {
-                        kv.delete(&key)
-                            .await
-                            .map_err(|e| mlua::Error::ExternalError(Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>))
+                        kv.delete(&key).await.map_err(|e| {
+                            mlua::Error::ExternalError(
+                                Arc::new(e) as Arc<dyn std::error::Error + Send + Sync>
+                            )
+                        })
                     }
                 })?,
             )?;
         }
-
 
         sushi.set("kv", kv_table)?;
     }
@@ -257,29 +467,27 @@ pub async fn inject_sushi_api(
     {
         let event_bus = ctx.event.clone();
         let event_table = lua.create_table()?;
-        
+
         // Store Lua handlers in a table for potential future use
         let handlers_table = lua.create_table()?;
         sushi.set("__event_handlers", handlers_table)?;
-        
+
         event_table.set(
             "on",
             lua.create_function(|lua, (event, callback): (String, mlua::Function)| {
                 // Store the handler for potential future use
                 let sushi: mlua::Table = lua.globals().get("sushi")?;
                 let handlers: mlua::Table = sushi.get("__event_handlers")?;
-                
                 // Create or get event handler list
                 let event_handlers: mlua::Table = handlers.get(event.clone()).unwrap_or_else(|_| lua.create_table().unwrap());
                 let len = event_handlers.raw_len();
                 event_handlers.set(len + 1, callback)?;
                 handlers.set(event, event_handlers)?;
-                
                 tracing::debug!("Lua event handler registered (note: full async event support requires architectural changes)");
                 Ok(())
             })?,
         )?;
-        
+
         let event_bus_emit = event_bus.clone();
         event_table.set(
             "emit",
@@ -291,10 +499,10 @@ pub async fn inject_sushi_api(
                         Ok(v) => v,
                         Err(_) => serde_json::Value::Null,
                     };
-                    
+
                     // Emit to event bus (async)
                     bus.emit(&event, &json_data).await;
-                    
+
                     tracing::debug!("Lua event emitted: {}", event);
                     Ok(())
                 }
@@ -341,15 +549,40 @@ mod tests {
     use crate::auth::jwt::JwtService;
     use crate::config::ConfigStore;
     use crate::lua::vm::create_sandboxed_vm;
+    use crate::plugin::DatabasePermission;
     use crate::plugin::Permissions;
     use crate::storage::sqlite::SqliteStorage;
+    use crate::storage::Storage;
+    use crate::web::template_service::TemplateService;
+    use std::ops::Deref;
+    use tempfile::TempDir;
+
+    struct TestContext {
+        ctx: SushiContext,
+        _templates_dir: TempDir,
+    }
+
+    impl Deref for TestContext {
+        type Target = SushiContext;
+
+        fn deref(&self) -> &Self::Target {
+            &self.ctx
+        }
+    }
 
     /// Build a minimal SushiContext for testing bindings.
-    async fn test_context() -> SushiContext {
+    async fn test_context() -> TestContext {
         let config = ConfigStore::new(crate::config::SushiConfig::default());
         let db = SqliteStorage::new_in_memory().await.unwrap();
         let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
-        SushiContext::new(config, db, jwt)
+
+        let templates_dir = tempfile::tempdir().unwrap();
+        let templates = TemplateService::new(templates_dir.path()).unwrap();
+
+        TestContext {
+            ctx: SushiContext::new(config, db, jwt, templates),
+            _templates_dir: templates_dir,
+        }
     }
 
     #[tokio::test]
@@ -414,6 +647,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_lua_db_injected_with_database_permission() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+
+        let permissions = Permissions::default();
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+        let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+        assert!(!sushi.contains_key("db").unwrap());
+
+        let lua = create_sandboxed_vm().unwrap();
+        let mut permissions = Permissions::default();
+        permissions.database = DatabasePermission::ReadOnly;
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+        let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+        assert!(sushi.contains_key("db").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_lua_db_execute_denied_readonly() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.database = DatabasePermission::ReadOnly;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<mlua::Value> = lua
+            .load("return sushi.db.execute('CREATE TABLE denied (id INTEGER)')")
+            .eval_async()
+            .await;
+
+        match result {
+            Err(err) => {
+                let message = err.to_string();
+                assert!(message.contains("does not allow"));
+            }
+            Ok(_) => panic!("expected permission error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_lua_db_query_params_handling() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.database = DatabasePermission::ReadOnly;
+
+        Storage::execute(
+            &*ctx.db,
+            "CREATE TABLE test_items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+            vec![],
+        )
+        .await
+        .unwrap();
+        Storage::execute(
+            &*ctx.db,
+            "INSERT INTO test_items (name) VALUES (?1)",
+            vec![serde_json::Value::String("ok".to_string())],
+        )
+        .await
+        .unwrap();
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let rows_value: mlua::Value = lua
+            .load("return sushi.db.query('SELECT name FROM test_items ORDER BY id')")
+            .eval_async()
+            .await
+            .unwrap();
+        let rows: Vec<serde_json::Value> = lua.from_value(rows_value).unwrap();
+        assert_eq!(rows.len(), 1);
+
+        let rows_with_nil_value: mlua::Value = lua
+            .load("return sushi.db.query('SELECT name FROM test_items ORDER BY id', nil)")
+            .eval_async()
+            .await
+            .unwrap();
+        let rows_with_nil: Vec<serde_json::Value> = lua.from_value(rows_with_nil_value).unwrap();
+        assert_eq!(rows_with_nil.len(), 1);
+
+        let rows_with_params_value: mlua::Value = lua
+            .load("return sushi.db.query('SELECT name FROM test_items WHERE name = ?1', { 'ok' })")
+            .eval_async()
+            .await
+            .unwrap();
+        let rows_with_params: Vec<serde_json::Value> =
+            lua.from_value(rows_with_params_value).unwrap();
+        assert_eq!(rows_with_params.len(), 1);
+
+        let invalid_params: mlua::Result<mlua::Value> = lua
+            .load("return sushi.db.query('SELECT name FROM test_items WHERE name = ?1', 'bad')")
+            .eval_async()
+            .await;
+        assert!(invalid_params.is_err());
+    }
+
+    #[tokio::test]
     async fn test_no_api_without_routes_permission() {
         let lua = create_sandboxed_vm().unwrap();
         let ctx = test_context().await;
@@ -439,6 +769,161 @@ mod tests {
         lua.load("sushi.log.info('hello from lua')").exec().unwrap();
         lua.load("sushi.log.warn('warning')").exec().unwrap();
         lua.load("sushi.log.error('error')").exec().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_render_renders_template() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        let templates_root = ctx._templates_dir.path().join("admin");
+        std::fs::create_dir_all(&templates_root).unwrap();
+        std::fs::write(
+            templates_root.join("login.html"),
+            "Sushi Admin {{ title }} {{ static_url_prefix }}",
+        )
+        .unwrap();
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let rendered: String = lua
+            .load(r#"return sushi.web.render("admin/login.html", { title = "Login" })"#)
+            .eval()
+            .unwrap();
+
+        let static_url_prefix = {
+            let cfg = ctx.config.get().await;
+            cfg.web.static_url_prefix.clone()
+        };
+
+        assert!(!static_url_prefix.is_empty());
+        assert!(rendered.contains("Sushi Admin"));
+        let escaped_prefix = static_url_prefix.replace('/', "&#x2f;");
+        assert!(rendered.contains(&escaped_prefix));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_available_with_routes_permission() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.routes = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+        assert!(sushi.contains_key("web").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_registers_and_renders_template() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        let templates_root = ctx._templates_dir.path().join("admin");
+        std::fs::create_dir_all(&templates_root).unwrap();
+        std::fs::write(templates_root.join("page.html"), "Page {{ name }}").unwrap();
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        lua.load(
+            r#"sushi.web.page("/admin/lua", "admin/page.html", { title = "Lua Page", context = { name = "Lua" } })"#,
+        )
+        .exec()
+        .unwrap();
+
+        let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+        let pending: mlua::Table = sushi.get("__pending_pages").unwrap();
+        assert_eq!(pending.raw_len(), 1);
+        let entry: mlua::Table = pending.get(1).unwrap();
+        assert_eq!(entry.get::<String>("path").unwrap(), "/admin/lua");
+        assert_eq!(entry.get::<String>("title").unwrap(), "Lua Page");
+
+        let handler_key: String = entry.get("handler_key").unwrap();
+        let handlers: mlua::Table = sushi.get("__handlers").unwrap();
+        let handler: mlua::Function = handlers.get(handler_key).unwrap();
+        let rendered: String = handler.call_async(()).await.unwrap();
+        assert!(rendered.contains("Page Lua"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_json_envelope_shape() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.routes = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let rendered: String = lua
+            .load(r#"return sushi.web.json(201, { ok = true })"#)
+            .eval()
+            .unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(
+            value.get("__sushi_web_json").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(value.get("status").and_then(|v| v.as_u64()), Some(201));
+        assert_eq!(
+            value.get("body").and_then(|v| v.get("ok")).and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_errors_without_admin_permission() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.routes = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(r#"sushi.web.page("/admin/lua", "admin/page.html")"#)
+            .exec();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_static_url_prefix_not_overridable() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        let templates_root = ctx._templates_dir.path().join("admin");
+        std::fs::create_dir_all(&templates_root).unwrap();
+        std::fs::write(
+            templates_root.join("override.html"),
+            "Prefix {{ static_url_prefix }}",
+        )
+        .unwrap();
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let rendered: String = lua
+            .load(
+                r#"return sushi.web.render("admin/override.html", { static_url_prefix = "/evil" })"#,
+            )
+            .eval()
+            .unwrap();
+
+        let static_url_prefix = {
+            let cfg = ctx.config.get().await;
+            cfg.web.static_url_prefix.clone()
+        };
+
+        let escaped_prefix = static_url_prefix.replace('/', "&#x2f;");
+        let escaped_override = "/evil".replace('/', "&#x2f;");
+        assert!(rendered.contains(&escaped_prefix));
+        assert!(!rendered.contains(&escaped_override));
     }
 
     #[tokio::test]

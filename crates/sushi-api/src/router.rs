@@ -2,6 +2,7 @@ use crate::routes::auth;
 use crate::routes::users;
 use axum::response::IntoResponse;
 use axum::Router;
+use serde_json::Value;
 use std::sync::Arc;
 use sushi_core::auth::middleware::require_auth;
 use sushi_core::context::SushiContext;
@@ -115,12 +116,23 @@ async fn plugin_api_dispatch(
     };
 
     match state.plugins.call_api_handler(&method, &path, body).await {
-        Some(Ok(response_body)) => (
-            axum::http::StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            response_body,
-        )
-            .into_response(),
+        Some(Ok(response_body)) => {
+            if let Some((status, body)) = parse_status_envelope(&response_body) {
+                (
+                    status,
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    body,
+                )
+                    .into_response()
+            } else {
+                (
+                    axum::http::StatusCode::OK,
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    response_body,
+                )
+                    .into_response()
+            }
+        }
         Some(Err(e)) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             [(axum::http::header::CONTENT_TYPE, "text/plain")],
@@ -133,5 +145,212 @@ async fn plugin_api_dispatch(
             "not found".to_string(),
         )
             .into_response(),
+    }
+}
+
+fn parse_status_envelope(body: &str) -> Option<(axum::http::StatusCode, String)> {
+    let parsed: Value = serde_json::from_str(body).ok()?;
+    let obj = parsed.as_object()?;
+    let sentinel = obj.get("__sushi_web_json")?.as_bool()?;
+    if !sentinel {
+        return None;
+    }
+    let status = obj.get("status")?.as_u64()?;
+    let status_u16 = u16::try_from(status).ok()?;
+    let status_code = axum::http::StatusCode::from_u16(status_u16).ok()?;
+    let payload = obj.get("body")?;
+    let encoded = serde_json::to_string(payload).ok()?;
+    Some((status_code, encoded))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use axum::body::Body;
+    use axum::extract::State;
+    use axum::http::{header, Request};
+    use sushi_core::auth::jwt::JwtService;
+    use sushi_core::config::{ConfigStore, SushiConfig};
+    use sushi_core::context::SushiContext;
+    use sushi_core::lua::vm::create_sandboxed_vm;
+    use sushi_core::storage::sqlite::SqliteStorage;
+    use sushi_core::web::template_service::TemplateService;
+    use tower::ServiceExt;
+
+    const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
+
+    async fn test_context() -> SushiContext {
+        let config = ConfigStore::new(SushiConfig::default());
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        storage.run_migrations(MIGRATION_SQL).await.unwrap();
+        let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+
+        let templates_root = std::env::temp_dir()
+            .join(format!("sushi-api-router-test-{}", std::process::id()));
+        std::fs::create_dir_all(&templates_root).unwrap();
+        let templates = TemplateService::new(&templates_root).unwrap();
+
+        SushiContext::new(config, storage, jwt, templates)
+    }
+
+    #[tokio::test]
+    async fn test_plugin_api_dispatch_applies_status_envelope() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_test";
+        let handler = lua
+            .create_async_function(|_, ()| async {
+                Ok(r#"{"__sushi_web_json":true,"status":201,"body":{"ok":true}}"#.to_string())
+            })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .await;
+
+        let state = PluginApiState {
+            plugins: manager,
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/test")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(body, r#"{"ok":true}"#);
+    }
+
+    #[tokio::test]
+    async fn test_plugin_api_dispatch_keeps_non_envelope_body() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_test";
+        let handler = lua
+            .create_async_function(|_, ()| async {
+                Ok(r#"{"status":201,"body":{"ok":true}}"#.to_string())
+            })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .await;
+
+        let state = PluginApiState {
+            plugins: manager,
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/test")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(body, r#"{"status":201,"body":{"ok":true}}"#);
+    }
+
+    #[tokio::test]
+    async fn test_build_app_allows_login_without_token() {
+        let ctx = test_context().await;
+        let app = build_app(&ctx);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/auth/login")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"username":"missing","password":"does-not-matter"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Request reaches login handler; it should not be blocked by middleware.
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("Invalid credentials"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn test_build_app_requires_auth_for_users_route() {
+        let ctx = test_context().await;
+        let app = build_app(&ctx);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/users")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("Missing authorization credentials"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn test_build_app_accepts_cookie_token_for_users_route() {
+        let ctx = test_context().await;
+        let app = build_app(&ctx);
+        let token = ctx
+            .jwt
+            .create_access_token(1, "admin", "admin")
+            .expect("failed to create test access token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/users")
+                    .header(header::COOKIE, format!("sushi_token={token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }
