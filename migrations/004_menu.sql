@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
     position INTEGER NOT NULL DEFAULT 0,
     parent_id INTEGER,
     route TEXT,
+    is_hidden INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (parent_id) REFERENCES menu_items(id) ON DELETE SET NULL
 );
