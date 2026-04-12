@@ -1,0 +1,46 @@
+{% macro nav_link(href, label, key) %}
+  <a
+    href="{{ href }}"
+    class="block px-4 py-2 hover:bg-gray-700 {% if active_section == key %}bg-gray-700{% endif %}"
+  >
+    {{ label }}
+  </a>
+{% endmacro %}
+
+{% set static_prefix = static_url_prefix | default(value="/static") %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Sushi Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ static_prefix }}/admin/css/admin.css">
+  <script defer src="{{ static_prefix }}/js/alpine-3.14.1.js"></script>
+  <script defer src="{{ static_prefix }}/js/htmx.min-2.0.8.js"></script>
+  <script defer src="{{ static_prefix }}/js/tailwindcss-3.4.17.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}bg-gray-100 min-h-screen{% endblock %}">
+  <div class="flex min-h-screen">
+    {% block nav %}
+    {% set active_section = active_section or "" %}
+    <nav class="w-60 bg-gray-900 text-white flex-shrink-0">
+      <div class="p-4 text-xl font-bold border-b border-gray-700">Sushi Admin</div>
+      <div class="mt-4 space-y-1">
+        {{ nav_link('/admin/', 'Dashboard', 'dashboard') }}
+        {{ nav_link('/admin/plugins', 'Plugins', 'plugins') }}
+        {{ nav_link('/admin/users', 'Users', 'users') }}
+        {{ nav_link('/admin/config', 'Config', 'config') }}
+        {{ nav_link('/admin/kv', 'KV Store', 'kv') }}
+        {{ nav_link('/admin/logs', 'Logs', 'logs') }}
+      </div>
+    </nav>
+    {% endblock %}
+    <main class="flex-1 p-6 overflow-auto {% block additional_main_classes %}{% endblock %}" {% block main_attrs %}{% endblock %}>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,5 +1,7 @@
-use axum::response::Html;
+use axum::extract::State;
+use axum::response::IntoResponse;
+use sushi_core::context::SushiContext;
 
-pub async fn config_page() -> Html<&'static str> {
-    Html(include_str!("../../templates/admin/config.html"))
+pub async fn config_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
+    crate::render::render_template(&ctx, "admin/config.html").await
 }

@@ -1,4 +1,4 @@
-use crate::routes::{dashboard, plugins, users, config, logs};
+use crate::routes::{dashboard, plugins, users, config, logs, login};
 use axum::{
     extract::Request,
     middleware::Next,
@@ -7,18 +7,34 @@ use axum::{
     Router,
 };
 use serde_json::json;
+use std::collections::HashSet;
 use std::sync::Arc;
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::context::SushiContext;
+use tower_http::services::ServeDir;
 
 /// Admin auth middleware state
 #[derive(Clone)]
 pub struct AdminAuthState {
     pub jwt: Arc<JwtService>,
+    pub static_url_prefix: String,
 }
 
 pub async fn build_admin_router(ctx: &SushiContext) -> Router {
-    let mut router: Router = Router::new()
+    let (static_dir, static_url_prefix) = {
+        let cfg = ctx.config.get().await;
+        (cfg.web.static_dir.clone(), cfg.web.static_url_prefix.clone())
+    };
+    let plugin_pages = ctx.plugins.list_admin_pages().await;
+
+    let static_url_prefix = crate::render::normalize_static_url_prefix(&static_url_prefix);
+
+    let static_router: Router<SushiContext> =
+        Router::new().nest_service(&static_url_prefix, ServeDir::new(static_dir)).with_state(());
+
+    let mut router: Router<SushiContext> = Router::new()
+        .merge(static_router)
+        .route("/admin-login", get(login::login_page))
         .route("/admin", get(axum::response::Redirect::temporary("/admin/")))
         .route("/admin/", get(dashboard::dashboard_page))
         .route("/admin/plugins", get(plugins::plugins_page))
@@ -27,9 +43,24 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route("/admin/logs", get(logs::logs_page))
         .route("/admin/api/plugins", get(list_plugins_api));
 
+    let reserved_paths: HashSet<&str> = HashSet::from([
+        "/admin-login",
+        "/admin",
+        "/admin/",
+        "/admin/plugins",
+        "/admin/users",
+        "/admin/config",
+        "/admin/logs",
+        "/admin/api/plugins",
+    ]);
+
     // Add dynamic admin pages from Lua plugins
-    let plugin_pages = ctx.plugins.list_admin_pages().await;
     for page_path in plugin_pages {
+        if reserved_paths.contains(page_path.as_str()) {
+            tracing::warn!("skip plugin admin page due to route collision: {page_path}");
+            continue;
+        }
+
         let path = page_path.clone();
         let pm = ctx.plugins.clone();
         router = router.route(
@@ -49,9 +80,15 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
 
     let auth_state = AdminAuthState {
         jwt: Arc::clone(&ctx.jwt),
+        static_url_prefix,
     };
     
-    router.layer(axum::middleware::from_fn_with_state(auth_state, admin_auth_middleware))
+    router
+        .layer(axum::middleware::from_fn_with_state(
+            auth_state,
+            admin_auth_middleware,
+        ))
+        .with_state(ctx.clone())
 }
 
 async fn list_plugins_api() -> impl IntoResponse {
@@ -70,15 +107,20 @@ async fn admin_auth_middleware(
     req: Request,
     next: Next,
 ) -> impl IntoResponse {
-    let path = req.uri().path().to_string();
+    let path = req.uri().path();
 
     // Redirect /admin (no trailing slash) to /admin/ (with trailing slash)
     if path == "/admin" {
         return axum::response::Redirect::temporary("/admin/").into_response();
     }
 
-    // Allow /admin-login (top-level) without auth — handled by login_router
+    // Allow /admin-login (top-level) without auth — handled by login route
     if path == "/admin-login" {
+        return next.run(req).await;
+    }
+
+    // Allow static assets without auth
+    if matches_static_prefix(path, &state.static_url_prefix) {
         return next.run(req).await;
     }
 
@@ -121,5 +163,16 @@ async fn admin_auth_middleware(
             next.run(req).await
         }
         Err(_) => axum::response::Redirect::temporary("/admin-login").into_response(),
+    }
+}
+
+fn matches_static_prefix(path: &str, prefix: &str) -> bool {
+    if path == prefix {
+        return true;
+    }
+
+    match path.strip_prefix(prefix) {
+        Some(rest) => rest.starts_with('/'),
+        None => false,
     }
 }
