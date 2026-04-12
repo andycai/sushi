@@ -40,6 +40,20 @@
     };
   }
 
+  function fallbackDataTable() {
+    return {
+      query: '',
+      totalRows: 0,
+      visibleRows: 0,
+      emptyFiltered: false,
+      apply() {},
+      onAfterSwap() {},
+      reset() {
+        this.query = '';
+      },
+    };
+  }
+
   window.kvPage = function kvPage() {
     const makeEntryForm = () => ({
       key: '',
@@ -55,22 +69,36 @@
       window.AdminUI && typeof window.AdminUI.createModal === 'function'
         ? window.AdminUI.createModal
         : fallbackModal;
+    const drawerFactory =
+      window.AdminUI && typeof window.AdminUI.createDrawer === 'function'
+        ? window.AdminUI.createDrawer
+        : fallbackModal;
     const formFactory =
       window.AdminUI && typeof window.AdminUI.createForm === 'function'
         ? window.AdminUI.createForm
         : fallbackForm;
+    const dataTableFactory =
+      window.AdminUI && typeof window.AdminUI.createDataTable === 'function'
+        ? window.AdminUI.createDataTable
+        : fallbackDataTable;
 
     return {
-      editorModal: modalFactory(() => ({})),
+      table: dataTableFactory({
+        containerSelector: '#kv-table-body',
+      }),
+      editorDrawer: drawerFactory(() => ({})),
       entryForm: formFactory(makeEntryForm),
       confirmModal: modalFactory(makeDeletePayload),
+      init() {
+        this.applySearch();
+      },
       get mode() {
         return this.entryForm.values.mode || 'create';
       },
       openCreate() {
         this.confirmModal.hide();
         this.entryForm.reset({ mode: 'create' });
-        this.editorModal.show();
+        this.editorDrawer.show();
       },
       openEdit(key, value) {
         this.confirmModal.hide();
@@ -80,18 +108,24 @@
           originalKey: key,
           mode: 'edit',
         });
-        this.editorModal.show();
+        this.editorDrawer.show();
       },
       closeModal() {
-        this.editorModal.hide();
+        this.editorDrawer.hide();
         this.entryForm.busy = false;
       },
       openDeleteConfirm(key) {
-        this.editorModal.hide();
+        this.editorDrawer.hide();
         this.confirmModal.show({ key: key || '' });
       },
       closeDeleteConfirm() {
         this.confirmModal.hide();
+      },
+      applySearch() {
+        this.table.apply('#kv-table-body');
+      },
+      onKvTableSwap() {
+        this.table.onAfterSwap('#kv-table-body');
       },
       notifyFeedback(selector, fallbackLevel) {
         if (window.AdminUI && typeof window.AdminUI.consumeFeedback === 'function') {

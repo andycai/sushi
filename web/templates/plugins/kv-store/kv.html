@@ -11,16 +11,32 @@
       <p class="ui-subtitle">Manage runtime key-value entries used by plugins and operational workflows.</p>
     </div>
     <div class="ui-toolbar">
+      <div class="ui-table-search">
+        <input
+          type="text"
+          class="ui-input"
+          placeholder="Search by key or value..."
+          x-model="table.query"
+          @input.debounce.150ms="applySearch()"
+        >
+      </div>
       <button type="button" class="ui-btn ui-btn-primary" @click="openCreate()">Add Entry</button>
     </div>
   </div>
 
   <div id="kv-feedback" class="ui-feedback"></div>
 
+  <div class="ui-callout mb-3">
+    Use namespaced keys (for example, <span class="ui-mono">plugin.feature.flag</span>) to avoid collisions.
+  </div>
+
   <section class="ui-card">
     <header class="ui-card-header">
       <h2 class="text-lg font-semibold">Key registry</h2>
-      <span class="ui-badge info">Persistent storage</span>
+      <div class="ui-toolbar">
+        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.totalRows} visible`"></span>
+        <span class="ui-badge info">Persistent storage</span>
+      </div>
     </header>
     <div class="ui-table-wrap">
       <table class="ui-table">
@@ -36,22 +52,27 @@
           hx-get="/admin/partials/kv/table"
           hx-trigger="load, kv:refresh from:body"
           hx-swap="innerHTML"
+          x-on:htmx:after-swap.camel="onKvTableSwap()"
         >
           <tr>
             <td colspan="3" class="ui-empty">Loading KV entries...</td>
           </tr>
         </tbody>
       </table>
+      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+        No KV rows match your current keyword.
+      </div>
     </div>
   </section>
 
-  <div x-show="editorModal.open" class="ui-modal-overlay" style="display: none">
-    <div class="ui-modal-card">
-      <div class="ui-modal-head">
-        <h2 class="ui-modal-title" x-text="mode === 'create' ? 'Add entry' : 'Edit entry'"></h2>
+  <div x-show="editorDrawer.open" class="ui-drawer-overlay" style="display: none">
+    <div class="ui-drawer-panel">
+      <div class="ui-drawer-head">
+        <h2 class="ui-drawer-title" x-text="mode === 'create' ? 'Add entry' : 'Edit entry'"></h2>
+        <button type="button" class="ui-btn ui-btn-ghost" @click="closeModal()">Close</button>
       </div>
       <form
-        class="ui-modal-body space-y-4"
+        class="ui-drawer-body space-y-4"
         hx-post="/admin/partials/kv/upsert"
         hx-target="#kv-feedback"
         hx-swap="innerHTML"
@@ -82,7 +103,7 @@
             required
           >
         </div>
-        <div class="ui-modal-actions">
+        <div class="ui-drawer-actions">
           <button type="button" @click="closeModal()" class="ui-btn ui-btn-secondary">Cancel</button>
           <button type="submit" :disabled="entryForm.busy" class="ui-btn ui-btn-primary">
             <span x-show="!entryForm.busy">Save</span>

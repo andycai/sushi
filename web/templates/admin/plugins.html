@@ -11,6 +11,15 @@
       <p class="ui-subtitle">Inspect plugin manifests, granted capabilities, and runtime load status.</p>
     </div>
     <div class="ui-toolbar">
+      <div class="ui-table-search">
+        <input
+          type="text"
+          class="ui-input"
+          placeholder="Search by name, version, permission..."
+          x-model="table.query"
+          @input.debounce.150ms="applySearch()"
+        >
+      </div>
       <span class="ui-badge muted" x-text="lastUpdated ? `Updated ${lastUpdated}` : 'Not loaded yet'"></span>
       <button
         type="button"
@@ -24,10 +33,17 @@
     </div>
   </div>
 
+  <div class="ui-callout mb-3">
+    Enable database permission only for plugins that require direct data access.
+  </div>
+
   <section class="ui-card">
     <header class="ui-card-header">
       <h2 class="text-lg font-semibold">Installed plugins</h2>
-      <span class="ui-badge info">Lua modules</span>
+      <div class="ui-toolbar">
+        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.totalRows} visible`"></span>
+        <span class="ui-badge info">Lua modules</span>
+      </div>
     </header>
     <div class="ui-table-wrap">
       <table class="ui-table">
@@ -52,6 +68,9 @@
           </tr>
         </tbody>
       </table>
+      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+        No plugins match the current keyword.
+      </div>
     </div>
   </section>
 {% endblock %}

@@ -48,6 +48,30 @@
     };
   }
 
+  function createDrawer(defaultFactory) {
+    const factory =
+      typeof defaultFactory === 'function' ? defaultFactory : () => ({});
+
+    return {
+      open: false,
+      busy: false,
+      payload: factory(),
+      show(payload = {}) {
+        this.open = true;
+        this.busy = false;
+        this.payload = {
+          ...factory(),
+          ...payload,
+        };
+      },
+      hide() {
+        this.open = false;
+        this.busy = false;
+        this.payload = factory();
+      },
+    };
+  }
+
   function createForm(defaultFactory) {
     const factory =
       typeof defaultFactory === 'function' ? defaultFactory : () => ({});
@@ -69,6 +93,53 @@
       },
       clearErrors() {
         this.errors = {};
+      },
+    };
+  }
+
+  function createDataTable({
+    containerSelector = '',
+    rowSelector = 'tr[data-row-search]',
+  } = {}) {
+    return {
+      query: '',
+      totalRows: 0,
+      visibleRows: 0,
+      emptyFiltered: false,
+      apply(containerOrSelector = containerSelector) {
+        const container = resolveContainer(containerOrSelector);
+        if (!container) {
+          this.totalRows = 0;
+          this.visibleRows = 0;
+          this.emptyFiltered = false;
+          return;
+        }
+
+        const rows = Array.from(container.querySelectorAll(rowSelector));
+        const q = this.query.trim().toLowerCase();
+        let visible = 0;
+
+        rows.forEach((row) => {
+          const haystack = String(
+            row.dataset.rowSearch || row.textContent || '',
+          ).toLowerCase();
+          const matched = !q || haystack.includes(q);
+          row.style.display = matched ? '' : 'none';
+          if (matched) {
+            visible += 1;
+          }
+        });
+
+        this.totalRows = rows.length;
+        this.visibleRows = visible;
+        this.emptyFiltered = q.length > 0 && rows.length > 0 && visible === 0;
+      },
+      onAfterSwap(containerOrSelector = containerSelector) {
+        this.apply(containerOrSelector);
+      },
+      reset(containerOrSelector = containerSelector) {
+        this.query = '';
+        this.apply(containerOrSelector);
       },
     };
   }
@@ -245,6 +316,8 @@
   window.AdminUI = Object.freeze({
     consumeFeedback,
     createAutoRefresh,
+    createDataTable,
+    createDrawer,
     createForm,
     createModal,
     fetchJson,

@@ -1,5 +1,5 @@
 {% for u in users %}
-  <tr>
+  <tr data-row-search="{{ u.id }} {{ u.username }} {{ u.email }} {{ u.role }}">
     <td class="ui-mono">{{ u.id }}</td>
     <td class="font-semibold">{{ u.username }}</td>
     <td>{{ u.email }}</td>

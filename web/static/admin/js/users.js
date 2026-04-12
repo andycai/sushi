@@ -40,6 +40,20 @@
     };
   }
 
+  function fallbackDataTable() {
+    return {
+      query: '',
+      totalRows: 0,
+      visibleRows: 0,
+      emptyFiltered: false,
+      apply() {},
+      onAfterSwap() {},
+      reset() {
+        this.query = '';
+      },
+    };
+  }
+
   window.usersPage = function usersPage() {
     const makeUserForm = () => ({
       username: '',
@@ -56,26 +70,40 @@
       window.AdminUI && typeof window.AdminUI.createModal === 'function'
         ? window.AdminUI.createModal
         : fallbackModal;
+    const drawerFactory =
+      window.AdminUI && typeof window.AdminUI.createDrawer === 'function'
+        ? window.AdminUI.createDrawer
+        : fallbackModal;
     const formFactory =
       window.AdminUI && typeof window.AdminUI.createForm === 'function'
         ? window.AdminUI.createForm
         : fallbackForm;
+    const dataTableFactory =
+      window.AdminUI && typeof window.AdminUI.createDataTable === 'function'
+        ? window.AdminUI.createDataTable
+        : fallbackDataTable;
 
     return {
-      formModal: modalFactory(() => ({})),
+      table: dataTableFactory({
+        containerSelector: '#users-table-body',
+      }),
+      formDrawer: drawerFactory(() => ({})),
       form: formFactory(makeUserForm),
       confirmModal: modalFactory(makeDeletePayload),
+      init() {
+        this.applySearch();
+      },
       openModal() {
         this.confirmModal.hide();
         this.form.reset();
-        this.formModal.show();
+        this.formDrawer.show();
       },
       closeModal() {
-        this.formModal.hide();
+        this.formDrawer.hide();
         this.form.busy = false;
       },
       openDeleteConfirm(id, username) {
-        this.formModal.hide();
+        this.formDrawer.hide();
         this.confirmModal.show({
           id,
           username: username || '',
@@ -83,6 +111,12 @@
       },
       closeDeleteConfirm() {
         this.confirmModal.hide();
+      },
+      applySearch() {
+        this.table.apply('#users-table-body');
+      },
+      onUsersTableSwap() {
+        this.table.onAfterSwap('#users-table-body');
       },
       notifyFeedback(selector, fallbackLevel) {
         if (window.AdminUI && typeof window.AdminUI.consumeFeedback === 'function') {
