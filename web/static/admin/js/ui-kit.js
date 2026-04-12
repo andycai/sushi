@@ -101,6 +101,7 @@
     containerSelector = '',
     rowSelector = 'tr[data-row-search]',
     rowPredicate = null,
+    storageKey = '',
     pageSizeOptions = [10, 20, 50],
     initialPageSize = 10,
   } = {}) {
@@ -114,19 +115,95 @@
       return String(value || '').toLowerCase().trim();
     }
 
+    function localStorageAvailable() {
+      try {
+        return (
+          typeof window !== 'undefined' &&
+          typeof window.localStorage !== 'undefined'
+        );
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function readState() {
+      if (!storageKey || !localStorageAvailable()) {
+        return {};
+      }
+
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return {};
+        }
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      } catch (_) {}
+      return {};
+    }
+
+    function toPositiveNumber(value, fallback) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+      }
+      return parsed;
+    }
+
+    const persisted = readState();
+    const initialState = {
+      query: typeof persisted.query === 'string' ? persisted.query : '',
+      sortMode:
+        typeof persisted.sortMode === 'string' ? persisted.sortMode : 'default',
+      page: toPositiveNumber(persisted.page, 1),
+      pageSize: toPositiveNumber(persisted.pageSize, defaultPageSize),
+      meta:
+        persisted.meta && typeof persisted.meta === 'object'
+          ? { ...persisted.meta }
+          : {},
+    };
+
     return {
-      query: '',
-      sortMode: 'default',
-      page: 1,
-      pageSize: defaultPageSize,
+      query: initialState.query,
+      sortMode: initialState.sortMode,
+      page: initialState.page,
+      pageSize: initialState.pageSize,
       pageSizeOptions: Array.from(pageSizeOptions),
       rowPredicate,
-      meta: {},
+      meta: initialState.meta,
       totalRows: 0,
       filteredRows: 0,
       visibleRows: 0,
       totalPages: 1,
       emptyFiltered: false,
+      _saveState() {
+        if (!storageKey || !localStorageAvailable()) {
+          return;
+        }
+
+        const payload = {
+          query: this.query,
+          sortMode: this.sortMode,
+          page: this.page,
+          pageSize: this.pageSize,
+          meta: this.meta || {},
+        };
+
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(payload));
+        } catch (_) {}
+      },
+      clearState() {
+        if (!storageKey || !localStorageAvailable()) {
+          return;
+        }
+
+        try {
+          window.localStorage.removeItem(storageKey);
+        } catch (_) {}
+      },
       _sortRows(rows) {
         const sorted = [...rows];
         if (this.sortMode === 'alpha_asc') {
@@ -222,9 +299,9 @@
 
         this.visibleRows = visible;
         this.emptyFiltered = q.length > 0 && this.filteredRows === 0;
+        this._saveState();
       },
       onAfterSwap(containerOrSelector = containerSelector) {
-        this.page = 1;
         this.apply(containerOrSelector);
       },
       reset(containerOrSelector = containerSelector) {
@@ -232,6 +309,8 @@
         this.sortMode = 'default';
         this.page = 1;
         this.pageSize = defaultPageSize;
+        this.meta = {};
+        this.clearState();
         this.apply(containerOrSelector);
       },
       setPageSize(size, containerOrSelector = containerSelector) {
@@ -401,7 +480,7 @@
     return containerOrSelector;
   }
 
-  function consumeFeedback(containerOrSelector, fallbackLevel = 'info') {
+  function readFeedback(containerOrSelector, fallbackLevel = 'info') {
     const container = resolveContainer(containerOrSelector);
     if (!container) {
       return null;
@@ -419,21 +498,126 @@
       return null;
     }
 
-    notify({
+    return {
       tone,
+      level: String(rawLevel || '').toLowerCase(),
+      message,
+    };
+  }
+
+  function isErrorFeedback(containerOrSelector, fallbackLevel = 'info') {
+    const feedback = readFeedback(containerOrSelector, fallbackLevel);
+    if (!feedback) {
+      return false;
+    }
+    return feedback.tone === 'danger' || feedback.level === 'error';
+  }
+
+  function consumeFeedback(containerOrSelector, fallbackLevel = 'info') {
+    const feedback = readFeedback(containerOrSelector, fallbackLevel);
+    if (!feedback) {
+      return null;
+    }
+
+    notify({
+      tone: feedback.tone,
       title:
-        tone === 'danger'
+        feedback.tone === 'danger'
           ? 'Request failed'
-          : tone === 'warning'
+          : feedback.tone === 'warning'
             ? 'Check required'
             : 'Request completed',
-      message,
+      message: feedback.message,
     });
 
-    return { tone, message };
+    return feedback;
+  }
+
+  function hasHxTrigger(event, triggerName) {
+    if (!triggerName) {
+      return false;
+    }
+
+    const xhr = event?.detail?.xhr;
+    if (!xhr || typeof xhr.getResponseHeader !== 'function') {
+      return false;
+    }
+
+    const rawValue = xhr.getResponseHeader('HX-Trigger');
+    if (!rawValue) {
+      return false;
+    }
+
+    const value = String(rawValue).trim();
+    if (!value) {
+      return false;
+    }
+
+    if (value.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(value);
+        return Boolean(parsed && parsed[triggerName]);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .includes(triggerName);
+  }
+
+  function refreshPartial({
+    url = '',
+    target = '',
+    onAfterSwap = null,
+    errorTitle = 'Refresh failed',
+    errorMessage = 'Unable to refresh data.',
+  } = {}) {
+    if (!url || !target) {
+      return;
+    }
+
+    if (window.htmx && typeof window.htmx.ajax === 'function') {
+      window.htmx.ajax('GET', url, {
+        target,
+        swap: 'innerHTML',
+      });
+      return;
+    }
+
+    fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to refresh partial (${response.status})`);
+        }
+        return response.text();
+      })
+      .then((html) => {
+        const targetNode = resolveContainer(target);
+        if (!targetNode) {
+          return;
+        }
+        targetNode.innerHTML = html;
+        if (typeof onAfterSwap === 'function') {
+          onAfterSwap();
+        }
+      })
+      .catch(() => {
+        notify({
+          tone: 'danger',
+          title: errorTitle,
+          message: errorMessage,
+        });
+      });
   }
 
   window.AdminUI = Object.freeze({
+    hasHxTrigger,
+    isErrorFeedback,
+    readFeedback,
+    refreshPartial,
     consumeFeedback,
     createAutoRefresh,
     createDataTable,

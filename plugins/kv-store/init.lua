@@ -173,12 +173,17 @@ local function kv_rows_partial(error_message)
 end
 
 local function kv_flash(level, message)
-    local is_error = level == "error"
-    local class_name = "rounded-lg border px-3 py-2 text-sm border-emerald-200 bg-emerald-50 text-emerald-700"
-    if is_error then
-        class_name = "rounded-lg border px-3 py-2 text-sm border-red-200 bg-red-50 text-red-700"
+    local normalized_level = tostring(level or "success")
+    local tone = "success"
+    if normalized_level == "error" then
+        tone = "danger"
     end
-    return "<div class=\"" .. class_name .. "\">" .. html_escape(message) .. "</div>"
+    local escaped_level = html_escape(normalized_level)
+    local escaped_message = html_escape(message)
+    return
+        "<div class=\"ui-flash " .. tone .. "\" data-ui-flash data-level=\"" .. escaped_level .. "\" data-message=\"" .. escaped_message .. "\">"
+        .. escaped_message
+        .. "</div>"
 end
 
 local function kv_admin_table_partial()

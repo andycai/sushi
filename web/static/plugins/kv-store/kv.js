@@ -47,6 +47,7 @@
       page: 1,
       pageSize: 10,
       pageSizeOptions: [10, 20, 50],
+      meta: {},
       totalRows: 0,
       filteredRows: 0,
       visibleRows: 0,
@@ -95,13 +96,12 @@
     return {
       table: dataTableFactory({
         containerSelector: '#kv-table-body',
+        storageKey: 'admin.kv.table.v1',
       }),
       editorDrawer: drawerFactory(() => ({})),
       entryForm: formFactory(makeEntryForm),
       confirmModal: modalFactory(makeDeletePayload),
-      init() {
-        this.applySearch();
-      },
+      init() {},
       get mode() {
         return this.entryForm.values.mode || 'create';
       },
@@ -162,16 +162,76 @@
           }
         }
       },
+      isErrorFeedback(selector) {
+        if (window.AdminUI && typeof window.AdminUI.isErrorFeedback === 'function') {
+          return window.AdminUI.isErrorFeedback(selector, 'error');
+        }
+
+        const container = document.querySelector(selector);
+        if (!container) {
+          return false;
+        }
+
+        const flash = container.querySelector('[data-ui-flash]');
+        if (!flash) {
+          return false;
+        }
+
+        const level = String(flash.dataset.level || '').toLowerCase();
+        return level === 'error' || level === 'danger';
+      },
+      isSuccessfulKvRequest(event, feedbackSelector) {
+        if (!event?.detail?.successful) {
+          return false;
+        }
+        return !this.isErrorFeedback(feedbackSelector);
+      },
+      refreshTable() {
+        if (window.AdminUI && typeof window.AdminUI.refreshPartial === 'function') {
+          window.AdminUI.refreshPartial({
+            url: '/admin/partials/kv/table',
+            target: '#kv-table-body',
+            onAfterSwap: () => this.onKvTableSwap(),
+            errorMessage: 'Unable to refresh the KV list.',
+          });
+          return;
+        }
+
+        fetch('/admin/partials/kv/table')
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to refresh kv entries (${response.status})`);
+            }
+            return response.text();
+          })
+          .then((html) => {
+            const target = document.querySelector('#kv-table-body');
+            if (!target) {
+              return;
+            }
+            target.innerHTML = html;
+            this.onKvTableSwap();
+          })
+          .catch(() => {
+            if (window.AdminUI) {
+              window.AdminUI.notify({
+                tone: 'danger',
+                title: 'Refresh failed',
+                message: 'Unable to refresh the KV list.',
+              });
+            }
+          });
+      },
       onUpsertBeforeRequest() {
         this.entryForm.busy = true;
       },
       onUpsertAfterRequest(event) {
         this.entryForm.busy = false;
-        const successful = Boolean(event?.detail?.successful);
+        const successful = this.isSuccessfulKvRequest(event, '#kv-feedback');
         this.notifyFeedback('#kv-feedback', successful ? 'success' : 'error');
         if (successful) {
           this.closeModal();
-          this.triggerRefresh();
+          this.refreshTable();
         }
       },
       onDeleteBeforeRequest() {
@@ -179,21 +239,11 @@
       },
       onDeleteAfterRequest(event) {
         this.confirmModal.busy = false;
-        const successful = Boolean(event?.detail?.successful);
+        const successful = this.isSuccessfulKvRequest(event, '#kv-feedback');
         this.notifyFeedback('#kv-feedback', successful ? 'success' : 'error');
         if (successful) {
           this.closeDeleteConfirm();
-          this.triggerRefresh();
-        }
-      },
-      triggerRefresh() {
-        if (window.AdminUI) {
-          window.AdminUI.trigger('kv:refresh');
-          return;
-        }
-
-        if (window.htmx) {
-          window.htmx.trigger(document.body, 'kv:refresh');
+          this.refreshTable();
         }
       },
     };

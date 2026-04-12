@@ -41,6 +41,7 @@
       table: tableFactory({
         containerSelector: '#logs-table-body',
         rowSelector: 'tr[data-log-row]',
+        storageKey: 'admin.logs.table.v1',
         pageSizeOptions: [20, 50, 100],
         initialPageSize: 20,
         rowPredicate: (row, table) => {
@@ -52,7 +53,9 @@
         },
       }),
       async init() {
-        this.table.meta.level = 'ALL';
+        const persistedLevel = String(this.table.meta.level || 'ALL').toUpperCase();
+        this.levelFilter = persistedLevel;
+        this.table.meta.level = persistedLevel;
         await this.loadLogs();
         if (window.AdminUI) {
           this.autoPoller = window.AdminUI.createAutoRefresh(() => {

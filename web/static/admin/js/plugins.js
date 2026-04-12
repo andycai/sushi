@@ -6,6 +6,7 @@
       page: 1,
       pageSize: 10,
       pageSizeOptions: [10, 20, 50],
+      meta: {},
       totalRows: 0,
       filteredRows: 0,
       visibleRows: 0,
@@ -32,11 +33,10 @@
     return {
       table: tableFactory({
         containerSelector: '#plugins-table-body',
+        storageKey: 'admin.plugins.table.v1',
       }),
       lastUpdated: '',
-      init() {
-        this.applySearch();
-      },
+      init() {},
       applySearch() {
         this.table.page = 1;
         this.table.apply('#plugins-table-body');

@@ -47,6 +47,7 @@
       page: 1,
       pageSize: 10,
       pageSizeOptions: [10, 20, 50],
+      meta: {},
       totalRows: 0,
       filteredRows: 0,
       visibleRows: 0,
@@ -96,13 +97,12 @@
     return {
       table: dataTableFactory({
         containerSelector: '#users-table-body',
+        storageKey: 'admin.users.table.v1',
       }),
       formDrawer: drawerFactory(() => ({})),
       form: formFactory(makeUserForm),
       confirmModal: modalFactory(makeDeletePayload),
-      init() {
-        this.applySearch();
-      },
+      init() {},
       openModal() {
         this.confirmModal.hide();
         this.form.reset();
@@ -153,6 +153,76 @@
           }
         }
       },
+      responseHasTrigger(event, triggerName) {
+        if (window.AdminUI && typeof window.AdminUI.hasHxTrigger === 'function') {
+          return window.AdminUI.hasHxTrigger(event, triggerName);
+        }
+
+        const xhr = event?.detail?.xhr;
+        if (!xhr || typeof xhr.getResponseHeader !== 'function') {
+          return false;
+        }
+
+        const rawValue = xhr.getResponseHeader('HX-Trigger');
+        if (!rawValue) {
+          return false;
+        }
+
+        const value = String(rawValue).trim();
+        if (!value) {
+          return false;
+        }
+
+        if (value.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(value);
+            return Boolean(parsed && parsed[triggerName]);
+          } catch (_) {
+            return false;
+          }
+        }
+
+        return value
+          .split(',')
+          .map((item) => item.trim())
+          .includes(triggerName);
+      },
+      refreshTable() {
+        if (window.AdminUI && typeof window.AdminUI.refreshPartial === 'function') {
+          window.AdminUI.refreshPartial({
+            url: '/admin/partials/users/table',
+            target: '#users-table-body',
+            onAfterSwap: () => this.onUsersTableSwap(),
+            errorMessage: 'Unable to refresh the user list.',
+          });
+          return;
+        }
+
+        fetch('/admin/partials/users/table')
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to refresh users (${response.status})`);
+            }
+            return response.text();
+          })
+          .then((html) => {
+            const target = document.querySelector('#users-table-body');
+            if (!target) {
+              return;
+            }
+            target.innerHTML = html;
+            this.onUsersTableSwap();
+          })
+          .catch(() => {
+            if (window.AdminUI) {
+              window.AdminUI.notify({
+                tone: 'danger',
+                title: 'Refresh failed',
+                message: 'Unable to refresh the user list.',
+              });
+            }
+          });
+      },
       onCreateBeforeRequest() {
         this.form.busy = true;
       },
@@ -162,6 +232,9 @@
         this.notifyFeedback('#users-feedback', successful ? 'success' : 'error');
         if (successful) {
           this.closeModal();
+          if (!this.responseHasTrigger(event, 'users:refresh')) {
+            this.refreshTable();
+          }
         }
       },
       onDeleteBeforeRequest() {
@@ -173,6 +246,9 @@
         this.notifyFeedback('#users-feedback', successful ? 'success' : 'error');
         if (successful) {
           this.closeDeleteConfirm();
+          if (!this.responseHasTrigger(event, 'users:refresh')) {
+            this.refreshTable();
+          }
         }
       },
     };
