@@ -1,4 +1,4 @@
-use crate::routes::{config, dashboard, login, logs, permissions, plugins, roles, users};
+use crate::routes::{config, dashboard, login, logs, menu, permissions, plugins, roles, users};
 use axum::{
     extract::Request,
     extract::State,
@@ -58,6 +58,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route("/admin/api/config", get(config::config_api))
         .route("/admin/logs", get(logs::logs_page))
         .route("/admin/api/logs", get(logs::logs_api))
+        .route("/admin/api/menu", get(menu::menu_api))
         .route(
             "/admin/partials/users/table",
             get(users::users_table_partial),
