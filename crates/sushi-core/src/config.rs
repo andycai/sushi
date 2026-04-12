@@ -13,6 +13,8 @@ pub struct SushiConfig {
     pub jwt: JwtConfig,
     #[serde(default)]
     pub plugins: PluginsConfig,
+    #[serde(default)]
+    pub web: WebConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +141,38 @@ fn default_plugins_dir() -> String {
     "plugins".to_string()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebConfig {
+    #[serde(default = "default_templates_dir")]
+    pub templates_dir: String,
+    #[serde(default = "default_static_dir")]
+    pub static_dir: String,
+    #[serde(default = "default_static_url_prefix")]
+    pub static_url_prefix: String,
+}
+
+fn default_templates_dir() -> String {
+    "web/templates".to_string()
+}
+
+fn default_static_dir() -> String {
+    "web/static".to_string()
+}
+
+fn default_static_url_prefix() -> String {
+    "/static".to_string()
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            templates_dir: default_templates_dir(),
+            static_dir: default_static_dir(),
+            static_url_prefix: default_static_url_prefix(),
+        }
+    }
+}
+
 impl Default for SushiConfig {
     fn default() -> Self {
         Self {
@@ -146,6 +180,7 @@ impl Default for SushiConfig {
             database: DatabaseConfig::default(),
             jwt: JwtConfig::default(),
             plugins: PluginsConfig::default(),
+            web: WebConfig::default(),
         }
     }
 }
@@ -217,6 +252,11 @@ refresh_ttl = 1209600
 
 [plugins]
 directory = "plugins"
+
+[web]
+templates_dir = "custom/templates"
+static_dir = "static/www"
+static_url_prefix = "/assets"
 "#;
         let config: SushiConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "0.0.0.0");
@@ -225,6 +265,9 @@ directory = "plugins"
         assert_eq!(config.jwt.access_ttl, 7200);
         assert_eq!(config.jwt.refresh_ttl, 1209600);
         assert_eq!(config.plugins.directory, "plugins");
+        assert_eq!(config.web.templates_dir, "custom/templates");
+        assert_eq!(config.web.static_dir, "static/www");
+        assert_eq!(config.web.static_url_prefix, "/assets");
     }
 
     #[test]
@@ -236,6 +279,9 @@ directory = "plugins"
         assert_eq!(config.jwt.access_ttl, 3600);
         assert_eq!(config.jwt.refresh_ttl, 604800);
         assert_eq!(config.plugins.directory, "plugins");
+        assert_eq!(config.web.templates_dir, "web/templates");
+        assert_eq!(config.web.static_dir, "web/static");
+        assert_eq!(config.web.static_url_prefix, "/static");
     }
 
     #[test]
@@ -243,6 +289,9 @@ directory = "plugins"
         let config: SushiConfig = toml::from_str("").unwrap();
         assert_eq!(config.server.port, 3000);
         assert_eq!(config.plugins.directory, "plugins");
+        assert_eq!(config.web.templates_dir, "web/templates");
+        assert_eq!(config.web.static_dir, "web/static");
+        assert_eq!(config.web.static_url_prefix, "/static");
     }
 
     #[tokio::test]

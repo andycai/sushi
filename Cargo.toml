@@ -28,3 +28,4 @@ argon2 = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 rust-embed = "8"
 async-trait = "0.1"
+minijinja = { version = "2", features = ["loader", "json"] }

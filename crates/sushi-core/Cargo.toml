@@ -19,6 +19,7 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
+minijinja = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

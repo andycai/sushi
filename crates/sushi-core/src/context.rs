@@ -1,9 +1,12 @@
 use crate::auth::jwt::JwtService;
 use crate::auth::middleware::AuthState;
 use crate::config::ConfigStore;
+use crate::db::{DbGateway, DbPermission};
 use crate::plugin::manager::PluginManager;
 use crate::registry::event::EventBus;
+use crate::storage::Storage;
 use crate::storage::sqlite::SqliteStorage;
+use crate::web::template_service::TemplateService;
 use std::sync::Arc;
 
 /// The central context passed to all plugins during init.
@@ -12,20 +15,33 @@ use std::sync::Arc;
 pub struct SushiContext {
     pub config: ConfigStore,
     pub db: Arc<SqliteStorage>,
+    pub db_gateway: DbGateway,
     pub event: EventBus,
     pub jwt: Arc<JwtService>,
     pub plugins: PluginManager,
+    pub templates: Arc<TemplateService>,
 }
 
 impl SushiContext {
     /// Creates a new SushiContext from the given core services.
-    pub fn new(config: ConfigStore, db: SqliteStorage, jwt: JwtService) -> Self {
+    pub fn new(
+        config: ConfigStore,
+        db: SqliteStorage,
+        jwt: JwtService,
+        templates: TemplateService,
+    ) -> Self {
+        let db = Arc::new(db);
+        let storage: Arc<dyn Storage> = db.clone();
+        let db_gateway = DbGateway::new(storage, DbPermission::Admin);
+
         Self {
             config,
-            db: Arc::new(db),
+            db,
+            db_gateway,
             event: EventBus::new(),
             jwt: Arc::new(jwt),
             plugins: PluginManager::new(),
+            templates: Arc::new(templates),
         }
     }
 
