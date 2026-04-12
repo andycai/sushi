@@ -2,6 +2,7 @@ pub mod config;
 pub mod dashboard;
 pub mod login;
 pub mod logs;
+pub mod menu;
 pub mod permissions;
 pub mod plugins;
 pub mod roles;
