@@ -36,7 +36,10 @@ pub fn build_app(ctx: &SushiContext) -> Router {
     Router::new()
         .nest("/api/auth", auth::auth_routes(auth_route_state))
         .nest("/api/users", users::users_routes(users_route_state))
-        .layer(axum::middleware::from_fn_with_state(auth_state, require_auth))
+        .layer(axum::middleware::from_fn_with_state(
+            auth_state,
+            require_auth,
+        ))
 }
 
 /// Plugin API route handler state.
@@ -170,24 +173,28 @@ mod tests {
     use axum::body::Body;
     use axum::extract::State;
     use axum::http::{header, Request};
+    use serde_json::Value;
     use sushi_core::auth::jwt::JwtService;
     use sushi_core::config::{ConfigStore, SushiConfig};
     use sushi_core::context::SushiContext;
     use sushi_core::lua::vm::create_sandboxed_vm;
     use sushi_core::storage::sqlite::SqliteStorage;
+    use sushi_core::storage::Storage;
     use sushi_core::web::template_service::TemplateService;
     use tower::ServiceExt;
 
     const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
+    const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
 
     async fn test_context() -> SushiContext {
         let config = ConfigStore::new(SushiConfig::default());
         let storage = SqliteStorage::new_in_memory().await.unwrap();
         storage.run_migrations(MIGRATION_SQL).await.unwrap();
+        storage.run_migrations(RBAC_MIGRATION_SQL).await.unwrap();
         let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
 
-        let templates_root = std::env::temp_dir()
-            .join(format!("sushi-api-router-test-{}", std::process::id()));
+        let templates_root =
+            std::env::temp_dir().join(format!("sushi-api-router-test-{}", std::process::id()));
         std::fs::create_dir_all(&templates_root).unwrap();
         let templates = TemplateService::new(&templates_root).unwrap();
 
@@ -352,5 +359,85 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_create_user_accepts_custom_role_when_role_exists() {
+        let ctx = test_context().await;
+        ctx.db
+            .execute(
+                "INSERT INTO roles (slug, name, description) VALUES (?1, ?2, ?3)",
+                vec![
+                    serde_json::json!("auditor"),
+                    serde_json::json!("Auditor"),
+                    serde_json::json!("Read-only audit role"),
+                ],
+            )
+            .await
+            .expect("failed to insert custom role");
+
+        let app = build_app(&ctx);
+        let token = ctx
+            .jwt
+            .create_access_token(1, "admin", "admin")
+            .expect("failed to create test access token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/users")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"username":"auditor_user","email":"auditor@example.com","password":"password123","role":"auditor"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).expect("invalid create-user payload");
+        assert_eq!(
+            payload.get("role").and_then(Value::as_str),
+            Some("auditor"),
+            "payload: {payload}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_user_rejects_unknown_role() {
+        let ctx = test_context().await;
+        let app = build_app(&ctx);
+        let token = ctx
+            .jwt
+            .create_access_token(1, "admin", "admin")
+            .expect("failed to create test access token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/users")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"username":"unknown_role_user","email":"unknown@example.com","password":"password123","role":"does_not_exist"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).expect("invalid error payload");
+        assert_eq!(
+            payload.get("error").and_then(Value::as_str),
+            Some("Selected role does not exist"),
+            "payload: {payload}"
+        );
     }
 }
