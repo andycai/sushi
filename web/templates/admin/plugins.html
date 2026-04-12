@@ -41,7 +41,22 @@
     <header class="ui-card-header">
       <h2 class="text-lg font-semibold">Installed plugins</h2>
       <div class="ui-toolbar">
-        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.totalRows} visible`"></span>
+        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+          <option value="default">Default order</option>
+          <option value="alpha_asc">Name A-Z</option>
+          <option value="alpha_desc">Name Z-A</option>
+        </select>
+        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+          <template x-for="size in table.pageSizeOptions" :key="size">
+            <option :value="size" x-text="`${size}/page`"></option>
+          </template>
+        </select>
+        <div class="ui-page-controls">
+          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        </div>
+        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
         <span class="ui-badge info">Lua modules</span>
       </div>
     </header>

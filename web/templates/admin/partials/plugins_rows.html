@@ -1,5 +1,5 @@
 {% for p in plugins %}
-  <tr data-row-search="{{ p.name }} {{ p.version }} {{ p.description }} routes:{{ p.permissions.routes }} commands:{{ p.permissions.commands }} admin:{{ p.permissions.admin }} db:{{ p.permissions.database }} loaded:{{ p.loaded }}">
+  <tr data-row-search="{{ p.name }} {{ p.version }} {{ p.description }} routes:{{ p.permissions.routes }} commands:{{ p.permissions.commands }} admin:{{ p.permissions.admin }} db:{{ p.permissions.database }} loaded:{{ p.loaded }}" data-row-sort="{{ p.name }}">
     <td>{{ p.name }}</td>
     <td class="ui-mono">{{ p.version }}</td>
     <td>{{ p.description }}</td>

@@ -343,6 +343,13 @@ body {
   box-shadow: 0 0 0 3px rgba(125, 166, 242, 0.2);
 }
 
+.ui-select-compact {
+  margin-top: 0;
+  width: auto;
+  min-width: 118px;
+  padding-right: 28px;
+}
+
 .ui-input[readonly] {
   background: #f0f4fb;
   color: var(--text-secondary);
@@ -405,6 +412,12 @@ body {
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+.ui-page-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .ui-action-link {

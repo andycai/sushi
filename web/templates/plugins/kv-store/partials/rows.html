@@ -5,7 +5,7 @@
 {% endif %}
 
 {% for item in items %}
-  <tr data-row-search="{{ item.key }} {{ item.value }}">
+  <tr data-row-search="{{ item.key }} {{ item.value }}" data-row-sort="{{ item.key }}">
     <td class="ui-mono">{{ item.key }}</td>
     <td class="ui-mono truncate max-w-xs">{{ item.value }}</td>
     <td class="actions">
