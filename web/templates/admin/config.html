@@ -16,15 +16,12 @@
     </div>
   </div>
 
-  <div x-show="!loaded" class="ui-card">
-    <div class="ui-card-body text-slate-500">Loading configuration...</div>
+  <div x-show="!loaded" class="ui-state-panel muted">
+    Loading configuration...
   </div>
 
-  <div x-show="loaded && error" class="ui-card">
-    <div class="ui-card-body">
-      <span class="ui-badge danger">Error</span>
-      <p class="mt-3 text-sm text-slate-600" x-text="error"></p>
-    </div>
+  <div x-show="loaded && error" class="ui-state-panel danger">
+    <p class="m-0" x-text="error"></p>
   </div>
 
   <div x-show="loaded && !error" class="grid gap-4 md:grid-cols-2">

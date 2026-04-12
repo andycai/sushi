@@ -11,6 +11,15 @@
       <p class="ui-subtitle">Streamed operational events emitted by API, admin, and plugin runtime.</p>
     </div>
     <div class="ui-toolbar">
+      <div class="ui-table-search">
+        <input
+          type="text"
+          class="ui-input"
+          placeholder="Search by timestamp, level, message..."
+          x-model="table.query"
+          @input.debounce.150ms="applySearch()"
+        >
+      </div>
       <span x-show="loading" class="ui-badge muted">Refreshing...</span>
       <button type="button" class="ui-btn ui-btn-secondary" @click="loadLogs">Refresh</button>
       <label class="text-sm flex items-center gap-2 text-slate-600">
@@ -20,23 +29,76 @@
     </div>
   </div>
 
+  <div class="ui-callout mb-3">
+    Use level filters and keyword search to isolate high-signal operational events quickly.
+  </div>
+
   <section class="ui-card">
     <header class="ui-card-header">
       <h2 class="text-lg font-semibold">Event stream</h2>
-      <span class="ui-badge info" x-text="`${logs.length} entries`"></span>
+      <div class="ui-toolbar">
+        <select class="ui-select ui-select-compact" x-model="levelFilter" @change="applyLevelFilter()">
+          <option value="ALL">All levels</option>
+          <option value="INFO">INFO</option>
+          <option value="WARN">WARN</option>
+          <option value="ERROR">ERROR</option>
+          <option value="DEBUG">DEBUG</option>
+        </select>
+        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+          <option value="default">Default order</option>
+          <option value="alpha_desc">Timestamp newest</option>
+          <option value="alpha_asc">Timestamp oldest</option>
+        </select>
+        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+          <template x-for="size in table.pageSizeOptions" :key="size">
+            <option :value="size" x-text="`${size}/page`"></option>
+          </template>
+        </select>
+        <div class="ui-page-controls">
+          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        </div>
+        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+        <span class="ui-badge info" x-text="`${logs.length} fetched`"></span>
+      </div>
     </header>
-    <div class="ui-card-body">
-      <div x-show="error" class="ui-badge danger" x-text="error"></div>
-      <div x-show="logs.length === 0 && !error" class="ui-empty">No logs available yet.</div>
 
-      <div class="ui-log-window">
-        <template x-for="(log, index) in logs" :key="index">
-          <div class="ui-log-line ui-mono">
-            <span class="text-slate-500" x-text="log.timestamp || '--'"></span>
-            <span class="ui-badge" :class="badgeTone(log.level)" x-text="log.level || 'INFO'"></span>
-            <span class="break-all text-slate-200" x-text="log.message || ''"></span>
-          </div>
-        </template>
+    <div class="ui-card-body">
+      <div x-show="error" class="ui-state-panel danger" x-text="error"></div>
+      <div x-show="!error && logs.length === 0" class="ui-state-panel muted">
+        No logs available yet.
+      </div>
+
+      <div x-show="!error" class="ui-table-wrap">
+        <table class="ui-table ui-log-table">
+          <thead>
+            <tr>
+              <th class="ui-mono">Timestamp</th>
+              <th>Level</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="logs-table-body">
+            <template x-for="(log, index) in logs" :key="`${index}-${log.timestamp || ''}-${log.level || ''}`">
+              <tr
+                data-log-row
+                :data-row-search="`${log.timestamp || ''} ${(log.level || 'INFO').toUpperCase()} ${log.message || ''}`"
+                :data-row-sort="log.timestamp || ''"
+                :data-log-level="(log.level || 'INFO').toUpperCase()"
+              >
+                <td class="ui-mono text-slate-500" x-text="log.timestamp || '--'"></td>
+                <td>
+                  <span class="ui-badge" :class="badgeTone(log.level)" x-text="(log.level || 'INFO').toUpperCase()"></span>
+                </td>
+                <td class="ui-mono break-all" x-text="log.message || ''"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+          No logs match the current level filter and search keyword.
+        </div>
       </div>
     </div>
   </section>

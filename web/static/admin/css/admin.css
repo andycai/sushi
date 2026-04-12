@@ -622,6 +622,26 @@ body {
   color: #294069;
 }
 
+.ui-state-panel {
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.ui-state-panel.muted {
+  color: var(--text-secondary);
+  background: linear-gradient(150deg, #f8fbff, #f2f6ff);
+  border-color: #d8e2f7;
+}
+
+.ui-state-panel.danger {
+  color: var(--danger);
+  background: #fff1ef;
+  border-color: #f7c8c2;
+}
+
 .ui-modal-overlay {
   position: fixed;
   inset: 0;
@@ -741,6 +761,10 @@ body {
 
 .ui-log-line:hover {
   background: rgba(130, 154, 198, 0.12);
+}
+
+.ui-log-table tbody td {
+  vertical-align: top;
 }
 
 .ui-mono {

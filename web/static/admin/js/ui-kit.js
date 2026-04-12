@@ -100,6 +100,7 @@
   function createDataTable({
     containerSelector = '',
     rowSelector = 'tr[data-row-search]',
+    rowPredicate = null,
     pageSizeOptions = [10, 20, 50],
     initialPageSize = 10,
   } = {}) {
@@ -119,6 +120,8 @@
       page: 1,
       pageSize: defaultPageSize,
       pageSizeOptions: Array.from(pageSizeOptions),
+      rowPredicate,
+      meta: {},
       totalRows: 0,
       filteredRows: 0,
       visibleRows: 0,
@@ -171,6 +174,14 @@
 
         const q = normalizedText(this.query);
         const matchedRows = rows.filter((row) => {
+          const matchedByPredicate =
+            typeof this.rowPredicate === 'function'
+              ? this.rowPredicate(row, this)
+              : true;
+          if (!matchedByPredicate) {
+            return false;
+          }
+
           const haystack = normalizedText(
             row.dataset.rowSearch || row.textContent || '',
           );
