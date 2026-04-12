@@ -37,6 +37,34 @@ local function kv_upsert(key, value)
     )
 end
 
+local function html_escape(value)
+    local text = tostring(value or "")
+    text = text:gsub("&", "&amp;")
+    text = text:gsub("<", "&lt;")
+    text = text:gsub(">", "&gt;")
+    text = text:gsub('"', "&quot;")
+    text = text:gsub("'", "&#39;")
+    return text
+end
+
+local function url_decode(value)
+    if not value then return "" end
+    local decoded = value:gsub("+", " ")
+    decoded = decoded:gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
+    return decoded
+end
+
+local function parse_form_urlencoded(body)
+    local out = {}
+    local source = body or ""
+    for key, value in string.gmatch(source, "([^&=]+)=?([^&]*)") do
+        out[url_decode(key)] = url_decode(value)
+    end
+    return out
+end
+
 -- ========================
 -- API Handlers
 -- ========================
@@ -129,6 +157,75 @@ end
 -- Admin Handler
 -- ========================
 
+local function kv_rows_partial(error_message)
+    local rows, err = db_query("SELECT key, value FROM kv_store ORDER BY key", nil)
+    if not rows then
+        return sushi.web.render("plugins/kv-store/partials/rows.html", {
+            items = {},
+            error_message = error_message or tostring(err),
+        })
+    end
+
+    return sushi.web.render("plugins/kv-store/partials/rows.html", {
+        items = rows,
+        error_message = error_message,
+    })
+end
+
+local function kv_flash(level, message)
+    local is_error = level == "error"
+    local class_name = "rounded-lg border px-3 py-2 text-sm border-emerald-200 bg-emerald-50 text-emerald-700"
+    if is_error then
+        class_name = "rounded-lg border px-3 py-2 text-sm border-red-200 bg-red-50 text-red-700"
+    end
+    return "<div class=\"" .. class_name .. "\">" .. html_escape(message) .. "</div>"
+end
+
+local function kv_admin_table_partial()
+    return kv_rows_partial(nil)
+end
+
+local function kv_admin_upsert_partial(args)
+    local body = args[2] or ""
+    local form = parse_form_urlencoded(body)
+    local key = form.key or ""
+    local value = form.value or ""
+    local original_key = form.original_key or ""
+
+    if key == "" then
+        return kv_flash("error", "Key cannot be empty")
+    end
+    if value == "" then
+        return kv_flash("error", "Value cannot be empty")
+    end
+
+    -- Keep key immutable in edit mode to align with UI.
+    if original_key ~= "" and original_key ~= key then
+        return kv_flash("error", "Changing key is not supported while editing")
+    end
+
+    local ok, err = kv_upsert(key, value)
+    if not ok then
+        return kv_flash("error", "Failed to save entry: " .. tostring(err))
+    end
+    return kv_flash("success", "Saved key: " .. key)
+end
+
+local function kv_admin_delete_partial(args)
+    local body = args[2] or ""
+    local form = parse_form_urlencoded(body)
+    local key = form.key or ""
+    if key == "" then
+        return kv_flash("error", "Missing key")
+    end
+
+    local ok, err = db_execute("DELETE FROM kv_store WHERE key = ?1", { key })
+    if not ok then
+        return kv_flash("error", "Failed to delete key: " .. tostring(err))
+    end
+    return kv_flash("success", "Deleted key: " .. key)
+end
+
 -- ========================
 -- CLI Handlers
 -- ========================
@@ -178,6 +275,9 @@ function sushi.init()
     sushi.api.route("POST", "/api/kv", kv_api_dispatch)
     sushi.api.route("PUT", "/api/kv/*", kv_api_dispatch)
     sushi.api.route("DELETE", "/api/kv/*", kv_api_delete_dispatch)
+    sushi.api.route("GET", "/admin/partials/kv/table", kv_admin_table_partial)
+    sushi.api.route("POST", "/admin/partials/kv/upsert", kv_admin_upsert_partial)
+    sushi.api.route("POST", "/admin/partials/kv/delete", kv_admin_delete_partial)
 
     -- Admin page
     sushi.web.page("/admin/kv", "plugins/kv-store/kv.html", { title = "KV Store" })

@@ -3,22 +3,46 @@ use axum::response::{Html, IntoResponse, Response};
 use sushi_core::context::SushiContext;
 
 pub async fn render_template(ctx: &SushiContext, name: &str) -> Response {
+    render_template_with_context(ctx, name, serde_json::json!({})).await
+}
+
+pub async fn render_template_with_context(
+    ctx: &SushiContext,
+    name: &str,
+    context: serde_json::Value,
+) -> Response {
     let static_url_prefix = {
         let cfg = ctx.config.get().await;
         normalize_static_url_prefix(&cfg.web.static_url_prefix)
     };
 
+    let template_context = merge_static_prefix(context, &static_url_prefix);
+
     match ctx.templates.render(
         name,
-        serde_json::json!({
-            "static_url_prefix": static_url_prefix,
-        }),
+        template_context,
     ) {
         Ok(html) => Html(html).into_response(),
         Err(err) => {
             tracing::error!("template render error for {name}: {err}");
             (StatusCode::INTERNAL_SERVER_ERROR, "template render error").into_response()
         }
+    }
+}
+
+fn merge_static_prefix(mut context: serde_json::Value, static_url_prefix: &str) -> serde_json::Value {
+    match context {
+        serde_json::Value::Object(ref mut map) => {
+            map.insert(
+                "static_url_prefix".to_string(),
+                serde_json::Value::String(static_url_prefix.to_string()),
+            );
+            context
+        }
+        _ => serde_json::json!({
+            "static_url_prefix": static_url_prefix,
+            "data": context,
+        }),
     }
 }
 

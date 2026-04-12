@@ -1,12 +1,12 @@
-use crate::routes::{dashboard, plugins, users, config, logs, login};
+use crate::routes::{config, dashboard, login, logs, plugins, users};
 use axum::{
     extract::Request,
+    extract::State,
     middleware::Next,
     response::IntoResponse,
-    routing::get,
+    routing::{delete, get, post},
     Router,
 };
-use serde_json::json;
 use std::collections::HashSet;
 use std::sync::Arc;
 use sushi_core::auth::jwt::JwtService;
@@ -23,24 +23,47 @@ pub struct AdminAuthState {
 pub async fn build_admin_router(ctx: &SushiContext) -> Router {
     let (static_dir, static_url_prefix) = {
         let cfg = ctx.config.get().await;
-        (cfg.web.static_dir.clone(), cfg.web.static_url_prefix.clone())
+        (
+            cfg.web.static_dir.clone(),
+            cfg.web.static_url_prefix.clone(),
+        )
     };
     let plugin_pages = ctx.plugins.list_admin_pages().await;
 
     let static_url_prefix = crate::render::normalize_static_url_prefix(&static_url_prefix);
 
-    let static_router: Router<SushiContext> =
-        Router::new().nest_service(&static_url_prefix, ServeDir::new(static_dir)).with_state(());
+    let static_router: Router<SushiContext> = Router::new()
+        .nest_service(&static_url_prefix, ServeDir::new(static_dir))
+        .with_state(());
 
     let mut router: Router<SushiContext> = Router::new()
         .merge(static_router)
-        .route("/admin-login", get(login::login_page))
-        .route("/admin", get(axum::response::Redirect::temporary("/admin/")))
+        .route("/admin-login", get(login::login_page).post(login::login_submit))
+        .route(
+            "/admin",
+            get(axum::response::Redirect::temporary("/admin/")),
+        )
         .route("/admin/", get(dashboard::dashboard_page))
         .route("/admin/plugins", get(plugins::plugins_page))
         .route("/admin/users", get(users::users_page))
         .route("/admin/config", get(config::config_page))
         .route("/admin/logs", get(logs::logs_page))
+        .route(
+            "/admin/partials/users/table",
+            get(users::users_table_partial),
+        )
+        .route(
+            "/admin/partials/users/create",
+            post(users::users_create_partial),
+        )
+        .route(
+            "/admin/partials/users/{id}",
+            delete(users::users_delete_partial),
+        )
+        .route(
+            "/admin/partials/plugins/table",
+            get(plugins::plugins_table_partial),
+        )
         .route("/admin/api/plugins", get(list_plugins_api));
 
     let reserved_paths: HashSet<&str> = HashSet::from([
@@ -51,6 +74,10 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/users",
         "/admin/config",
         "/admin/logs",
+        "/admin/partials/users/table",
+        "/admin/partials/users/create",
+        "/admin/partials/users/{id}",
+        "/admin/partials/plugins/table",
         "/admin/api/plugins",
     ]);
 
@@ -68,10 +95,9 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             get(move || async move {
                 match pm.call_admin_handler(&path).await {
                     Some(Ok(html)) => axum::response::Html(html).into_response(),
-                    Some(Err(e)) => (
-                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        e,
-                    ).into_response(),
+                    Some(Err(e)) => {
+                        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
+                    }
                     None => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
                 }
             }),
@@ -82,7 +108,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         jwt: Arc::clone(&ctx.jwt),
         static_url_prefix,
     };
-    
+
     router
         .layer(axum::middleware::from_fn_with_state(
             auth_state,
@@ -91,15 +117,9 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .with_state(ctx.clone())
 }
 
-async fn list_plugins_api() -> impl IntoResponse {
-    // Note: This endpoint is protected by the middleware, but doesn't have access to PluginManager
-    // In a real implementation, you'd pass PluginManager through app state or extensions
-    // For now, return empty data as this is a demo endpoint
-    axum::Json(json!({
-        "routes": [],
-        "commands": [],
-        "pages": [],
-    }))
+async fn list_plugins_api(State(ctx): State<SushiContext>) -> impl IntoResponse {
+    let plugins = ctx.plugins.list_plugins().await;
+    axum::Json(plugins)
 }
 
 async fn admin_auth_middleware(
@@ -155,10 +175,8 @@ async fn admin_auth_middleware(
             }
             // Only allow admin role for admin panel access
             if claims.role != "admin" {
-                return (
-                    axum::http::StatusCode::FORBIDDEN,
-                    "Admin access required"
-                ).into_response();
+                return (axum::http::StatusCode::FORBIDDEN, "Admin access required")
+                    .into_response();
             }
             next.run(req).await
         }

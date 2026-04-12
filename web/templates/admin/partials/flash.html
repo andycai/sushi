@@ -1,0 +1,9 @@
+{% set is_error = level == "error" %}
+{% set classes = "rounded-lg border px-3 py-2 text-sm" %}
+{% if is_error %}
+  {% set classes = classes ~ " border-red-200 bg-red-50 text-red-700" %}
+{% else %}
+  {% set classes = classes ~ " border-emerald-200 bg-emerald-50 text-emerald-700" %}
+{% endif %}
+
+<div class="{{ classes }}">{{ message }}</div>

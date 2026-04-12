@@ -5,7 +5,21 @@
 {% block main_attrs %} x-data="pluginsPage()"{% endblock %}
 
 {% block content %}
-  <h1 class="text-2xl font-bold mb-6">Plugins</h1>
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Plugins</h1>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-gray-500" x-text="lastUpdated ? `Updated ${lastUpdated}` : 'Not loaded yet'"></span>
+      <button
+        type="button"
+        class="border px-3 py-1 rounded hover:bg-gray-100 text-sm"
+        hx-get="/admin/partials/plugins/table"
+        hx-target="#plugins-table-body"
+        hx-swap="innerHTML"
+      >
+        Refresh
+      </button>
+    </div>
+  </div>
   <div class="bg-white rounded shadow overflow-hidden">
     <table class="w-full">
       <thead>
@@ -13,22 +27,20 @@
           <th class="px-4 py-2 text-left">Name</th>
           <th class="px-4 py-2 text-left">Version</th>
           <th class="px-4 py-2 text-left">Description</th>
+          <th class="px-4 py-2 text-left">Permissions</th>
           <th class="px-4 py-2">Status</th>
         </tr>
       </thead>
-      <tbody>
-        <template x-for="p in plugins" :key="p.name">
-          <tr class="border-b hover:bg-gray-50">
-            <td class="px-4 py-2" x-text="p.name"></td>
-            <td class="px-4 py-2" x-text="p.version"></td>
-            <td class="px-4 py-2" x-text="p.description"></td>
-            <td class="px-4 py-2 text-center">
-              <span class="px-2 py-1 rounded text-sm"
-                :class="p.loaded ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
-                x-text="p.loaded ? 'Active' : 'Inactive'"></span>
-            </td>
-          </tr>
-        </template>
+      <tbody
+        id="plugins-table-body"
+        hx-get="/admin/partials/plugins/table"
+        hx-trigger="load, plugins:refresh from:body"
+        hx-swap="innerHTML"
+        x-on:htmx:after-swap.camel="markLoaded()"
+      >
+        <tr>
+          <td class="px-4 py-6 text-center text-gray-500" colspan="5">Loading plugins...</td>
+        </tr>
       </tbody>
     </table>
   </div>

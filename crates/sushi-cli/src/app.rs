@@ -95,8 +95,12 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             .context("failed to scan plugins directory")?;
         for plugin in lua_plugins {
             let plugin_name = plugin.name().to_string();
+            let manifest = plugin.manifest().clone();
+            ctx.plugins.register_plugin_manifest(&manifest).await;
+
             if let Err(e) = plugin.init(&ctx).await {
                 tracing::warn!("failed to init plugin {plugin_name}: {e}");
+                ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
                 continue;
             }
             if let Some(lua) = plugin.into_vm() {
@@ -120,8 +124,9 @@ fn resolve_static_dir(config_path: Option<&Path>, static_dir: &str) -> Result<Pa
 fn resolve_dir(config_path: Option<&Path>, dir: &str, kind: &str) -> Result<PathBuf> {
     let base_dir = match config_path.and_then(|path| path.parent()) {
         Some(parent) => parent.to_path_buf(),
-        None => env::current_dir()
-            .with_context(|| format!("failed to determine current working directory for {kind} resolution"))?,
+        None => env::current_dir().with_context(|| {
+            format!("failed to determine current working directory for {kind} resolution")
+        })?,
     };
 
     let candidate = PathBuf::from(dir);
