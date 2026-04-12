@@ -3,8 +3,7 @@
     return {
       lastUpdated: '',
       markLoaded() {
-        const now = new Date();
-        this.lastUpdated = now.toLocaleTimeString();
+        this.lastUpdated = window.AdminUI ? window.AdminUI.nowLabel() : new Date().toLocaleTimeString();
       },
     };
   };

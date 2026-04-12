@@ -1,22 +1,22 @@
 {% for u in users %}
-  <tr class="border-b hover:bg-gray-50">
-    <td class="px-4 py-3 text-sm">{{ u.id }}</td>
-    <td class="px-4 py-3 text-sm font-medium">{{ u.username }}</td>
-    <td class="px-4 py-3 text-sm text-gray-600">{{ u.email }}</td>
-    <td class="px-4 py-3">
-      {% set role_class = "bg-gray-100 text-gray-700" %}
+  <tr>
+    <td class="ui-mono">{{ u.id }}</td>
+    <td class="font-semibold">{{ u.username }}</td>
+    <td>{{ u.email }}</td>
+    <td>
       {% if u.role == "admin" %}
-        {% set role_class = "bg-amber-100 text-amber-700" %}
+        <span class="ui-badge warn">admin</span>
       {% elif u.role == "editor" %}
-        {% set role_class = "bg-blue-100 text-blue-700" %}
+        <span class="ui-badge info">editor</span>
+      {% else %}
+        <span class="ui-badge muted">viewer</span>
       {% endif %}
-      <span class="px-2 py-1 rounded text-xs font-medium {{ role_class }}">{{ u.role }}</span>
     </td>
-    <td class="px-4 py-3 text-center">
+    <td class="actions">
       <button
         type="button"
         data-username="{{ u.username }}"
-        class="text-red-600 hover:text-red-800 text-sm font-medium"
+        class="ui-action-link danger"
         @click="openDeleteConfirm({{ u.id }}, $el.dataset.username)"
       >
         Delete
@@ -25,6 +25,6 @@
   </tr>
 {% else %}
   <tr>
-    <td colspan="5" class="px-4 py-8 text-center text-gray-500">No users found. Add one to get started.</td>
+    <td colspan="5" class="ui-empty">No users found. Create one to get started.</td>
   </tr>
 {% endfor %}

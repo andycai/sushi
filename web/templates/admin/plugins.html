@@ -2,16 +2,19 @@
 {% set active_section = "plugins" %}
 
 {% block title %}Plugins — Sushi Admin{% endblock %}
-{% block main_attrs %} x-data="pluginsPage()"{% endblock %}
+{% block main_attrs %}x-data="pluginsPage()"{% endblock %}
 
 {% block content %}
-  <div class="mb-6 flex items-center justify-between">
-    <h1 class="text-2xl font-bold">Plugins</h1>
-    <div class="flex items-center gap-3">
-      <span class="text-sm text-gray-500" x-text="lastUpdated ? `Updated ${lastUpdated}` : 'Not loaded yet'"></span>
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Plugin Registry</h1>
+      <p class="ui-subtitle">Inspect plugin manifests, granted capabilities, and runtime load status.</p>
+    </div>
+    <div class="ui-toolbar">
+      <span class="ui-badge muted" x-text="lastUpdated ? `Updated ${lastUpdated}` : 'Not loaded yet'"></span>
       <button
         type="button"
-        class="border px-3 py-1 rounded hover:bg-gray-100 text-sm"
+        class="ui-btn ui-btn-secondary"
         hx-get="/admin/partials/plugins/table"
         hx-target="#plugins-table-body"
         hx-swap="innerHTML"
@@ -20,30 +23,37 @@
       </button>
     </div>
   </div>
-  <div class="bg-white rounded shadow overflow-hidden">
-    <table class="w-full">
-      <thead>
-        <tr class="bg-gray-50 border-b">
-          <th class="px-4 py-2 text-left">Name</th>
-          <th class="px-4 py-2 text-left">Version</th>
-          <th class="px-4 py-2 text-left">Description</th>
-          <th class="px-4 py-2 text-left">Permissions</th>
-          <th class="px-4 py-2">Status</th>
-        </tr>
-      </thead>
-      <tbody
-        id="plugins-table-body"
-        hx-get="/admin/partials/plugins/table"
-        hx-trigger="load, plugins:refresh from:body"
-        hx-swap="innerHTML"
-        x-on:htmx:after-swap.camel="markLoaded()"
-      >
-        <tr>
-          <td class="px-4 py-6 text-center text-gray-500" colspan="5">Loading plugins...</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+
+  <section class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Installed plugins</h2>
+      <span class="ui-badge info">Lua modules</span>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Description</th>
+            <th>Permissions</th>
+            <th class="text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody
+          id="plugins-table-body"
+          hx-get="/admin/partials/plugins/table"
+          hx-trigger="load, plugins:refresh from:body"
+          hx-swap="innerHTML"
+          x-on:htmx:after-swap.camel="markLoaded()"
+        >
+          <tr>
+            <td colspan="5" class="ui-empty">Loading plugin inventory...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 {% endblock %}
 
 {% block scripts %}

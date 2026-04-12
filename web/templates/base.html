@@ -1,9 +1,10 @@
 {% macro nav_link(href, label, key) %}
   <a
     href="{{ href }}"
-    class="block px-4 py-2 hover:bg-gray-700 {% if active_section == key %}bg-gray-700{% endif %}"
+    class="admin-nav-link {% if active_section == key %}active{% endif %}"
   >
-    {{ label }}
+    <span class="admin-nav-dot"></span>
+    <span>{{ label }}</span>
   </a>
 {% endmacro %}
 
@@ -19,26 +20,42 @@
   <script defer src="{{ static_prefix }}/js/alpine-3.15.11.js"></script>
   <script defer src="{{ static_prefix }}/js/htmx.min-2.0.8.js"></script>
   <script defer src="{{ static_prefix }}/js/tailwindcss-4.2.2.js"></script>
+  <script defer src="{{ static_prefix }}/admin/js/ui-kit.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}bg-gray-100 min-h-screen{% endblock %}">
-  <div class="flex min-h-screen">
+<body class="{% block body_class %}{% endblock %}">
+  <div class="admin-shell">
     {% block nav %}
     {% set active_section = active_section or "" %}
-    <nav class="w-60 bg-gray-900 text-white flex-shrink-0">
-      <div class="p-4 text-xl font-bold border-b border-gray-700">Sushi Admin</div>
-      <div class="mt-4 space-y-1">
+    <aside class="admin-sidebar">
+      <div class="admin-brand">
+        <span class="admin-brand-logo">S</span>
+        <span class="admin-brand-title">
+          <strong>Sushi Admin</strong>
+          <span>Control Surface</span>
+        </span>
+      </div>
+      <nav class="admin-nav">
         {{ nav_link('/admin/', 'Dashboard', 'dashboard') }}
         {{ nav_link('/admin/plugins', 'Plugins', 'plugins') }}
         {{ nav_link('/admin/users', 'Users', 'users') }}
         {{ nav_link('/admin/config', 'Config', 'config') }}
         {{ nav_link('/admin/kv', 'KV Store', 'kv') }}
         {{ nav_link('/admin/logs', 'Logs', 'logs') }}
-      </div>
-    </nav>
+      </nav>
+    </aside>
     {% endblock %}
-    <main class="flex-1 p-6 overflow-auto {% block additional_main_classes %}{% endblock %}" {% block main_attrs %}{% endblock %}>
-      {% block content %}{% endblock %}
+
+    <main class="admin-main {% block additional_main_classes %}{% endblock %}" {% block main_attrs %}{% endblock %}>
+      {% block topbar %}
+      <header class="admin-topbar">
+        <div class="admin-topbar-title">Sushi Runtime Administration</div>
+        <div class="admin-topbar-meta">Enterprise Console</div>
+      </header>
+      {% endblock %}
+      <section class="admin-content">
+        {% block content %}{% endblock %}
+      </section>
     </main>
   </div>
   {% block scripts %}{% endblock %}

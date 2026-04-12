@@ -1,27 +1,27 @@
 {% if error_message %}
   <tr>
-    <td colspan="3" class="px-4 py-3 bg-red-50 text-red-700 text-sm">{{ error_message }}</td>
+    <td colspan="3" class="text-sm text-rose-700 bg-rose-50">{{ error_message }}</td>
   </tr>
 {% endif %}
 
 {% for item in items %}
-  <tr class="border-b hover:bg-gray-50">
-    <td class="px-4 py-3 font-mono text-sm">{{ item.key }}</td>
-    <td class="px-4 py-3 font-mono text-sm truncate max-w-xs">{{ item.value }}</td>
-    <td class="px-4 py-3 text-right">
+  <tr>
+    <td class="ui-mono">{{ item.key }}</td>
+    <td class="ui-mono truncate max-w-xs">{{ item.value }}</td>
+    <td class="actions">
       <button
         type="button"
         data-key="{{ item.key }}"
         data-value="{{ item.value }}"
         @click="openEdit($el.dataset.key, $el.dataset.value)"
-        class="text-blue-600 hover:text-blue-800 mr-3 text-sm font-medium"
+        class="ui-action-link"
       >
         Edit
       </button>
       <button
         type="button"
         data-key="{{ item.key }}"
-        class="text-red-600 hover:text-red-800 text-sm font-medium"
+        class="ui-action-link danger"
         @click="openDeleteConfirm($el.dataset.key)"
       >
         Delete
@@ -30,6 +30,6 @@
   </tr>
 {% else %}
   <tr>
-    <td colspan="3" class="px-4 py-8 text-center text-gray-500">No entries found. Add one to get started.</td>
+    <td colspan="3" class="ui-empty">No entries found. Add one to get started.</td>
   </tr>
 {% endfor %}

@@ -3,16 +3,26 @@
     return {
       config: {},
       loaded: false,
+      error: '',
       async init() {
+        this.error = '';
         try {
-          const resp = await fetch('/admin/api/config');
-          if (resp.ok) {
-            this.config = await resp.json();
+          if (window.AdminUI) {
+            this.config = await window.AdminUI.fetchJson(
+              '/admin/api/config',
+              {},
+              'load configuration',
+            );
           } else {
-            throw new Error('Failed to load config');
+            const resp = await fetch('/admin/api/config');
+            if (!resp.ok) {
+              throw new Error('Failed to load configuration');
+            }
+            this.config = await resp.json();
           }
-        } catch (e) {
+        } catch (err) {
           this.config = {};
+          this.error = 'Unable to load config from /admin/api/config';
         }
         this.loaded = true;
       },

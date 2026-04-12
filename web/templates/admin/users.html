@@ -5,113 +5,113 @@
 {% block main_attrs %}x-data="usersPage()" x-on:users:close-modal.window="closeModal()"{% endblock %}
 
 {% block content %}
-  <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold">Users</h1>
-    <button @click="openModal()"
-      class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Add User</button>
-  </div>
-  <div id="users-feedback" class="mb-4"></div>
-  <div class="bg-white rounded shadow overflow-hidden">
-    <table class="w-full">
-      <thead class="bg-gray-50 border-b">
-        <tr>
-          <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">ID</th>
-          <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Username</th>
-          <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Email</th>
-          <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Role</th>
-          <th class="px-4 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
-        </tr>
-      </thead>
-      <tbody
-        id="users-table-body"
-        hx-get="/admin/partials/users/table"
-        hx-trigger="load, users:refresh from:body"
-        hx-swap="innerHTML"
-      >
-        <tr>
-          <td colspan="5" class="px-4 py-8 text-center text-gray-500">Loading users...</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Identity & Access</h1>
+      <p class="ui-subtitle">Create, monitor, and remove administrator and editor accounts.</p>
+    </div>
+    <div class="ui-toolbar">
+      <button type="button" class="ui-btn ui-btn-primary" @click="openModal()">Add User</button>
+    </div>
   </div>
 
-  <div x-show="showModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display:none">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-      <div class="px-6 py-4 border-b">
-        <h2 class="text-lg font-semibold">Add User</h2>
+  <div id="users-feedback" class="ui-feedback"></div>
+
+  <section class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">User directory</h2>
+      <span class="ui-badge info">Role-based access</span>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody
+          id="users-table-body"
+          hx-get="/admin/partials/users/table"
+          hx-trigger="load, users:refresh from:body"
+          hx-swap="innerHTML"
+        >
+          <tr>
+            <td colspan="5" class="ui-empty">Loading users...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div x-show="formModal.open" class="ui-modal-overlay" style="display:none">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h2 class="ui-modal-title">Create user</h2>
       </div>
       <form
-        class="px-6 py-4 space-y-4"
+        class="ui-modal-body space-y-4"
         hx-post="/admin/partials/users/create"
         hx-target="#users-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="submitting = true"
-        x-on:htmx:after-request.camel="submitting = false"
+        x-on:htmx:before-request.camel="formModal.busy = true"
+        x-on:htmx:after-request.camel="formModal.busy = false"
       >
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="username">Username</label>
-          <input x-model="newUser.username" id="username" type="text" required
-            name="username"
-            class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" minlength="3" maxlength="32">
+          <label class="ui-label" for="username">Username</label>
+          <input x-model="formModal.payload.username" id="username" type="text" required name="username" class="ui-input" minlength="3" maxlength="32">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="email">Email</label>
-          <input x-model="newUser.email" id="email" type="email" required
-            name="email"
-            class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="ui-label" for="email">Email</label>
+          <input x-model="formModal.payload.email" id="email" type="email" required name="email" class="ui-input">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="password">Password</label>
-          <input x-model="newUser.password" id="password" type="password" required
-            name="password"
-            class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" minlength="8">
+          <label class="ui-label" for="password">Password</label>
+          <input x-model="formModal.payload.password" id="password" type="password" required name="password" class="ui-input" minlength="8">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="role">Role</label>
-          <select x-model="newUser.role" id="role"
-            name="role"
-            class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <label class="ui-label" for="role">Role</label>
+          <select x-model="formModal.payload.role" id="role" name="role" class="ui-select">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
             <option value="admin">Admin</option>
           </select>
         </div>
-        <div class="flex justify-end gap-3 pt-2">
-          <button type="button" @click="closeModal()"
-            class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-          <button type="submit" :disabled="submitting"
-            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60">
-            <span x-show="!submitting">Create</span>
-            <span x-show="submitting">Creating...</span>
+        <div class="ui-modal-actions">
+          <button type="button" class="ui-btn ui-btn-secondary" @click="closeModal()">Cancel</button>
+          <button type="submit" :disabled="formModal.busy" class="ui-btn ui-btn-primary">
+            <span x-show="!formModal.busy">Create</span>
+            <span x-show="formModal.busy">Creating...</span>
           </button>
         </div>
       </form>
     </div>
   </div>
 
-  <div x-show="showDeleteModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display:none">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-      <div class="px-6 py-4 border-b">
-        <h2 class="text-lg font-semibold">Confirm deletion</h2>
+  <div x-show="confirmModal.open" class="ui-modal-overlay" style="display:none">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h2 class="ui-modal-title">Confirm deletion</h2>
       </div>
       <form
-        class="px-6 py-4"
-        :hx-delete="'/admin/partials/users/' + deleteCandidate.id"
+        class="ui-modal-body"
+        :hx-delete="'/admin/partials/users/' + confirmModal.payload.id"
         hx-target="#users-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="deleting = true"
-        x-on:htmx:after-request.camel="deleting = false; if ($event.detail.successful) { closeDeleteConfirm(); }"
+        x-on:htmx:before-request.camel="confirmModal.busy = true"
+        x-on:htmx:after-request.camel="confirmModal.busy = false; if ($event.detail.successful) { closeDeleteConfirm(); }"
       >
-        <p class="text-sm text-gray-600 mb-5">
-          Delete user <span class="font-semibold text-gray-800" x-text="deleteCandidate.username"></span>? This action cannot be undone.
+        <p class="text-sm text-slate-600">
+          Delete user <span class="font-semibold text-slate-900" x-text="confirmModal.payload.username"></span>? This action cannot be undone.
         </p>
-        <div class="flex justify-end gap-3">
-          <button type="button" @click="closeDeleteConfirm()"
-            class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-          <button type="submit" :disabled="deleting || !deleteCandidate.id"
-            class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">
-            <span x-show="!deleting">Delete</span>
-            <span x-show="deleting">Deleting...</span>
+        <div class="ui-modal-actions">
+          <button type="button" class="ui-btn ui-btn-secondary" @click="closeDeleteConfirm()">Cancel</button>
+          <button type="submit" :disabled="confirmModal.busy || !confirmModal.payload.id" class="ui-btn ui-btn-danger">
+            <span x-show="!confirmModal.busy">Delete</span>
+            <span x-show="confirmModal.busy">Deleting...</span>
           </button>
         </div>
       </form>

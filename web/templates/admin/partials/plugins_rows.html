@@ -1,26 +1,28 @@
 {% for p in plugins %}
-  <tr class="border-b hover:bg-gray-50">
-    <td class="px-4 py-2">{{ p.name }}</td>
-    <td class="px-4 py-2">{{ p.version }}</td>
-    <td class="px-4 py-2">{{ p.description }}</td>
-    <td class="px-4 py-2 text-sm">
-      {% if p.permissions.routes %}<span class="inline-block mr-2">routes</span>{% endif %}
-      {% if p.permissions.commands %}<span class="inline-block mr-2">commands</span>{% endif %}
-      {% if p.permissions.admin %}<span class="inline-block mr-2">admin</span>{% endif %}
-      <span class="inline-block">db:{{ p.permissions.database }}</span>
-    </td>
-    <td class="px-4 py-2 text-center">
-      {% set status_class = "bg-red-100 text-red-700" %}
-      {% set status_text = "Inactive" %}
-      {% if p.loaded %}
-        {% set status_class = "bg-green-100 text-green-700" %}
-        {% set status_text = "Active" %}
+  <tr>
+    <td>{{ p.name }}</td>
+    <td class="ui-mono">{{ p.version }}</td>
+    <td>{{ p.description }}</td>
+    <td class="text-sm">
+      {% if p.permissions.routes %}<span class="ui-badge muted mr-1">routes</span>{% endif %}
+      {% if p.permissions.commands %}<span class="ui-badge muted mr-1">commands</span>{% endif %}
+      {% if p.permissions.admin %}<span class="ui-badge muted mr-1">admin</span>{% endif %}
+      {% if p.permissions.database %}
+        <span class="ui-badge warn">db</span>
+      {% else %}
+        <span class="ui-badge info">db:off</span>
       {% endif %}
-      <span class="px-2 py-1 rounded text-sm {{ status_class }}">{{ status_text }}</span>
+    </td>
+    <td class="text-center">
+      {% if p.loaded %}
+        <span class="ui-badge ok">Active</span>
+      {% else %}
+        <span class="ui-badge danger">Inactive</span>
+      {% endif %}
     </td>
   </tr>
 {% else %}
   <tr>
-    <td class="px-4 py-6 text-center text-gray-500" colspan="5">No plugins found.</td>
+    <td colspan="5" class="ui-empty">No plugins discovered.</td>
   </tr>
 {% endfor %}

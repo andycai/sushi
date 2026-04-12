@@ -2,101 +2,119 @@
 {% set active_section = "kv" %}
 
 {% block title %}KV Store — Sushi Admin{% endblock %}
-{% block main_attrs %} x-data="kvPage()"{% endblock %}
+{% block main_attrs %}x-data="kvPage()"{% endblock %}
 
 {% block content %}
-  <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold">KV Store</h1>
-    <button @click="openCreate()"
-      class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Add Entry</button>
-  </div>
-  <div id="kv-feedback" class="mb-4"></div>
-  <div class="bg-white rounded shadow overflow-hidden">
-    <table class="w-full">
-      <thead class="bg-gray-50 border-b">
-        <tr>
-          <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Key</th>
-          <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Value</th>
-          <th class="px-4 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
-        </tr>
-      </thead>
-      <tbody
-        id="kv-table-body"
-        hx-get="/admin/partials/kv/table"
-        hx-trigger="load, kv:refresh from:body"
-        hx-swap="innerHTML"
-      >
-        <tr>
-          <td colspan="3" class="px-4 py-8 text-center text-gray-500">Loading KV entries...</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">KV Store</h1>
+      <p class="ui-subtitle">Manage runtime key-value entries used by plugins and operational workflows.</p>
+    </div>
+    <div class="ui-toolbar">
+      <button type="button" class="ui-btn ui-btn-primary" @click="openCreate()">Add Entry</button>
+    </div>
   </div>
 
-  <div x-show="showModal" x-transition
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-      <div class="px-6 py-4 border-b">
-        <h2 class="text-lg font-semibold" x-text="mode === 'create' ? 'Add Entry' : 'Edit Entry'"></h2>
+  <div id="kv-feedback" class="ui-feedback"></div>
+
+  <section class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Key registry</h2>
+      <span class="ui-badge info">Persistent storage</span>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody
+          id="kv-table-body"
+          hx-get="/admin/partials/kv/table"
+          hx-trigger="load, kv:refresh from:body"
+          hx-swap="innerHTML"
+        >
+          <tr>
+            <td colspan="3" class="ui-empty">Loading KV entries...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div x-show="editorModal.open" class="ui-modal-overlay" style="display: none">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h2 class="ui-modal-title" x-text="mode === 'create' ? 'Add entry' : 'Edit entry'"></h2>
       </div>
       <form
-        class="px-6 py-4 space-y-4"
+        class="ui-modal-body space-y-4"
         hx-post="/admin/partials/kv/upsert"
         hx-target="#kv-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="submitting = true"
-        x-on:htmx:after-request.camel="submitting = false; if ($event.detail.successful) { closeModal(); triggerRefresh(); }"
+        x-on:htmx:before-request.camel="editorModal.busy = true"
+        x-on:htmx:after-request.camel="editorModal.busy = false; if ($event.detail.successful) { closeModal(); triggerRefresh(); }"
       >
-        <input type="hidden" name="original_key" x-model="form.originalKey">
+        <input type="hidden" name="original_key" x-model="editorModal.payload.originalKey">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="kv-key">Key</label>
-          <input type="text" id="kv-key" x-model="form.key" name="key" :readonly="mode === 'edit'"
-            class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            :class="mode === 'edit' ? 'bg-gray-100' : ''" required>
+          <label class="ui-label" for="kv-key">Key</label>
+          <input
+            type="text"
+            id="kv-key"
+            x-model="editorModal.payload.key"
+            name="key"
+            :readonly="mode === 'edit'"
+            class="ui-input"
+            required
+          >
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1" for="kv-value">Value</label>
-          <input type="text" id="kv-value" x-model="form.value" name="value"
-            class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
+          <label class="ui-label" for="kv-value">Value</label>
+          <input
+            type="text"
+            id="kv-value"
+            x-model="editorModal.payload.value"
+            name="value"
+            class="ui-input"
+            required
+          >
         </div>
-        <div class="flex justify-end gap-3 pt-2">
-          <button type="button" @click="closeModal()"
-            class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-          <button type="submit" :disabled="submitting"
-            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60">
-            <span x-show="!submitting">Save</span>
-            <span x-show="submitting">Saving...</span>
+        <div class="ui-modal-actions">
+          <button type="button" @click="closeModal()" class="ui-btn ui-btn-secondary">Cancel</button>
+          <button type="submit" :disabled="editorModal.busy" class="ui-btn ui-btn-primary">
+            <span x-show="!editorModal.busy">Save</span>
+            <span x-show="editorModal.busy">Saving...</span>
           </button>
         </div>
       </form>
     </div>
   </div>
 
-  <div x-show="showDeleteModal" x-transition
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-      <div class="px-6 py-4 border-b">
-        <h2 class="text-lg font-semibold">Confirm deletion</h2>
+  <div x-show="confirmModal.open" class="ui-modal-overlay" style="display: none">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h2 class="ui-modal-title">Confirm deletion</h2>
       </div>
       <form
-        class="px-6 py-4"
+        class="ui-modal-body"
         hx-post="/admin/partials/kv/delete"
         hx-target="#kv-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="deleting = true"
-        x-on:htmx:after-request.camel="deleting = false; if ($event.detail.successful) { closeDeleteConfirm(); triggerRefresh(); }"
+        x-on:htmx:before-request.camel="confirmModal.busy = true"
+        x-on:htmx:after-request.camel="confirmModal.busy = false; if ($event.detail.successful) { closeDeleteConfirm(); triggerRefresh(); }"
       >
-        <input type="hidden" name="key" x-model="deleteKey">
-        <p class="text-sm text-gray-600 mb-5">
-          Delete key <span class="font-semibold text-gray-800 font-mono" x-text="deleteKey"></span>? This action cannot be undone.
+        <input type="hidden" name="key" x-model="confirmModal.payload.key">
+        <p class="text-sm text-slate-600">
+          Delete key <span class="font-semibold ui-mono text-slate-900" x-text="confirmModal.payload.key"></span>? This action cannot be undone.
         </p>
-        <div class="flex justify-end gap-3">
-          <button type="button" @click="closeDeleteConfirm()"
-            class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-          <button type="submit" :disabled="deleting || !deleteKey"
-            class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">
-            <span x-show="!deleting">Delete</span>
-            <span x-show="deleting">Deleting...</span>
+        <div class="ui-modal-actions">
+          <button type="button" @click="closeDeleteConfirm()" class="ui-btn ui-btn-secondary">Cancel</button>
+          <button type="submit" :disabled="confirmModal.busy || !confirmModal.payload.key" class="ui-btn ui-btn-danger">
+            <span x-show="!confirmModal.busy">Delete</span>
+            <span x-show="confirmModal.busy">Deleting...</span>
           </button>
         </div>
       </form>

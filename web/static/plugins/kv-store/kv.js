@@ -1,55 +1,73 @@
 (() => {
-  window.kvPage = function kvPage() {
+  function fallbackModal(factory) {
     return {
-      showModal: false,
-      showDeleteModal: false,
-      submitting: false,
-      deleting: false,
+      open: false,
+      busy: false,
+      payload: factory(),
+      show(payload = {}) {
+        this.open = true;
+        this.busy = false;
+        this.payload = { ...factory(), ...payload };
+      },
+      hide() {
+        this.open = false;
+        this.busy = false;
+        this.payload = factory();
+      },
+    };
+  }
+
+  window.kvPage = function kvPage() {
+    const makeFormPayload = () => ({
+      key: '',
+      value: '',
+      originalKey: '',
       mode: 'create',
-      deleteKey: '',
-      form: {
-        key: '',
-        value: '',
-        originalKey: '',
+    });
+    const makeDeletePayload = () => ({
+      key: '',
+    });
+
+    const modalFactory =
+      window.AdminUI && typeof window.AdminUI.createModal === 'function'
+        ? window.AdminUI.createModal
+        : fallbackModal;
+
+    return {
+      editorModal: modalFactory(makeFormPayload),
+      confirmModal: modalFactory(makeDeletePayload),
+      get mode() {
+        return this.editorModal.payload.mode || 'create';
       },
       openCreate() {
-        this.mode = 'create';
-        this.showModal = true;
-        this.showDeleteModal = false;
-        this.submitting = false;
-        this.form = {
-          key: '',
-          value: '',
-          originalKey: '',
-        };
+        this.confirmModal.hide();
+        this.editorModal.show({ mode: 'create' });
       },
       openEdit(key, value) {
-        this.mode = 'edit';
-        this.showModal = true;
-        this.showDeleteModal = false;
-        this.submitting = false;
-        this.form = {
-          key: key,
-          value: value,
+        this.confirmModal.hide();
+        this.editorModal.show({
+          key,
+          value,
           originalKey: key,
-        };
+          mode: 'edit',
+        });
       },
       closeModal() {
-        this.showModal = false;
-        this.submitting = false;
+        this.editorModal.hide();
       },
       openDeleteConfirm(key) {
-        this.showModal = false;
-        this.showDeleteModal = true;
-        this.deleting = false;
-        this.deleteKey = key || '';
+        this.editorModal.hide();
+        this.confirmModal.show({ key: key || '' });
       },
       closeDeleteConfirm() {
-        this.showDeleteModal = false;
-        this.deleting = false;
-        this.deleteKey = '';
+        this.confirmModal.hide();
       },
       triggerRefresh() {
+        if (window.AdminUI) {
+          window.AdminUI.trigger('kv:refresh');
+          return;
+        }
+
         if (window.htmx) {
           window.htmx.trigger(document.body, 'kv:refresh');
         }

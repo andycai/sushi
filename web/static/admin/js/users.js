@@ -1,51 +1,59 @@
 (() => {
-  window.usersPage = function usersPage() {
+  function fallbackModal(factory) {
+    const seed = factory();
     return {
-      showModal: false,
-      submitting: false,
-      showDeleteModal: false,
-      deleting: false,
-      deleteCandidate: {
-        id: null,
-        username: '',
+      open: false,
+      busy: false,
+      payload: seed,
+      show(payload = {}) {
+        this.open = true;
+        this.busy = false;
+        this.payload = { ...factory(), ...payload };
       },
-      newUser: {
-        username: '',
-        email: '',
-        password: '',
-        role: 'viewer',
+      hide() {
+        this.open = false;
+        this.busy = false;
+        this.payload = factory();
       },
+    };
+  }
+
+  window.usersPage = function usersPage() {
+    const makeUserForm = () => ({
+      username: '',
+      email: '',
+      password: '',
+      role: 'viewer',
+    });
+    const makeDeletePayload = () => ({
+      id: null,
+      username: '',
+    });
+
+    const modalFactory =
+      window.AdminUI && typeof window.AdminUI.createModal === 'function'
+        ? window.AdminUI.createModal
+        : fallbackModal;
+
+    return {
+      formModal: modalFactory(makeUserForm),
+      confirmModal: modalFactory(makeDeletePayload),
       openModal() {
-        this.showModal = true;
-        this.submitting = false;
-        this.showDeleteModal = false;
-        this.newUser = {
-          username: '',
-          email: '',
-          password: '',
-          role: 'viewer',
-        };
+        this.confirmModal.hide();
+        this.formModal.show();
       },
       closeModal() {
-        this.showModal = false;
-        this.submitting = false;
+        this.formModal.hide();
       },
       openDeleteConfirm(id, username) {
-        this.showModal = false;
-        this.showDeleteModal = true;
-        this.deleting = false;
-        this.deleteCandidate = {
-          id: id,
+        this.formModal.hide();
+        this.confirmModal.show({
+          id,
           username: username || '',
-        };
+        });
       },
       closeDeleteConfirm() {
-        this.showDeleteModal = false;
-        this.deleting = false;
-        this.deleteCandidate = {
-          id: null,
-          username: '',
-        };
+        this.confirmModal.hide();
       },
     };
   };

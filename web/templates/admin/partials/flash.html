@@ -1,9 +1,10 @@
 {% set is_error = level == "error" %}
-{% set classes = "rounded-lg border px-3 py-2 text-sm" %}
 {% if is_error %}
-  {% set classes = classes ~ " border-red-200 bg-red-50 text-red-700" %}
+  <div class="ui-card">
+    <div class="ui-card-body text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">{{ message }}</div>
+  </div>
 {% else %}
-  {% set classes = classes ~ " border-emerald-200 bg-emerald-50 text-emerald-700" %}
+  <div class="ui-card">
+    <div class="ui-card-body text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl">{{ message }}</div>
+  </div>
 {% endif %}
-
-<div class="{{ classes }}">{{ message }}</div>

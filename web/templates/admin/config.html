@@ -2,55 +2,82 @@
 {% set active_section = "config" %}
 
 {% block title %}Config — Sushi Admin{% endblock %}
-{% block main_attrs %} x-data="configPage()"{% endblock %}
+{% block main_attrs %}x-data="configPage()"{% endblock %}
 
 {% block content %}
-  <h1 class="text-2xl font-bold mb-6">Configuration</h1>
-  <div x-show="!loaded" class="text-gray-500">Loading configuration...</div>
-  <div x-show="loaded">
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3 text-gray-800 border-b pb-1">Server</h2>
-      <div class="bg-white rounded shadow overflow-hidden">
-        <table class="w-full">
-          <tbody>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600 w-48">Host</td><td class="px-4 py-2 text-sm font-mono" x-text="config.server?.host"></td></tr>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600">Port</td><td class="px-4 py-2 text-sm font-mono" x-text="config.server?.port"></td></tr>
-          </tbody>
-        </table>
-      </div>
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Runtime Configuration</h1>
+      <p class="ui-subtitle">Read-only operational snapshot of loaded server configuration.</p>
     </div>
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3 text-gray-800 border-b pb-1">Database</h2>
-      <div class="bg-white rounded shadow overflow-hidden">
-        <table class="w-full">
-          <tbody>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600 w-48">Path</td><td class="px-4 py-2 text-sm font-mono" x-text="config.database?.path"></td></tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="ui-toolbar">
+      <span class="ui-badge muted">Read only</span>
+      <button class="ui-btn ui-btn-secondary" type="button" @click="init()">Reload</button>
     </div>
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3 text-gray-800 border-b pb-1">JWT</h2>
-      <div class="bg-white rounded shadow overflow-hidden">
-        <table class="w-full">
-          <tbody>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600 w-48">Secret</td><td class="px-4 py-2 text-sm font-mono text-red-500">••••••••</td></tr>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600">Access TTL</td><td class="px-4 py-2 text-sm font-mono" x-text="config.jwt?.access_ttl + 's'"></td></tr>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600">Refresh TTL</td><td class="px-4 py-2 text-sm font-mono" x-text="config.jwt?.refresh_ttl + 's'"></td></tr>
-          </tbody>
-        </table>
-      </div>
+  </div>
+
+  <div x-show="!loaded" class="ui-card">
+    <div class="ui-card-body text-slate-500">Loading configuration...</div>
+  </div>
+
+  <div x-show="loaded && error" class="ui-card">
+    <div class="ui-card-body">
+      <span class="ui-badge danger">Error</span>
+      <p class="mt-3 text-sm text-slate-600" x-text="error"></p>
     </div>
-    <div class="mb-6">
-      <h2 class="text-lg font-semibold mb-3 text-gray-800 border-b pb-1">Plugins</h2>
-      <div class="bg-white rounded shadow overflow-hidden">
-        <table class="w-full">
-          <tbody>
-            <tr class="border-b"><td class="px-4 py-2 text-sm font-medium text-gray-600 w-48">Directory</td><td class="px-4 py-2 text-sm font-mono" x-text="config.plugins?.directory"></td></tr>
-          </tbody>
-        </table>
+  </div>
+
+  <div x-show="loaded && !error" class="grid gap-4 md:grid-cols-2">
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">Server</h2>
+        <span class="ui-badge info">Network</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Host</dt><dd class="ui-mono" x-text="config.server?.host"></dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Port</dt><dd class="ui-mono" x-text="config.server?.port"></dd></div>
+        </dl>
       </div>
-    </div>
+    </section>
+
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">Database</h2>
+        <span class="ui-badge info">Storage</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Path</dt><dd class="ui-mono" x-text="config.database?.path"></dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">JWT</h2>
+        <span class="ui-badge warn">Sensitive</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Secret</dt><dd class="ui-mono text-rose-600">••••••••</dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Access TTL</dt><dd class="ui-mono" x-text="config.jwt?.access_ttl + 's'"></dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Refresh TTL</dt><dd class="ui-mono" x-text="config.jwt?.refresh_ttl + 's'"></dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">Plugins</h2>
+        <span class="ui-badge info">Discovery</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Directory</dt><dd class="ui-mono" x-text="config.plugins?.directory"></dd></div>
+        </dl>
+      </div>
+    </section>
   </div>
 {% endblock %}
 
