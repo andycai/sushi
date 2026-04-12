@@ -782,6 +782,75 @@ body {
   }
 }
 
+/* 导航组件 - 收缩菜单 */
+.nav-item-wrapper {
+  position: relative;
+}
+
+.nav-children {
+  padding-left: 24px;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+.nav-child-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #d3e0ff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  margin-bottom: 2px;
+}
+
+.nav-child-link:hover {
+  background: rgba(158, 193, 255, 0.14);
+  color: #f2f6ff;
+}
+
+.nav-child-link.active {
+  background: rgba(129, 174, 255, 0.26);
+  color: #ffffff;
+}
+
+.admin-nav-link.has-children .admin-nav-arrow {
+  font-size: 16px;
+  transition: transform 0.2s ease;
+}
+
+.admin-nav-link.has-children .admin-nav-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+/* 导航底部 */
+.nav-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid rgba(190, 209, 255, 0.15);
+}
+
+.logout-link {
+  color: #d3e0ff !important;
+}
+
+.logout-link:hover {
+  background: rgba(180, 100, 100, 0.2) !important;
+  color: #ffb3b3 !important;
+}
+
+/* 内容区域 */
+#admin-content {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
 @media (max-width: 1024px) {
   .admin-sidebar {
     width: 224px;
