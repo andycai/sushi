@@ -29,13 +29,16 @@ pub async fn require_auth(
         return next.run(req).await;
     }
 
-    let auth_header = req.headers()
+    let auth_header = req
+        .headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok());
 
     let token = match auth_header {
         Some(h) if h.starts_with("Bearer ") => &h[7..],
-        _ => match extract_token_from_cookie(req.headers().get("cookie").and_then(|v| v.to_str().ok())) {
+        _ => match extract_token_from_cookie(
+            req.headers().get("cookie").and_then(|v| v.to_str().ok()),
+        ) {
             Some(token) => token,
             None => {
                 return (
@@ -51,17 +54,17 @@ pub async fn require_auth(
         Ok(claims) => {
             // Validate token type - only access tokens are allowed for API access
             if claims.token_type != "access" {
-                return (StatusCode::UNAUTHORIZED, "{\"error\":\"Invalid token type. Use access token for API access.\"}").into_response();
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    "{\"error\":\"Invalid token type. Use access token for API access.\"}",
+                )
+                    .into_response();
             }
-            
-            let role = match claims.role.as_str() {
-                "admin" => UserRole::Admin,
-                "editor" => UserRole::Editor,
-                _ => UserRole::Viewer,
-            };
+
+            let role = UserRole::from_slug(&claims.role);
 
             // Admin partial endpoints are privileged and require admin role.
-            if path.starts_with("/admin/partials/") && role != UserRole::Admin {
+            if path.starts_with("/admin/partials/") && !role.is_admin() {
                 return (
                     StatusCode::FORBIDDEN,
                     "{\"error\":\"Admin role required for admin partial routes\"}",

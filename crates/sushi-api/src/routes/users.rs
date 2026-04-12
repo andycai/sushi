@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use sushi_core::auth::model::UserRole;
 use sushi_core::auth::password;
+use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::auth::repository::UserRepository;
 use sushi_core::storage::Storage;
 
@@ -43,11 +44,11 @@ async fn list_users(
     Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
     let repo = UserRepository::new(Arc::clone(&state.storage));
-    
+
     // Validate pagination parameters
-    let limit = pagination.limit.min(100).max(1);  // Cap at 100
+    let limit = pagination.limit.min(100).max(1); // Cap at 100
     let offset = pagination.offset;
-    
+
     match repo.list_users_paginated(limit, offset).await {
         Ok(users) => {
             let response: Vec<Value> = users
@@ -62,13 +63,21 @@ async fn list_users(
                     })
                 })
                 .collect();
-            (StatusCode::OK, Json(json!({
-                "users": response,
-                "limit": limit,
-                "offset": offset,
-            }))).into_response()
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "users": response,
+                    "limit": limit,
+                    "offset": offset,
+                })),
+            )
+                .into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e })),
+        )
+            .into_response(),
     }
 }
 
@@ -87,10 +96,14 @@ impl CreateUserRequest {
         if self.username.len() < 3 || self.username.len() > 32 {
             return Err("Username must be between 3 and 32 characters".to_string());
         }
-        if !self.username.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        if !self
+            .username
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_')
+        {
             return Err("Username can only contain letters, numbers, and underscores".to_string());
         }
-        
+
         // Validate email (basic format check)
         if self.email.is_empty() {
             return Err("Email is required".to_string());
@@ -101,7 +114,7 @@ impl CreateUserRequest {
         if self.email.len() > 255 {
             return Err("Email must be less than 255 characters".to_string());
         }
-        
+
         // Validate password (min 8 chars)
         if self.password.len() < 8 {
             return Err("Password must be at least 8 characters".to_string());
@@ -109,7 +122,7 @@ impl CreateUserRequest {
         if self.password.len() > 128 {
             return Err("Password must be less than 128 characters".to_string());
         }
-        
+
         Ok(())
     }
 }
@@ -122,14 +135,35 @@ async fn create_user(
     if let Err(e) = req.validate() {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response();
     }
-    
-    let repo = UserRepository::new(Arc::clone(&state.storage));
 
-    let role = match req.role.as_deref() {
-        Some("admin") => UserRole::Admin,
-        Some("editor") => UserRole::Editor,
-        _ => UserRole::Viewer,
-    };
+    let repo = UserRepository::new(Arc::clone(&state.storage));
+    let role_repo = RbacRepository::new(Arc::clone(&state.storage));
+
+    let role_slug = req
+        .role
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("viewer")
+        .to_ascii_lowercase();
+    match role_repo.find_role_by_slug(&role_slug).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Selected role does not exist" })),
+            )
+                .into_response();
+        }
+        Err(err) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": err })),
+            )
+                .into_response();
+        }
+    }
+    let role = UserRole::from_slug(&role_slug);
 
     let password_hash = match password::hash_password(&req.password) {
         Ok(h) => h,
@@ -138,7 +172,10 @@ async fn create_user(
         }
     };
 
-    match repo.create_user(&req.username, &req.email, &password_hash, role).await {
+    match repo
+        .create_user(&req.username, &req.email, &password_hash, role)
+        .await
+    {
         Ok(user) => (
             StatusCode::CREATED,
             Json(json!({
@@ -147,7 +184,8 @@ async fn create_user(
                 "email": user.email,
                 "role": user.role.to_string(),
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
     }
 }

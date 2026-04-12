@@ -1,6 +1,8 @@
-pub mod dashboard;
-pub mod plugins;
-pub mod users;
 pub mod config;
-pub mod logs;
+pub mod dashboard;
 pub mod login;
+pub mod logs;
+pub mod permissions;
+pub mod plugins;
+pub mod roles;
+pub mod users;

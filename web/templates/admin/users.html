@@ -27,7 +27,7 @@
   <div id="users-feedback" class="ui-feedback"></div>
 
   <div class="ui-callout mb-3">
-    Only administrators can create or remove users from this panel.
+    User lifecycle actions require the <span class="ui-mono">users.manage</span> permission.
   </div>
 
   <section class="ui-card">
@@ -111,9 +111,11 @@
         <div>
           <label class="ui-label" for="role">Role</label>
           <select x-model="form.values.role" id="role" name="role" class="ui-select">
-            <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
-            <option value="admin">Admin</option>
+            {% for role in roles %}
+              <option value="{{ role.slug }}">{{ role.name }} ({{ role.slug }})</option>
+            {% else %}
+              <option value="viewer">Viewer (viewer)</option>
+            {% endfor %}
           </select>
         </div>
         <div class="ui-drawer-actions">

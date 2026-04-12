@@ -17,6 +17,7 @@ use tower::ServiceExt;
 
 const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
 const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
+const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -198,6 +199,10 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
         .run_migrations(KV_MIGRATION_SQL)
         .await
         .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -206,8 +211,12 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
 }
 
 fn admin_bearer_token() -> String {
+    bearer_token_for_role("admin")
+}
+
+fn bearer_token_for_role(role: &str) -> String {
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
-    jwt.create_access_token(1, "admin", "admin")
+    jwt.create_access_token(1, "admin", role)
         .expect("failed to create token")
 }
 
@@ -498,6 +507,122 @@ async fn users_and_plugins_partials_return_html_for_authenticated_admin() {
         plugins_html.contains("No plugins found") || plugins_html.contains("<tr"),
         "plugins_html: {plugins_html}"
     );
+}
+
+#[tokio::test]
+async fn roles_and_permissions_pages_load_for_authenticated_admin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let roles_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/roles")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(roles_response.status(), StatusCode::OK);
+
+    let permissions_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/permissions")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(permissions_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn roles_and_permissions_partials_return_html_for_authenticated_admin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let roles_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/roles/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(roles_response.status(), StatusCode::OK);
+    let roles_body = to_bytes(roles_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let roles_html = String::from_utf8_lossy(&roles_body);
+    assert!(
+        roles_html.contains("No roles found") || roles_html.contains("<tr"),
+        "roles_html: {roles_html}"
+    );
+
+    let permissions_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(permissions_response.status(), StatusCode::OK);
+    let permissions_body = to_bytes(permissions_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let permissions_html = String::from_utf8_lossy(&permissions_body);
+    assert!(
+        permissions_html.contains("No permissions found") || permissions_html.contains("<tr"),
+        "permissions_html: {permissions_html}"
+    );
+}
+
+#[tokio::test]
+async fn editor_can_access_users_page_with_assigned_permission() {
+    let app = build_app(None).await;
+    let token = bearer_token_for_role("editor");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/users")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn viewer_cannot_access_users_page_without_permission() {
+    let app = build_app(None).await;
+    let token = bearer_token_for_role("viewer");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/users")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

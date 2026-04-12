@@ -6,12 +6,23 @@ use serde::Deserialize;
 use std::sync::Arc;
 use sushi_core::auth::model::UserRole;
 use sushi_core::auth::password;
+use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::auth::repository::UserRepository;
 use sushi_core::context::SushiContext;
 use sushi_core::storage::Storage;
 
 pub async fn users_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    crate::render::render_template(&ctx, "admin/users.html").await
+    let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
+    let roles = repo.list_roles().await.unwrap_or_default();
+
+    crate::render::render_template_with_context(
+        &ctx,
+        "admin/users.html",
+        serde_json::json!({
+            "roles": roles,
+        }),
+    )
+    .await
 }
 
 pub async fn users_table_partial(State(ctx): State<SushiContext>) -> impl IntoResponse {
@@ -34,13 +45,34 @@ pub async fn users_create_partial(
         return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &message).await;
     }
 
-    let role = match form.role.as_deref() {
-        Some("admin") => UserRole::Admin,
-        Some("editor") => UserRole::Editor,
-        _ => UserRole::Viewer,
-    };
+    let role_slug = form
+        .role
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("viewer")
+        .to_ascii_lowercase();
 
     let repo = UserRepository::new(ctx.db.clone() as Arc<dyn Storage>);
+    let role_repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
+
+    match role_repo.find_role_by_slug(&role_slug).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return flash_response(
+                &ctx,
+                StatusCode::BAD_REQUEST,
+                "error",
+                "Selected role does not exist",
+            )
+            .await;
+        }
+        Err(err) => {
+            return flash_response(&ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+        }
+    };
+
+    let role = UserRole::from_slug(&role_slug);
     let password_hash = match password::hash_password(&form.password) {
         Ok(hash) => hash,
         Err(err) => return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,

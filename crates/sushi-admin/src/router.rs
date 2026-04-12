@@ -1,4 +1,4 @@
-use crate::routes::{config, dashboard, login, logs, plugins, users};
+use crate::routes::{config, dashboard, login, logs, permissions, plugins, roles, users};
 use axum::{
     extract::Request,
     extract::State,
@@ -10,7 +10,9 @@ use axum::{
 use std::collections::HashSet;
 use std::sync::Arc;
 use sushi_core::auth::jwt::JwtService;
+use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::context::SushiContext;
+use sushi_core::storage::Storage;
 use tower_http::services::ServeDir;
 
 /// Admin auth middleware state
@@ -18,6 +20,7 @@ use tower_http::services::ServeDir;
 pub struct AdminAuthState {
     pub jwt: Arc<JwtService>,
     pub static_url_prefix: String,
+    pub storage: Arc<dyn Storage>,
 }
 
 pub async fn build_admin_router(ctx: &SushiContext) -> Router {
@@ -49,6 +52,8 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route("/admin/", get(dashboard::dashboard_page))
         .route("/admin/plugins", get(plugins::plugins_page))
         .route("/admin/users", get(users::users_page))
+        .route("/admin/roles", get(roles::roles_page))
+        .route("/admin/permissions", get(permissions::permissions_page))
         .route("/admin/config", get(config::config_page))
         .route("/admin/api/config", get(config::config_api))
         .route("/admin/logs", get(logs::logs_page))
@@ -66,6 +71,46 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             delete(users::users_delete_partial),
         )
         .route(
+            "/admin/partials/roles/table",
+            get(roles::roles_table_partial),
+        )
+        .route(
+            "/admin/partials/roles/create",
+            post(roles::roles_create_partial),
+        )
+        .route(
+            "/admin/partials/roles/{id}/update",
+            post(roles::roles_update_partial),
+        )
+        .route(
+            "/admin/partials/roles/{id}/permissions/form",
+            get(roles::role_permissions_form_partial),
+        )
+        .route(
+            "/admin/partials/roles/{id}/permissions",
+            post(roles::role_permissions_update_partial),
+        )
+        .route(
+            "/admin/partials/roles/{id}",
+            delete(roles::roles_delete_partial),
+        )
+        .route(
+            "/admin/partials/permissions/table",
+            get(permissions::permissions_table_partial),
+        )
+        .route(
+            "/admin/partials/permissions/create",
+            post(permissions::permissions_create_partial),
+        )
+        .route(
+            "/admin/partials/permissions/{id}/update",
+            post(permissions::permissions_update_partial),
+        )
+        .route(
+            "/admin/partials/permissions/{id}",
+            delete(permissions::permissions_delete_partial),
+        )
+        .route(
             "/admin/partials/plugins/table",
             get(plugins::plugins_table_partial),
         )
@@ -77,6 +122,8 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/",
         "/admin/plugins",
         "/admin/users",
+        "/admin/roles",
+        "/admin/permissions",
         "/admin/config",
         "/admin/api/config",
         "/admin/logs",
@@ -84,6 +131,16 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/partials/users/table",
         "/admin/partials/users/create",
         "/admin/partials/users/{id}",
+        "/admin/partials/roles/table",
+        "/admin/partials/roles/create",
+        "/admin/partials/roles/{id}/update",
+        "/admin/partials/roles/{id}/permissions/form",
+        "/admin/partials/roles/{id}/permissions",
+        "/admin/partials/roles/{id}",
+        "/admin/partials/permissions/table",
+        "/admin/partials/permissions/create",
+        "/admin/partials/permissions/{id}/update",
+        "/admin/partials/permissions/{id}",
         "/admin/partials/plugins/table",
         "/admin/api/plugins",
     ]);
@@ -114,6 +171,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
     let auth_state = AdminAuthState {
         jwt: Arc::clone(&ctx.jwt),
         static_url_prefix,
+        storage: ctx.db.clone() as Arc<dyn Storage>,
     };
 
     router
@@ -135,6 +193,7 @@ async fn admin_auth_middleware(
     next: Next,
 ) -> impl IntoResponse {
     let path = req.uri().path();
+    let method = req.method().as_str().to_string();
 
     // Redirect /admin (no trailing slash) to /admin/ (with trailing slash)
     if path == "/admin" {
@@ -180,15 +239,140 @@ async fn admin_auth_middleware(
             if claims.token_type != "access" {
                 return axum::response::Redirect::temporary("/admin-login").into_response();
             }
-            // Only allow admin role for admin panel access
-            if claims.role != "admin" {
-                return (axum::http::StatusCode::FORBIDDEN, "Admin access required")
-                    .into_response();
+
+            if claims.role == "admin" {
+                return next.run(req).await;
             }
-            next.run(req).await
+
+            let required_permission = required_admin_permission(&method, path);
+            let required_permission = match required_permission {
+                Some(permission) => permission,
+                None => {
+                    return (
+                        axum::http::StatusCode::FORBIDDEN,
+                        "Insufficient privileges for admin access",
+                    )
+                        .into_response();
+                }
+            };
+
+            let repo = RbacRepository::new(Arc::clone(&state.storage));
+            match repo
+                .role_has_permission(&claims.role, required_permission)
+                .await
+            {
+                Ok(true) => next.run(req).await,
+                Ok(false) => (
+                    axum::http::StatusCode::FORBIDDEN,
+                    "Insufficient privileges for admin access",
+                )
+                    .into_response(),
+                Err(err) => (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Authorization check failed: {err}"),
+                )
+                    .into_response(),
+            }
         }
         Err(_) => axum::response::Redirect::temporary("/admin-login").into_response(),
     }
+}
+
+fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
+    // Routes with identical access semantics are grouped for maintainability.
+    let read_map: &[(&str, &str)] = &[
+        ("GET", "/admin/"),
+        ("GET", "/admin/logs"),
+        ("GET", "/admin/api/logs"),
+        ("GET", "/admin/config"),
+        ("GET", "/admin/api/config"),
+        ("GET", "/admin/plugins"),
+        ("GET", "/admin/partials/plugins/table"),
+        ("GET", "/admin/api/plugins"),
+        ("GET", "/admin/users"),
+        ("GET", "/admin/partials/users/table"),
+        ("GET", "/admin/roles"),
+        ("GET", "/admin/partials/roles/table"),
+        ("GET", "/admin/permissions"),
+        ("GET", "/admin/partials/permissions/table"),
+        ("GET", "/admin/partials/roles/{id}/permissions/form"),
+    ];
+
+    let write_map: &[(&str, &str)] = &[
+        ("POST", "/admin/partials/users/create"),
+        ("DELETE", "/admin/partials/users/{id}"),
+        ("POST", "/admin/partials/roles/create"),
+        ("POST", "/admin/partials/roles/{id}/update"),
+        ("POST", "/admin/partials/roles/{id}/permissions"),
+        ("DELETE", "/admin/partials/roles/{id}"),
+        ("POST", "/admin/partials/permissions/create"),
+        ("POST", "/admin/partials/permissions/{id}/update"),
+        ("DELETE", "/admin/partials/permissions/{id}"),
+    ];
+
+    if path == "/admin/kv" || path.starts_with("/admin/partials/kv/") {
+        return Some("kv.manage");
+    }
+
+    if read_map
+        .iter()
+        .any(|(m, p)| *m == method && admin_path_matches(path, p))
+    {
+        return Some(match path {
+            "/admin/" => "dashboard.view",
+            "/admin/logs" | "/admin/api/logs" => "logs.view",
+            "/admin/config" | "/admin/api/config" => "config.view",
+            "/admin/plugins" | "/admin/partials/plugins/table" | "/admin/api/plugins" => {
+                "plugins.view"
+            }
+            "/admin/users" | "/admin/partials/users/table" => "users.view",
+            "/admin/roles" | "/admin/partials/roles/table" => "roles.view",
+            "/admin/permissions" | "/admin/partials/permissions/table" => "permissions.view",
+            _ => "roles.manage",
+        });
+    }
+
+    if write_map
+        .iter()
+        .any(|(m, p)| *m == method && admin_path_matches(path, p))
+    {
+        return Some(match path {
+            "/admin/partials/users/create" => "users.manage",
+            _ if path.starts_with("/admin/partials/users/") => "users.manage",
+            "/admin/partials/roles/create" => "roles.manage",
+            _ if path.starts_with("/admin/partials/roles/") => "roles.manage",
+            "/admin/partials/permissions/create" => "permissions.manage",
+            _ if path.starts_with("/admin/partials/permissions/") => "permissions.manage",
+            _ => return None,
+        });
+    }
+
+    None
+}
+
+fn admin_path_matches(path: &str, pattern: &str) -> bool {
+    let path_parts: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    let pattern_parts: Vec<&str> = pattern
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+
+    if path_parts.len() != pattern_parts.len() {
+        return false;
+    }
+
+    path_parts
+        .iter()
+        .zip(pattern_parts.iter())
+        .all(|(actual, expected)| {
+            if expected.starts_with('{') && expected.ends_with('}') {
+                return true;
+            }
+            actual == expected
+        })
 }
 
 fn matches_static_prefix(path: &str, prefix: &str) -> bool {

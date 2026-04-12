@@ -65,18 +65,11 @@
     };
   }
 
-  window.usersPage = function usersPage() {
-    const makeUserForm = () => ({
-      username: '',
-      email: '',
-      password: '',
-      role: '',
-    });
-    const makeDeletePayload = () => ({
-      id: null,
-      username: '',
-    });
+  function parseDatasetBool(value) {
+    return String(value || '').toLowerCase() === 'true';
+  }
 
+  window.permissionsPage = function permissionsPage() {
     const modalFactory =
       window.AdminUI && typeof window.AdminUI.createModal === 'function'
         ? window.AdminUI.createModal
@@ -89,66 +82,93 @@
       window.AdminUI && typeof window.AdminUI.createForm === 'function'
         ? window.AdminUI.createForm
         : fallbackForm;
-    const dataTableFactory =
+    const tableFactory =
       window.AdminUI && typeof window.AdminUI.createDataTable === 'function'
         ? window.AdminUI.createDataTable
         : fallbackDataTable;
 
     return {
-      table: dataTableFactory({
-        containerSelector: '#users-table-body',
-        storageKey: 'admin.users.table.v1',
+      table: tableFactory({
+        containerSelector: '#permissions-table-body',
+        storageKey: 'admin.permissions.table.v1',
       }),
-      formDrawer: drawerFactory(() => ({})),
-      form: formFactory(makeUserForm),
-      confirmModal: modalFactory(makeDeletePayload),
+      editor: drawerFactory(() => ({
+        id: null,
+        slug: '',
+        name: '',
+        module: '',
+        description: '',
+        isSystem: false,
+        mode: 'create',
+      })),
+      editorForm: formFactory(() => ({})),
+      deleteModal: modalFactory(() => ({
+        id: null,
+        slug: '',
+        isSystem: false,
+      })),
       init() {},
-      openModal() {
-        this.confirmModal.hide();
-        this.form.reset();
-        const roleSelect = document.querySelector('#role');
-        if (roleSelect && roleSelect.options.length > 0) {
-          const preferredOption = Array.from(roleSelect.options).find(
-            (option) => option.value === 'viewer',
-          );
-          this.form.values.role = preferredOption
-            ? preferredOption.value
-            : roleSelect.options[0].value;
-        }
-        this.formDrawer.show();
-      },
-      closeModal() {
-        this.formDrawer.hide();
-        this.form.busy = false;
-      },
-      openDeleteConfirm(id, username) {
-        this.formDrawer.hide();
-        this.confirmModal.show({
-          id,
-          username: username || '',
+      openCreate() {
+        this.deleteModal.hide();
+        this.editor.show({
+          id: null,
+          slug: '',
+          name: '',
+          module: '',
+          description: '',
+          isSystem: false,
+          mode: 'create',
         });
       },
-      closeDeleteConfirm() {
-        this.confirmModal.hide();
+      openEdit(dataset) {
+        this.deleteModal.hide();
+        this.editor.show({
+          id: Number(dataset?.permissionId || 0) || null,
+          slug: dataset?.permissionSlug || '',
+          name: dataset?.permissionName || '',
+          module: dataset?.permissionModule || '',
+          description: dataset?.permissionDescription || '',
+          isSystem: parseDatasetBool(dataset?.permissionSystem),
+          mode: 'edit',
+        });
+      },
+      closeEditor() {
+        this.editor.hide();
+      },
+      openDelete(dataset) {
+        const isSystem = parseDatasetBool(dataset?.permissionSystem);
+        if (isSystem) {
+          return;
+        }
+
+        this.editor.hide();
+        this.deleteModal.show({
+          id: Number(dataset?.permissionId || 0) || null,
+          slug: dataset?.permissionSlug || '',
+          isSystem,
+        });
+      },
+      closeDelete() {
+        this.deleteModal.hide();
       },
       applySearch() {
         this.table.page = 1;
-        this.table.apply('#users-table-body');
+        this.table.apply('#permissions-table-body');
       },
-      onUsersTableSwap() {
-        this.table.onAfterSwap('#users-table-body');
+      onPermissionsTableSwap() {
+        this.table.onAfterSwap('#permissions-table-body');
       },
       setPageSize() {
-        this.table.setPageSize(this.table.pageSize, '#users-table-body');
+        this.table.setPageSize(this.table.pageSize, '#permissions-table-body');
       },
       setSortMode() {
-        this.table.setSortMode(this.table.sortMode, '#users-table-body');
+        this.table.setSortMode(this.table.sortMode, '#permissions-table-body');
       },
       prevPage() {
-        this.table.prevPage('#users-table-body');
+        this.table.prevPage('#permissions-table-body');
       },
       nextPage() {
-        this.table.nextPage('#users-table-body');
+        this.table.nextPage('#permissions-table-body');
       },
       notifyFeedback(selector, fallbackLevel) {
         if (window.AdminUI && typeof window.AdminUI.consumeFeedback === 'function') {
@@ -157,10 +177,28 @@
             window.AdminUI.notify({
               tone: 'danger',
               title: 'Request failed',
-              message: 'Unable to complete the user operation.',
+              message: 'Unable to complete the permission operation.',
             });
           }
         }
+      },
+      isErrorFeedback(selector) {
+        if (window.AdminUI && typeof window.AdminUI.isErrorFeedback === 'function') {
+          return window.AdminUI.isErrorFeedback(selector, 'error');
+        }
+
+        const container = document.querySelector(selector);
+        if (!container) {
+          return false;
+        }
+
+        const flash = container.querySelector('[data-ui-flash]');
+        if (!flash) {
+          return false;
+        }
+
+        const level = String(flash.dataset.level || '').toLowerCase();
+        return level === 'error' || level === 'danger';
       },
       responseHasTrigger(event, triggerName) {
         if (window.AdminUI && typeof window.AdminUI.hasHxTrigger === 'function') {
@@ -196,66 +234,72 @@
           .map((item) => item.trim())
           .includes(triggerName);
       },
+      isSuccessfulRequest(event, selector) {
+        if (!event?.detail?.successful) {
+          return false;
+        }
+        return !this.isErrorFeedback(selector);
+      },
       refreshTable() {
         if (window.AdminUI && typeof window.AdminUI.refreshPartial === 'function') {
           window.AdminUI.refreshPartial({
-            url: '/admin/partials/users/table',
-            target: '#users-table-body',
-            onAfterSwap: () => this.onUsersTableSwap(),
-            errorMessage: 'Unable to refresh the user list.',
+            url: '/admin/partials/permissions/table',
+            target: '#permissions-table-body',
+            onAfterSwap: () => this.onPermissionsTableSwap(),
+            errorMessage: 'Unable to refresh the permission list.',
           });
           return;
         }
 
-        fetch('/admin/partials/users/table')
+        fetch('/admin/partials/permissions/table')
           .then((response) => {
             if (!response.ok) {
-              throw new Error(`Failed to refresh users (${response.status})`);
+              throw new Error(`Failed to refresh permissions (${response.status})`);
             }
             return response.text();
           })
           .then((html) => {
-            const target = document.querySelector('#users-table-body');
+            const target = document.querySelector('#permissions-table-body');
             if (!target) {
               return;
             }
             target.innerHTML = html;
-            this.onUsersTableSwap();
+            this.onPermissionsTableSwap();
           })
           .catch(() => {
             if (window.AdminUI) {
               window.AdminUI.notify({
                 tone: 'danger',
                 title: 'Refresh failed',
-                message: 'Unable to refresh the user list.',
+                message: 'Unable to refresh the permission list.',
               });
             }
           });
       },
-      onCreateBeforeRequest() {
-        this.form.busy = true;
+      onEditorBeforeRequest() {
+        this.editor.busy = true;
       },
-      onCreateAfterRequest(event) {
-        this.form.busy = false;
-        const successful = Boolean(event?.detail?.successful);
-        this.notifyFeedback('#users-feedback', successful ? 'success' : 'error');
+      onEditorAfterRequest(event) {
+        this.editor.busy = false;
+        const successful = this.isSuccessfulRequest(event, '#permissions-feedback');
+        this.notifyFeedback('#permissions-feedback', successful ? 'success' : 'error');
         if (successful) {
-          this.closeModal();
-          if (!this.responseHasTrigger(event, 'users:refresh')) {
+          this.closeEditor();
+          if (!this.responseHasTrigger(event, 'permissions:refresh')) {
             this.refreshTable();
           }
         }
       },
       onDeleteBeforeRequest() {
-        this.confirmModal.busy = true;
+        this.deleteModal.busy = true;
       },
       onDeleteAfterRequest(event) {
-        this.confirmModal.busy = false;
-        const successful = Boolean(event?.detail?.successful);
-        this.notifyFeedback('#users-feedback', successful ? 'success' : 'error');
+        this.deleteModal.busy = false;
+        const successful = this.isSuccessfulRequest(event, '#permissions-feedback');
+        this.notifyFeedback('#permissions-feedback', successful ? 'success' : 'error');
         if (successful) {
-          this.closeDeleteConfirm();
-          if (!this.responseHasTrigger(event, 'users:refresh')) {
+          this.closeDelete();
+          if (!this.responseHasTrigger(event, 'permissions:refresh')) {
             this.refreshTable();
           }
         }

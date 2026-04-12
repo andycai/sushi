@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% set active_section = "permissions" %}
+
+{% block title %}Permissions — Sushi Admin{% endblock %}
+{% block main_attrs %}x-data="permissionsPage()" x-on:permissions:close-editor.window="closeEditor()"{% endblock %}
+
+{% block content %}
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Permissions</h1>
+      <p class="ui-subtitle">Maintain permission catalog entries used by roles and access policies.</p>
+    </div>
+    <div class="ui-toolbar">
+      <div class="ui-table-search">
+        <input
+          type="text"
+          class="ui-input"
+          placeholder="Search by permission key, module, or description..."
+          x-model="table.query"
+          @input.debounce.150ms="applySearch()"
+        >
+      </div>
+      <button type="button" class="ui-btn ui-btn-primary" @click="openCreate()">Add Permission</button>
+    </div>
+  </div>
+
+  <div id="permissions-feedback" class="ui-feedback"></div>
+
+  <div class="ui-callout mb-3">
+    Permission keys should be stable identifiers (example: <span class="ui-mono">users.manage</span>) used across API, admin, and CLI access checks.
+  </div>
+
+  <section class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Permission catalog</h2>
+      <div class="ui-toolbar">
+        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+          <option value="default">Default order</option>
+          <option value="alpha_asc">Key A-Z</option>
+          <option value="alpha_desc">Key Z-A</option>
+        </select>
+        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+          <template x-for="size in table.pageSizeOptions" :key="size">
+            <option :value="size" x-text="`${size}/page`"></option>
+          </template>
+        </select>
+        <div class="ui-page-controls">
+          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        </div>
+        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+      </div>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <thead>
+          <tr>
+            <th>Permission</th>
+            <th>Module</th>
+            <th>Description</th>
+            <th>Assigned Roles</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody
+          id="permissions-table-body"
+          hx-get="/admin/partials/permissions/table"
+          hx-trigger="load, permissions:refresh from:body"
+          hx-swap="innerHTML"
+          x-on:htmx:after-swap.camel="onPermissionsTableSwap()"
+        >
+          <tr>
+            <td colspan="5" class="ui-empty">Loading permissions...</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+        No permissions match your current keyword.
+      </div>
+    </div>
+  </section>
+
+  <div x-show="editor.open" class="ui-drawer-overlay" style="display:none">
+    <div class="ui-drawer-panel">
+      <div class="ui-drawer-head">
+        <h2 class="ui-drawer-title" x-text="editor.payload.mode === 'create' ? 'Add permission' : 'Edit permission'"></h2>
+        <button type="button" class="ui-btn ui-btn-ghost" @click="closeEditor()">Close</button>
+      </div>
+      <form
+        class="ui-drawer-body space-y-4"
+        :hx-post="editor.payload.mode === 'create' ? '/admin/partials/permissions/create' : '/admin/partials/permissions/' + editor.payload.id + '/update'"
+        hx-target="#permissions-feedback"
+        hx-swap="innerHTML"
+        x-on:htmx:before-request.camel="onEditorBeforeRequest()"
+        x-on:htmx:after-request.camel="onEditorAfterRequest($event)"
+      >
+        <div>
+          <label class="ui-label" for="permission-slug">Permission key</label>
+          <input
+            id="permission-slug"
+            name="slug"
+            type="text"
+            class="ui-input ui-mono"
+            x-model="editor.payload.slug"
+            :readonly="editor.payload.mode === 'edit'"
+            maxlength="80"
+            required
+          >
+        </div>
+        <div>
+          <label class="ui-label" for="permission-name">Display name</label>
+          <input
+            id="permission-name"
+            name="name"
+            type="text"
+            class="ui-input"
+            x-model="editor.payload.name"
+            maxlength="80"
+            required
+          >
+        </div>
+        <div>
+          <label class="ui-label" for="permission-module">Module</label>
+          <input
+            id="permission-module"
+            name="module"
+            type="text"
+            class="ui-input ui-mono"
+            x-model="editor.payload.module"
+            maxlength="40"
+            required
+          >
+        </div>
+        <div>
+          <label class="ui-label" for="permission-description">Description</label>
+          <textarea
+            id="permission-description"
+            name="description"
+            class="ui-input"
+            rows="4"
+            x-model="editor.payload.description"
+            maxlength="280"
+          ></textarea>
+        </div>
+        <div class="ui-drawer-actions">
+          <button type="button" class="ui-btn ui-btn-secondary" @click="closeEditor()">Cancel</button>
+          <button type="submit" class="ui-btn ui-btn-primary" :disabled="editor.busy">
+            <span x-show="!editor.busy">Save permission</span>
+            <span x-show="editor.busy">Saving...</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div x-show="deleteModal.open" class="ui-modal-overlay" style="display:none">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h2 class="ui-modal-title">Delete permission</h2>
+      </div>
+      <form
+        class="ui-modal-body"
+        :hx-delete="'/admin/partials/permissions/' + deleteModal.payload.id"
+        hx-target="#permissions-feedback"
+        hx-swap="innerHTML"
+        x-on:htmx:before-request.camel="onDeleteBeforeRequest()"
+        x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
+      >
+        <p class="text-sm text-slate-600">
+          Delete permission <span class="font-semibold text-slate-900 ui-mono" x-text="deleteModal.payload.slug"></span>? This action cannot be undone.
+        </p>
+        <div class="ui-modal-actions">
+          <button type="button" class="ui-btn ui-btn-secondary" @click="closeDelete()">Cancel</button>
+          <button type="submit" class="ui-btn ui-btn-danger" :disabled="deleteModal.busy || !deleteModal.payload.id">
+            <span x-show="!deleteModal.busy">Delete</span>
+            <span x-show="deleteModal.busy">Deleting...</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static_url_prefix | default(value="/static") }}/admin/js/permissions.js"></script>
+{% endblock %}

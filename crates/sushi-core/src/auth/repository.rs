@@ -21,15 +21,18 @@ impl UserRepository {
         role: UserRole,
     ) -> Result<User, String> {
         let role_str = role.to_string();
-        self.storage.execute(
-            "INSERT INTO users (username, email, password_hash, role) VALUES (?1, ?2, ?3, ?4)",
-            vec![
-                Value::String(username.to_string()),
-                Value::String(email.to_string()),
-                Value::String(password_hash.to_string()),
-                Value::String(role_str),
-            ],
-        ).await.map_err(|e| e.to_string())?;
+        self.storage
+            .execute(
+                "INSERT INTO users (username, email, password_hash, role) VALUES (?1, ?2, ?3, ?4)",
+                vec![
+                    Value::String(username.to_string()),
+                    Value::String(email.to_string()),
+                    Value::String(password_hash.to_string()),
+                    Value::String(role_str),
+                ],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
         self.find_by_username(username)
             .await?
@@ -37,10 +40,14 @@ impl UserRepository {
     }
 
     pub async fn find_by_username(&self, username: &str) -> Result<Option<User>, String> {
-        let rows = self.storage.query(
-            "SELECT * FROM users WHERE username = ?1",
-            vec![Value::String(username.to_string())],
-        ).await.map_err(|e| e.to_string())?;
+        let rows = self
+            .storage
+            .query(
+                "SELECT * FROM users WHERE username = ?1",
+                vec![Value::String(username.to_string())],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
         match rows.into_iter().next() {
             Some(row) => Ok(Some(row_to_user(row)?)),
@@ -49,10 +56,14 @@ impl UserRepository {
     }
 
     pub async fn find_by_id(&self, id: i64) -> Result<Option<User>, String> {
-        let rows = self.storage.query(
-            "SELECT * FROM users WHERE id = ?1",
-            vec![Value::Number(id.into())],
-        ).await.map_err(|e| e.to_string())?;
+        let rows = self
+            .storage
+            .query(
+                "SELECT * FROM users WHERE id = ?1",
+                vec![Value::Number(id.into())],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
 
         match rows.into_iter().next() {
             Some(row) => Ok(Some(row_to_user(row)?)),
@@ -61,36 +72,49 @@ impl UserRepository {
     }
 
     pub async fn list_users(&self) -> Result<Vec<User>, String> {
-        let rows = self.storage.query("SELECT * FROM users ORDER BY id", vec![])
-            .await.map_err(|e| e.to_string())?;
+        let rows = self
+            .storage
+            .query("SELECT * FROM users ORDER BY id", vec![])
+            .await
+            .map_err(|e| e.to_string())?;
         rows.into_iter().map(row_to_user).collect()
     }
-    
-    pub async fn list_users_paginated(&self, limit: usize, offset: usize) -> Result<Vec<User>, String> {
-        let rows = self.storage.query(
-            "SELECT * FROM users ORDER BY id LIMIT ?1 OFFSET ?2",
-            vec![Value::Number((limit as i64).into()), Value::Number((offset as i64).into())],
-        ).await.map_err(|e| e.to_string())?;
+
+    pub async fn list_users_paginated(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<User>, String> {
+        let rows = self
+            .storage
+            .query(
+                "SELECT * FROM users ORDER BY id LIMIT ?1 OFFSET ?2",
+                vec![
+                    Value::Number((limit as i64).into()),
+                    Value::Number((offset as i64).into()),
+                ],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
         rows.into_iter().map(row_to_user).collect()
     }
 
     pub async fn delete_user(&self, id: i64) -> Result<(), String> {
-        self.storage.execute(
-            "DELETE FROM users WHERE id = ?1",
-            vec![Value::Number(id.into())],
-        ).await.map_err(|e| e.to_string())?;
+        self.storage
+            .execute(
+                "DELETE FROM users WHERE id = ?1",
+                vec![Value::Number(id.into())],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }
 
 fn row_to_user(row: std::collections::HashMap<String, Value>) -> Result<User, String> {
     let role_str = row.get("role").and_then(|v| v.as_str()).unwrap_or("viewer");
-    let role = match role_str {
-        "admin" => UserRole::Admin,
-        "editor" => UserRole::Editor,
-        _ => UserRole::Viewer,
-    };
-    
+    let role = UserRole::from_slug(role_str);
+
     // Parse SQLite datetime format: YYYY-MM-DD HH:MM:SS
     let parse_sqlite_datetime = |s: &str| {
         chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
@@ -98,17 +122,33 @@ fn row_to_user(row: std::collections::HashMap<String, Value>) -> Result<User, St
             .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
             .unwrap_or_default()
     };
-    
+
     Ok(User {
         id: row.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
-        username: row.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        email: row.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        password_hash: row.get("password_hash").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        username: row
+            .get("username")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        email: row
+            .get("email")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        password_hash: row
+            .get("password_hash")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         role,
-        created_at: row.get("created_at").and_then(|v| v.as_str())
+        created_at: row
+            .get("created_at")
+            .and_then(|v| v.as_str())
             .map(parse_sqlite_datetime)
             .unwrap_or_default(),
-        updated_at: row.get("updated_at").and_then(|v| v.as_str())
+        updated_at: row
+            .get("updated_at")
+            .and_then(|v| v.as_str())
             .map(parse_sqlite_datetime)
             .unwrap_or_default(),
     })
