@@ -4,7 +4,7 @@
       menuItems: [],
       openDrawers: {},
 
-      async initMenu() {
+      async init() {
         try {
           const resp = await fetch('/admin/api/menu');
           if (resp.ok) {

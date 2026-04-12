@@ -23,7 +23,7 @@
   <script defer src="{{ static_prefix }}/js/tailwindcss-4.2.2.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body x-data="adminMenu()" @init.window="initMenu()" class="{% block body_class %}{% endblock %}">
+<body x-data="adminMenu()" class="{% block body_class %}{% endblock %}">
   <div class="admin-shell">
     {% block nav %}
     {% set active_section = active_section or "" %}
@@ -35,7 +35,7 @@
           <span>Control Surface</span>
         </span>
       </div>
-      <nav class="admin-nav" x-data="adminMenu()" @init.window="initMenu()">
+      <nav class="admin-nav">
   <template x-for="item in menuItems.filter(i => !i.parent_id)" :key="item.id">
     <div class="nav-group">
       <!-- 一级菜单项 -->
