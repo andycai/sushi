@@ -6,6 +6,7 @@
       loading: false,
       autoRefresh: false,
       autoPoller: null,
+      errorNotified: false,
       async init() {
         await this.loadLogs();
         if (window.AdminUI) {
@@ -46,8 +47,17 @@
             const data = await resp.json();
             this.logs = data.logs || [];
           }
+          this.errorNotified = false;
         } catch (err) {
           this.error = 'Could not load logs. Ensure /admin/api/logs is available.';
+          if (!this.errorNotified && window.AdminUI) {
+            this.errorNotified = true;
+            window.AdminUI.notify({
+              tone: 'danger',
+              title: 'Logs request failed',
+              message: this.error,
+            });
+          }
         }
         this.loading = false;
       },

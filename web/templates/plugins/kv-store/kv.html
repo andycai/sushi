@@ -55,16 +55,16 @@
         hx-post="/admin/partials/kv/upsert"
         hx-target="#kv-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="editorModal.busy = true"
-        x-on:htmx:after-request.camel="editorModal.busy = false; if ($event.detail.successful) { closeModal(); triggerRefresh(); }"
+        x-on:htmx:before-request.camel="onUpsertBeforeRequest()"
+        x-on:htmx:after-request.camel="onUpsertAfterRequest($event)"
       >
-        <input type="hidden" name="original_key" x-model="editorModal.payload.originalKey">
+        <input type="hidden" name="original_key" x-model="entryForm.values.originalKey">
         <div>
           <label class="ui-label" for="kv-key">Key</label>
           <input
             type="text"
             id="kv-key"
-            x-model="editorModal.payload.key"
+            x-model="entryForm.values.key"
             name="key"
             :readonly="mode === 'edit'"
             class="ui-input"
@@ -76,7 +76,7 @@
           <input
             type="text"
             id="kv-value"
-            x-model="editorModal.payload.value"
+            x-model="entryForm.values.value"
             name="value"
             class="ui-input"
             required
@@ -84,9 +84,9 @@
         </div>
         <div class="ui-modal-actions">
           <button type="button" @click="closeModal()" class="ui-btn ui-btn-secondary">Cancel</button>
-          <button type="submit" :disabled="editorModal.busy" class="ui-btn ui-btn-primary">
-            <span x-show="!editorModal.busy">Save</span>
-            <span x-show="editorModal.busy">Saving...</span>
+          <button type="submit" :disabled="entryForm.busy" class="ui-btn ui-btn-primary">
+            <span x-show="!entryForm.busy">Save</span>
+            <span x-show="entryForm.busy">Saving...</span>
           </button>
         </div>
       </form>
@@ -103,8 +103,8 @@
         hx-post="/admin/partials/kv/delete"
         hx-target="#kv-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="confirmModal.busy = true"
-        x-on:htmx:after-request.camel="confirmModal.busy = false; if ($event.detail.successful) { closeDeleteConfirm(); triggerRefresh(); }"
+        x-on:htmx:before-request.camel="onDeleteBeforeRequest()"
+        x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
       >
         <input type="hidden" name="key" x-model="confirmModal.payload.key">
         <p class="text-sm text-slate-600">

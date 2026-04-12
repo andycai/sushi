@@ -57,24 +57,24 @@
         hx-post="/admin/partials/users/create"
         hx-target="#users-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="formModal.busy = true"
-        x-on:htmx:after-request.camel="formModal.busy = false"
+        x-on:htmx:before-request.camel="onCreateBeforeRequest()"
+        x-on:htmx:after-request.camel="onCreateAfterRequest($event)"
       >
         <div>
           <label class="ui-label" for="username">Username</label>
-          <input x-model="formModal.payload.username" id="username" type="text" required name="username" class="ui-input" minlength="3" maxlength="32">
+          <input x-model="form.values.username" id="username" type="text" required name="username" class="ui-input" minlength="3" maxlength="32">
         </div>
         <div>
           <label class="ui-label" for="email">Email</label>
-          <input x-model="formModal.payload.email" id="email" type="email" required name="email" class="ui-input">
+          <input x-model="form.values.email" id="email" type="email" required name="email" class="ui-input">
         </div>
         <div>
           <label class="ui-label" for="password">Password</label>
-          <input x-model="formModal.payload.password" id="password" type="password" required name="password" class="ui-input" minlength="8">
+          <input x-model="form.values.password" id="password" type="password" required name="password" class="ui-input" minlength="8">
         </div>
         <div>
           <label class="ui-label" for="role">Role</label>
-          <select x-model="formModal.payload.role" id="role" name="role" class="ui-select">
+          <select x-model="form.values.role" id="role" name="role" class="ui-select">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
             <option value="admin">Admin</option>
@@ -82,9 +82,9 @@
         </div>
         <div class="ui-modal-actions">
           <button type="button" class="ui-btn ui-btn-secondary" @click="closeModal()">Cancel</button>
-          <button type="submit" :disabled="formModal.busy" class="ui-btn ui-btn-primary">
-            <span x-show="!formModal.busy">Create</span>
-            <span x-show="formModal.busy">Creating...</span>
+          <button type="submit" :disabled="form.busy" class="ui-btn ui-btn-primary">
+            <span x-show="!form.busy">Create</span>
+            <span x-show="form.busy">Creating...</span>
           </button>
         </div>
       </form>
@@ -101,8 +101,8 @@
         :hx-delete="'/admin/partials/users/' + confirmModal.payload.id"
         hx-target="#users-feedback"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="confirmModal.busy = true"
-        x-on:htmx:after-request.camel="confirmModal.busy = false; if ($event.detail.successful) { closeDeleteConfirm(); }"
+        x-on:htmx:before-request.camel="onDeleteBeforeRequest()"
+        x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
       >
         <p class="text-sm text-slate-600">
           Delete user <span class="font-semibold text-slate-900" x-text="confirmModal.payload.username"></span>? This action cannot be undone.

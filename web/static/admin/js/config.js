@@ -23,6 +23,13 @@
         } catch (err) {
           this.config = {};
           this.error = 'Unable to load config from /admin/api/config';
+          if (window.AdminUI) {
+            window.AdminUI.notify({
+              tone: 'danger',
+              title: 'Config request failed',
+              message: this.error,
+            });
+          }
         }
         this.loaded = true;
       },

@@ -40,8 +40,8 @@
         hx-post="/admin-login"
         hx-target="#login-error"
         hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="submitting = true"
-        x-on:htmx:after-request.camel="submitting = false"
+        x-on:htmx:before-request.camel="onSubmitStart()"
+        x-on:htmx:after-request.camel="onSubmitEnd($event)"
       >
         <div>
           <label class="ui-label" for="username">Username</label>

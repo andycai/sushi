@@ -1,10 +1,12 @@
-{% set is_error = level == "error" %}
-{% if is_error %}
-  <div class="ui-card">
-    <div class="ui-card-body text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">{{ message }}</div>
-  </div>
-{% else %}
-  <div class="ui-card">
-    <div class="ui-card-body text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl">{{ message }}</div>
-  </div>
+{% set tone = "success" %}
+{% if level == "error" %}
+  {% set tone = "danger" %}
 {% endif %}
+<div
+  class="ui-flash {{ tone }}"
+  data-ui-flash
+  data-level="{{ level }}"
+  data-message="{{ message }}"
+>
+  {{ message }}
+</div>
