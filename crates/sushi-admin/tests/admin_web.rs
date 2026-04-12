@@ -414,6 +414,84 @@ async fn menu_api_returns_menu_items() {
 }
 
 #[tokio::test]
+async fn menu_api_crud_operations() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    // Create
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/api/menu")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"label":"Test Menu","icon":"settings","route":"/admin/test"}"#
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    // List and verify it exists
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/menu")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    let menu = payload.get("menu").and_then(Value::as_array).expect("menu array missing");
+    let test_menu = menu.iter().find(|m| m.get("label").and_then(Value::as_str) == Some("Test Menu"));
+    assert!(test_menu.is_some(), "Test Menu should exist after create");
+    let menu_id = test_menu.unwrap().get("id").and_then(Value::as_i64).expect("menu id missing");
+
+    // Update
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/admin/api/menu/{menu_id}"))
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"label":"Updated Menu","is_hidden":true}"#
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Delete
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/admin/api/menu/{menu_id}"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn config_api_returns_sanitized_config_payload() {
     let app = build_app(None).await;
     let token = admin_bearer_token();

@@ -1,9 +1,9 @@
 use axum::{
     extract::{Path, State},
     routing::{delete, get, post, put},
+    response::IntoResponse,
     Json, Router,
 };
-use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sushi_core::context::SushiContext;
@@ -67,6 +67,10 @@ pub async fn menu_api(State(ctx): State<SushiContext>) -> impl IntoResponse {
     }).collect();
 
     Json(MenuResponse { menu })
+}
+
+pub async fn menus_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
+    crate::render::render_template(&ctx, "admin/menus.html").await
 }
 
 pub async fn create_menu_item(
@@ -186,6 +190,6 @@ pub fn routes() -> Router<SushiContext> {
     Router::new()
         .route("/admin/api/menu", get(menu_api))
         .route("/admin/api/menu", post(create_menu_item))
-        .route("/admin/api/menu/:id", put(update_menu_item))
-        .route("/admin/api/menu/:id", delete(delete_menu_item))
+        .route("/admin/api/menu/{id}", put(update_menu_item))
+        .route("/admin/api/menu/{id}", delete(delete_menu_item))
 }

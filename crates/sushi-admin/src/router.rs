@@ -58,7 +58,8 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route("/admin/api/config", get(config::config_api))
         .route("/admin/logs", get(logs::logs_page))
         .route("/admin/api/logs", get(logs::logs_api))
-        .route("/admin/api/menu", get(menu::menu_api))
+        .route("/admin/menus", get(menu::menus_page))
+        .merge(menu::routes())
         .route(
             "/admin/partials/users/table",
             get(users::users_table_partial),
@@ -129,6 +130,8 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/api/config",
         "/admin/logs",
         "/admin/api/logs",
+        "/admin/menus",
+        "/admin/api/menu",
         "/admin/partials/users/table",
         "/admin/partials/users/create",
         "/admin/partials/users/{id}",

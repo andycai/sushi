@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% set active_section = "menus" %}
+
+{% block title %}Menu Management — Sushi Admin{% endblock %}
+{% block main_attrs %}x-data="menuManagement()"{% endblock %}
+
+{% block content %}
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Menu Management</h1>
+      <p class="ui-subtitle">Manage admin navigation menus.</p>
+    </div>
+    <div class="ui-toolbar">
+      <button type="button" class="ui-btn ui-btn-primary" @click="openForm()">
+        + Add Menu Item
+      </button>
+    </div>
+  </div>
+
+  <section class="ui-card">
+    <div class="ui-card-body">
+      <div class="menu-tree">
+        <template x-for="item in topItems()" :key="item.id">
+          <div class="menu-item">
+            <div class="menu-item-row">
+              <span class="menu-icon" x-html="getIcon(item.icon)"></span>
+              <span class="menu-label" x-text="item.label"></span>
+              <span class="menu-route" x-text="item.route || '-'"></span>
+              <span class="menu-actions">
+                <button @click="openForm(item)" class="ui-action-link">Edit</button>
+                <button @click="deleteItem(item.id)" class="ui-action-link danger">Delete</button>
+              </span>
+            </div>
+            <template x-for="child in getChildren(item.id)" :key="child.id">
+              <div class="menu-item menu-item-child">
+                <div class="menu-item-row">
+                  <span class="menu-icon" x-html="getIcon(child.icon)"></span>
+                  <span class="menu-label" x-text="child.label"></span>
+                  <span class="menu-route" x-text="child.route || '-'"></span>
+                  <span class="menu-actions">
+                    <button @click="openForm(child)" class="ui-action-link">Edit</button>
+                    <button @click="deleteItem(child.id)" class="ui-action-link danger">Delete</button>
+                  </span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+        <div class="ui-empty" x-show="topItems().length === 0" style="display:none">
+          No menu items yet. Add your first menu item above.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal Form -->
+  <div x-show="showForm" class="ui-modal-overlay" @click.self="closeForm()">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h3 class="ui-modal-title" x-text="editingItem ? 'Edit Menu Item' : 'Add Menu Item'"></h3>
+      </div>
+      <div class="ui-modal-body">
+        <form @submit.prevent="saveItem()">
+          <div class="form-group">
+            <label class="ui-label">Label</label>
+            <input type="text" x-model="form.label" class="ui-input" required>
+          </div>
+          <div class="form-group">
+            <label class="ui-label">Icon</label>
+            <select x-model="form.icon" class="ui-select">
+              <option value="">No icon</option>
+              <option value="layout-dashboard">layout-dashboard</option>
+              <option value="users">users</option>
+              <option value="shield">shield</option>
+              <option value="key">key</option>
+              <option value="package">package</option>
+              <option value="settings">settings</option>
+              <option value="file-text">file-text</option>
+              <option value="database">database</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="ui-label">Route</label>
+            <input type="text" x-model="form.route" class="ui-input">
+          </div>
+          <div class="form-group">
+            <label class="ui-label">Parent Menu</label>
+            <select x-model="form.parent_id" class="ui-select">
+              <option value="">Top Level</option>
+              <template x-for="item in topItems()" :key="item.id">
+                <option :value="item.id" x-text="item.label"></option>
+              </template>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="ui-label">
+              <input type="checkbox" x-model="form.is_hidden"> Hidden
+            </label>
+          </div>
+          <div class="ui-modal-actions">
+            <button type="button" @click="closeForm()" class="ui-btn ui-btn-secondary">Cancel</button>
+            <button type="submit" class="ui-btn ui-btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div x-show="showDeleteConfirm" class="ui-modal-overlay" @click.self="cancelDelete()">
+    <div class="ui-modal-card" style="max-width: 400px">
+      <div class="ui-modal-head">
+        <h3 class="ui-modal-title">Delete Menu Item</h3>
+      </div>
+      <div class="ui-modal-body">
+        <p style="margin: 0 0 16px; color: var(--text-secondary);">
+          Are you sure you want to delete this menu item? This action cannot be undone.
+        </p>
+        <div class="ui-modal-actions">
+          <button type="button" @click="cancelDelete()" class="ui-btn ui-btn-secondary">Cancel</button>
+          <button type="button" @click="confirmDelete()" class="ui-btn ui-btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static_url_prefix | default(value="/static") }}/admin/js/menu.js"></script>
+  <script src="{{ static_url_prefix | default(value="/static") }}/admin/js/menus.js"></script>
+{% endblock %}
