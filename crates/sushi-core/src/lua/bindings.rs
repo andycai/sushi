@@ -77,26 +77,49 @@ pub async fn inject_sushi_api(
 
     // sushi.log -- always available
     {
+        let log_service = ctx.logs.clone();
+
         let log_table = lua.create_table()?;
         log_table.set(
             "info",
-            lua.create_function(|_, msg: String| {
-                tracing::info!("[lua] {msg}");
-                Ok(())
+            lua.create_async_function({
+                let log_svc = log_service.clone();
+                move |_, msg: String| {
+                    let log_svc = log_svc.clone();
+                    async move {
+                        tracing::info!("[lua] {msg}");
+                        log_svc.info(&msg).await;
+                        Ok(())
+                    }
+                }
             })?,
         )?;
         log_table.set(
             "warn",
-            lua.create_function(|_, msg: String| {
-                tracing::warn!("[lua] {msg}");
-                Ok(())
+            lua.create_async_function({
+                let log_svc = log_service.clone();
+                move |_, msg: String| {
+                    let log_svc = log_svc.clone();
+                    async move {
+                        tracing::warn!("[lua] {msg}");
+                        log_svc.warn(&msg).await;
+                        Ok(())
+                    }
+                }
             })?,
         )?;
         log_table.set(
             "error",
-            lua.create_function(|_, msg: String| {
-                tracing::error!("[lua] {msg}");
-                Ok(())
+            lua.create_async_function({
+                let log_svc = log_service.clone();
+                move |_, msg: String| {
+                    let log_svc = log_svc.clone();
+                    async move {
+                        tracing::error!("[lua] {msg}");
+                        log_svc.error(&msg).await;
+                        Ok(())
+                    }
+                }
             })?,
         )?;
         sushi.set("log", log_table)?;

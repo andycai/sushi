@@ -7,3 +7,4 @@ pub mod auth;
 pub mod lua;
 pub mod context;
 pub mod web;
+pub mod logs;
