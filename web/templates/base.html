@@ -23,7 +23,7 @@
   <script defer src="{{ static_prefix }}/js/tailwindcss-4.2.2.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body x-data="adminMenu()" @init.window="initMenu()" class="{% block body_class %}{% endblock %}">
   <div class="admin-shell">
     {% block nav %}
     {% set active_section = active_section or "" %}
@@ -35,16 +35,60 @@
           <span>Control Surface</span>
         </span>
       </div>
-      <nav class="admin-nav">
-        {{ nav_link('/admin/', 'Dashboard', 'dashboard') }}
-        {{ nav_link('/admin/plugins', 'Plugins', 'plugins') }}
-        {{ nav_link('/admin/users', 'Users', 'users') }}
-        {{ nav_link('/admin/roles', 'Roles', 'roles') }}
-        {{ nav_link('/admin/permissions', 'Permissions', 'permissions') }}
-        {{ nav_link('/admin/config', 'Config', 'config') }}
-        {{ nav_link('/admin/kv', 'KV Store', 'kv') }}
-        {{ nav_link('/admin/logs', 'Logs', 'logs') }}
-      </nav>
+      <nav class="admin-nav" x-data="adminMenu()" @init.window="initMenu()">
+  <template x-for="item in menuItems.filter(i => !i.parent_id)" :key="item.id">
+    <div class="nav-group">
+      <!-- 一级菜单项 -->
+      <a
+        :href="item.route || '#'"
+        class="admin-nav-link"
+        :class="{ 'active': isActive(item) }"
+        @click="if (hasChildren(item)) { toggleDrawer(item.id); $event.preventDefault(); }"
+      >
+        <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
+        <span class="admin-nav-label" x-text="item.label"></span>
+        <span
+          x-show="hasChildren(item)"
+          class="admin-nav-arrow"
+          :class="{ 'open': openDrawers[item.id] }"
+        >→</span>
+      </a>
+    </div>
+  </template>
+
+  <!-- 抽屉遮罩 -->
+  <template x-for="item in menuItems.filter(i => !i.parent_id && openDrawers[i.id])" :key="'drawer-' + item.id">
+    <div
+      class="ui-drawer-overlay"
+      @click="closeDrawer(item.id)"
+    ></div>
+  </template>
+
+  <!-- 抽屉内容 -->
+  <template x-for="item in menuItems.filter(i => !i.parent_id)" :key="'panel-' + item.id">
+    <div
+      class="ui-drawer-panel"
+      x-show="openDrawers[item.id]"
+    >
+      <div class="ui-drawer-head">
+        <h3 class="ui-drawer-title" x-text="item.label + ' 子菜单'"></h3>
+        <button @click="closeDrawer(item.id)" class="ui-btn ui-btn-ghost">关闭</button>
+      </div>
+      <div class="ui-drawer-body">
+        <template x-for="child in getChildren(item.id)" :key="child.id">
+          <a
+            :href="child.route || '#'"
+            class="drawer-nav-item"
+            :class="{ 'active': isActive(child) }"
+          >
+            <span class="admin-nav-icon" x-html="getIcon(child.icon)"></span>
+            <span x-text="child.label"></span>
+          </a>
+        </template>
+      </div>
+    </div>
+  </template>
+</nav>
     </aside>
     {% endblock %}
 
