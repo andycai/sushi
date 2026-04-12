@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use axum::{routing::get, Router};
 use clap::Args;
 use std::path::PathBuf;
+use sushi_core::auth::middleware::require_auth;
 
 #[derive(Args)]
 pub struct ServeArgs {
@@ -54,31 +54,31 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         route_map: vec![],
     };
     
+    let auth_state = ctx.auth_state();
+
     let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
         .await
-        .with_state(plugin_api_state);
+        .with_state(plugin_api_state)
+        .layer(axum::middleware::from_fn_with_state(
+            auth_state.clone(),
+            require_auth,
+        ));
 
     let app = if args.api_only {
         // API-only: Rust API routes + plugin routes, no admin UI
-        // Uses require_auth middleware via build_app, then merge plugin routes
+        // Auth middleware is applied by build_app and the protected plugin router above.
         sushi_api::router::build_app(&ctx).merge(plugin_api_router)
     } else if args.admin_only {
         // Admin-only: admin UI + login page, no API or plugin API routes
         let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
-        let login_router = Router::new()
-            .route("/admin-login", get(sushi_admin::routes::login::login_page));
         axum::Router::new()
-            .merge(login_router)
             .merge(admin_router)
     } else {
         // Default: everything
-        let api_router = sushi_api::router::build_api_router(&ctx);
+        let api_router = sushi_api::router::build_app(&ctx);
         let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
-        let login_router = Router::new()
-            .route("/admin-login", get(sushi_admin::routes::login::login_page));
         axum::Router::new()
             .merge(api_router)
-            .merge(login_router)
             .merge(admin_router)
             .merge(plugin_api_router)
     };

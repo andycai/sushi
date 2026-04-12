@@ -22,13 +22,29 @@ pub async fn require_auth(
     mut req: Request,
     next: Next,
 ) -> Response {
+    let path = req.uri().path();
+
+    // Public auth endpoints stay accessible without token.
+    if matches!(path, "/api/auth/login" | "/api/auth/refresh") {
+        return next.run(req).await;
+    }
+
     let auth_header = req.headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok());
 
     let token = match auth_header {
         Some(h) if h.starts_with("Bearer ") => &h[7..],
-        _ => return (StatusCode::UNAUTHORIZED, "{\"error\":\"Missing authorization header\"}").into_response(),
+        _ => match extract_token_from_cookie(req.headers().get("cookie").and_then(|v| v.to_str().ok())) {
+            Some(token) => token,
+            None => {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    "{\"error\":\"Missing authorization credentials\"}",
+                )
+                    .into_response();
+            }
+        },
     };
 
     match state.jwt_service.verify_token(token) {
@@ -57,4 +73,11 @@ pub async fn require_auth(
         }
         Err(_) => (StatusCode::UNAUTHORIZED, "{\"error\":\"Invalid token\"}").into_response(),
     }
+}
+
+fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
+    let cookie = cookie_header?;
+    cookie
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("sushi_token="))
 }
