@@ -116,6 +116,12 @@ The `sushi` context exposes these namespaces to Lua plugins:
 
 ## Development Guidelines
 
+### Standards References
+
+- Coding standards (admin/api/cli): `docs/engineering/coding-standards.md`
+- Plugin authoring standards: `docs/engineering/plugin-authoring-standards.md`
+- Reusable project skills: `.agents/skills/sushi/`
+
 ### Rust Conventions
 
 - **Workspace structure:** Use a Cargo workspace with shared dependencies
