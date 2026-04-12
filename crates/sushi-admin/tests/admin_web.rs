@@ -63,6 +63,27 @@ fn collect_html_files(dir: &Path, paths: &mut Vec<PathBuf>) {
     }
 }
 
+fn collect_files_with_extension(dir: &Path, ext: &str, paths: &mut Vec<PathBuf>) {
+    for entry in dir.read_dir().expect("failed to read directory") {
+        let entry = entry.expect("failed to read directory entry");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_with_extension(&path, ext, paths);
+        } else if matches!(path.extension().and_then(|value| value.to_str()), Some(value) if value == ext)
+        {
+            paths.push(path);
+        }
+    }
+}
+
+fn collect_template_and_ui_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    collect_files_with_extension(&templates_root(), "html", &mut paths);
+    collect_files_with_extension(&static_root().join("admin"), "js", &mut paths);
+    collect_files_with_extension(&static_root().join("plugins"), "js", &mut paths);
+    paths
+}
+
 const ASSET_ATTRIBUTES: [&str; 2] = ["src", "href"];
 const EXTERNAL_URL_PREFIXES: [&str; 3] = ["http://", "https://", "//"];
 
@@ -458,4 +479,55 @@ async fn all_admin_templates_exclude_external_cdn_links() {
         let source = format!("template {}", path.display());
         assert_no_external_assets_in_html(&source, &html);
     }
+}
+
+#[tokio::test]
+async fn templates_and_ui_scripts_avoid_native_confirm_apis() {
+    let paths = collect_template_and_ui_paths();
+    assert!(
+        !paths.is_empty(),
+        "expected at least one template or ui file"
+    );
+
+    for path in paths {
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("failed to read source file {}", path.display()));
+        assert!(
+            !source.contains("hx-confirm="),
+            "{} still uses hx-confirm",
+            path.display()
+        );
+        assert!(
+            !source.contains("alert("),
+            "{} still uses alert()",
+            path.display()
+        );
+        assert!(
+            !source.contains("confirm("),
+            "{} still uses confirm()",
+            path.display()
+        );
+    }
+}
+
+#[tokio::test]
+async fn kv_rows_template_uses_dataset_for_alpine_edit_action() {
+    let path = templates_root()
+        .join("plugins")
+        .join("kv-store")
+        .join("partials")
+        .join("rows.html");
+    let html = fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("failed to read template file {}", path.display()));
+
+    assert!(
+        html.contains("@click=\"openEdit($el.dataset.key, $el.dataset.value)\""),
+        "template should call openEdit with dataset values: {}",
+        path.display()
+    );
+    assert!(
+        !html.contains("@click=\"openEdit({{"),
+        "template should not interpolate JSON directly in click handlers: {}",
+        path.display()
+    );
 }

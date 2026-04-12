@@ -11,27 +11,21 @@
     <td class="px-4 py-3 text-right">
       <button
         type="button"
-        @click="openEdit({{ item.key | tojson }}, {{ item.value | tojson }})"
+        data-key="{{ item.key }}"
+        data-value="{{ item.value }}"
+        @click="openEdit($el.dataset.key, $el.dataset.value)"
         class="text-blue-600 hover:text-blue-800 mr-3 text-sm font-medium"
       >
         Edit
       </button>
-      <form
-        class="inline"
-        hx-post="/admin/partials/kv/delete"
-        hx-target="#kv-feedback"
-        hx-swap="innerHTML"
-        x-on:htmx:after-request.camel="if ($event.detail.successful) triggerRefresh()"
+      <button
+        type="button"
+        data-key="{{ item.key }}"
+        class="text-red-600 hover:text-red-800 text-sm font-medium"
+        @click="openDeleteConfirm($el.dataset.key)"
       >
-        <input type="hidden" name="key" value="{{ item.key }}">
-        <button
-          type="submit"
-          class="text-red-600 hover:text-red-800 text-sm font-medium"
-          hx-confirm="Delete {{ item.key }}?"
-        >
-          Delete
-        </button>
-      </form>
+        Delete
+      </button>
     </td>
   </tr>
 {% else %}

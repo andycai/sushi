@@ -71,6 +71,37 @@
       </form>
     </div>
   </div>
+
+  <div x-show="showDeleteModal" x-transition
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+      <div class="px-6 py-4 border-b">
+        <h2 class="text-lg font-semibold">Confirm deletion</h2>
+      </div>
+      <form
+        class="px-6 py-4"
+        hx-post="/admin/partials/kv/delete"
+        hx-target="#kv-feedback"
+        hx-swap="innerHTML"
+        x-on:htmx:before-request.camel="deleting = true"
+        x-on:htmx:after-request.camel="deleting = false; if ($event.detail.successful) { closeDeleteConfirm(); triggerRefresh(); }"
+      >
+        <input type="hidden" name="key" x-model="deleteKey">
+        <p class="text-sm text-gray-600 mb-5">
+          Delete key <span class="font-semibold text-gray-800 font-mono" x-text="deleteKey"></span>? This action cannot be undone.
+        </p>
+        <div class="flex justify-end gap-3">
+          <button type="button" @click="closeDeleteConfirm()"
+            class="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
+          <button type="submit" :disabled="deleting || !deleteKey"
+            class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60">
+            <span x-show="!deleting">Delete</span>
+            <span x-show="deleting">Deleting...</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 {% endblock %}
 
 {% block scripts %}
