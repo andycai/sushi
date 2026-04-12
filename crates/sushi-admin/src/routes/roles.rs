@@ -1,6 +1,7 @@
 use axum::extract::{Form, Path, State};
 use axum::http::{header::HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
+use serde::de::{Deserializer, SeqAccess, Visitor};
 use serde::Deserialize;
 use std::sync::Arc;
 use sushi_core::auth::rbac::RbacRepository;
@@ -93,8 +94,77 @@ pub async fn roles_update_partial(
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateRolePermissionsForm {
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "permission_ids[]",
+        deserialize_with = "deserialize_permission_ids"
+    )]
     pub permission_ids: Vec<i64>,
+}
+
+fn deserialize_permission_ids<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct PermissionIdsVisitor;
+
+    impl<'de> Visitor<'de> for PermissionIdsVisitor {
+        type Value = Vec<i64>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a permission id or a list of permission ids")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            parse_permission_id(value)
+                .map(|id| vec![id])
+                .map_err(E::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_str(&value)
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut ids = Vec::new();
+            while let Some(value) = seq.next_element::<String>()? {
+                ids.push(parse_permission_id(&value).map_err(serde::de::Error::custom)?);
+            }
+            Ok(ids)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Vec::new())
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Vec::new())
+        }
+    }
+
+    deserializer.deserialize_any(PermissionIdsVisitor)
+}
+
+fn parse_permission_id(input: &str) -> Result<i64, String> {
+    let value = input.trim();
+    value
+        .parse::<i64>()
+        .map_err(|_| format!("invalid permission id: {value}"))
 }
 
 pub async fn role_permissions_form_partial(

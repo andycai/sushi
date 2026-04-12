@@ -220,6 +220,31 @@ fn bearer_token_for_role(role: &str) -> String {
         .expect("failed to create token")
 }
 
+fn extract_attr_value(source: &str, attr: &str) -> Option<String> {
+    let marker = format!(r#"{attr}=""#);
+    let start = source.find(&marker)? + marker.len();
+    let rest = &source[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn extract_dataset_id_by_slug(
+    html: &str,
+    slug_attr: &str,
+    slug_value: &str,
+    id_attr: &str,
+) -> Option<i64> {
+    let slug_marker = format!(r#"{slug_attr}="{slug_value}""#);
+    let slug_pos = html.find(&slug_marker)?;
+    let row_start = html[..slug_pos].rfind("<tr")?;
+    let row_end = html[slug_pos..]
+        .find('>')
+        .map(|idx| slug_pos + idx)
+        .unwrap_or(html.len());
+    let row = &html[row_start..row_end];
+    extract_attr_value(row, id_attr)?.parse::<i64>().ok()
+}
+
 #[tokio::test]
 async fn login_and_static_routes_work() {
     let app = build_app(None).await;
@@ -623,6 +648,370 @@ async fn viewer_cannot_access_users_page_without_permission() {
         .expect("request failed");
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_can_crud_permissions_via_partials() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/permissions/create")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "slug=audit.events.view&name=View+Audit+Events&module=audit&description=Read+audit+events",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(create_response.status(), StatusCode::OK);
+
+    let table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(table_response.status(), StatusCode::OK);
+    let table_body = to_bytes(table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let table_html = String::from_utf8_lossy(&table_body);
+    assert!(
+        table_html.contains("audit.events.view"),
+        "permissions html: {table_html}"
+    );
+    let permission_id = extract_dataset_id_by_slug(
+        &table_html,
+        "data-permission-slug",
+        "audit.events.view",
+        "data-permission-id",
+    )
+    .expect("permission id should be discoverable");
+
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/admin/partials/permissions/{permission_id}/update"
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "name=View+Audit+Trail&module=audit&description=Read+audit+trail+events",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(update_response.status(), StatusCode::OK);
+
+    let updated_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let updated_table_body = to_bytes(updated_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let updated_table_html = String::from_utf8_lossy(&updated_table_body);
+    assert!(
+        updated_table_html.contains("View Audit Trail"),
+        "updated permissions html: {updated_table_html}"
+    );
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/admin/partials/permissions/{permission_id}"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+
+    let final_table_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let final_table_body = to_bytes(final_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let final_table_html = String::from_utf8_lossy(&final_table_body);
+    assert!(
+        !final_table_html.contains("audit.events.view"),
+        "final permissions html: {final_table_html}"
+    );
+}
+
+#[tokio::test]
+async fn admin_can_crud_roles_and_assign_permissions() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let create_role_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/roles/create")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "slug=auditor&name=Auditor&description=Read+audit+operations",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(create_role_response.status(), StatusCode::OK);
+
+    let roles_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/roles/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(roles_table_response.status(), StatusCode::OK);
+    let roles_table_body = to_bytes(roles_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let roles_table_html = String::from_utf8_lossy(&roles_table_body);
+    let role_id = extract_dataset_id_by_slug(
+        &roles_table_html,
+        "data-role-slug",
+        "auditor",
+        "data-role-id",
+    )
+    .expect("role id should be discoverable");
+
+    let permissions_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let permissions_table_body = to_bytes(permissions_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let permissions_table_html = String::from_utf8_lossy(&permissions_table_body);
+    let logs_view_permission_id = extract_dataset_id_by_slug(
+        &permissions_table_html,
+        "data-permission-slug",
+        "logs.view",
+        "data-permission-id",
+    )
+    .expect("logs.view permission id should be discoverable");
+
+    let assign_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/admin/partials/roles/{role_id}/permissions"))
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "permission_ids={logs_view_permission_id}"
+                )))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(assign_response.status(), StatusCode::OK);
+
+    let permission_form_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/admin/partials/roles/{role_id}/permissions/form"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(permission_form_response.status(), StatusCode::OK);
+    let permission_form_body = to_bytes(permission_form_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let permission_form_html = String::from_utf8_lossy(&permission_form_body);
+    assert!(
+        permission_form_html.contains(&format!(r#"value="{logs_view_permission_id}""#)),
+        "permissions form html: {permission_form_html}"
+    );
+    assert!(
+        permission_form_html.contains("checked"),
+        "permissions form should include checked assignment: {permission_form_html}"
+    );
+
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/admin/partials/roles/{role_id}"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn custom_role_tokens_follow_permission_matrix() {
+    let app = build_app(None).await;
+    let admin = admin_bearer_token();
+
+    let create_role_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/roles/create")
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "slug=auditor&name=Auditor&description=Read+only+auditor",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(create_role_response.status(), StatusCode::OK);
+
+    let roles_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/roles/table")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let roles_table_body = to_bytes(roles_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let roles_table_html = String::from_utf8_lossy(&roles_table_body);
+    let role_id = extract_dataset_id_by_slug(
+        &roles_table_html,
+        "data-role-slug",
+        "auditor",
+        "data-role-id",
+    )
+    .expect("role id should be discoverable");
+
+    let permissions_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let permissions_table_body = to_bytes(permissions_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let permissions_table_html = String::from_utf8_lossy(&permissions_table_body);
+    let users_view_permission_id = extract_dataset_id_by_slug(
+        &permissions_table_html,
+        "data-permission-slug",
+        "users.view",
+        "data-permission-id",
+    )
+    .expect("users.view permission id should be discoverable");
+
+    let assign_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/admin/partials/roles/{role_id}/permissions"))
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "permission_ids={users_view_permission_id}"
+                )))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(assign_response.status(), StatusCode::OK);
+
+    let auditor = bearer_token_for_role("auditor");
+    let can_view_users = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/users")
+                .header("authorization", format!("Bearer {auditor}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(can_view_users.status(), StatusCode::OK);
+
+    let cannot_create_users = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/users/create")
+                .header("authorization", format!("Bearer {auditor}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "username=audited_user&email=audited@example.com&password=password123&role=viewer",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(cannot_create_users.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
