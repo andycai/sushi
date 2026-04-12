@@ -12,6 +12,7 @@ use sushi_core::web::template_service::TemplateService;
 const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
 const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
 const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
+const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
 
 pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     let config = match config_path {
@@ -49,6 +50,10 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         .run_migrations(RBAC_MIGRATION_SQL)
         .await
         .context("failed to run rbac migrations")?;
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .context("failed to run menu migrations")?;
 
     let jwt = {
         let guard = config.get().await;
