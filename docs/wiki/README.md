@@ -24,6 +24,7 @@ Lua 插件可调用的 Rust 接口文档。
 - [插件系统](architecture/plugin-system.md)
 - [认证与 RBAC](architecture/auth-rbac.md)
 - [数据库层](architecture/database.md)
+- [Admin 面板](architecture/admin-panel.md)
 
 ### 开发指南
 - [插件开发指南](guides/plugin-development.md)
