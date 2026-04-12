@@ -59,6 +59,16 @@ pub async fn require_auth(
                 "editor" => UserRole::Editor,
                 _ => UserRole::Viewer,
             };
+
+            // Admin partial endpoints are privileged and require admin role.
+            if path.starts_with("/admin/partials/") && role != UserRole::Admin {
+                return (
+                    StatusCode::FORBIDDEN,
+                    "{\"error\":\"Admin role required for admin partial routes\"}",
+                )
+                    .into_response();
+            }
+
             let user = User {
                 id: claims.sub.parse().unwrap_or(0),
                 username: claims.username.clone(),
@@ -80,4 +90,77 @@ fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
     cookie
         .split(';')
         .find_map(|part| part.trim().strip_prefix("sushi_token="))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request, routing::get, Router};
+    use tower::ServiceExt;
+
+    fn auth_state() -> (AuthState, Arc<JwtService>) {
+        let jwt = Arc::new(JwtService::new(
+            "test-secret-key-at-least-32-chars-long!",
+            3600,
+            604800,
+        ));
+        (
+            AuthState {
+                jwt_service: Arc::clone(&jwt),
+            },
+            jwt,
+        )
+    }
+
+    #[tokio::test]
+    async fn non_admin_cannot_access_admin_partials() {
+        let (state, jwt) = auth_state();
+        let app = Router::new()
+            .route("/admin/partials/kv/table", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(state, require_auth))
+            .with_state(());
+
+        let token = jwt
+            .create_access_token(1, "editor-user", "editor")
+            .expect("failed to build token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/partials/kv/table")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("failed to build request"),
+            )
+            .await
+            .expect("request failed");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn admin_can_access_admin_partials() {
+        let (state, jwt) = auth_state();
+        let app = Router::new()
+            .route("/admin/partials/kv/table", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(state, require_auth))
+            .with_state(());
+
+        let token = jwt
+            .create_access_token(1, "admin-user", "admin")
+            .expect("failed to build token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/partials/kv/table")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("failed to build request"),
+            )
+            .await
+            .expect("request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
 }
