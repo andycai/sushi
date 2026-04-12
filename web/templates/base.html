@@ -26,7 +26,6 @@
 <body x-data="adminMenu()" class="{% block body_class %}{% endblock %}">
   <div class="admin-shell">
     {% block nav %}
-    {% set active_section = active_section or "" %}
     <aside class="admin-sidebar">
       <div class="admin-brand">
         <span class="admin-brand-logo">S</span>
@@ -36,72 +35,64 @@
         </span>
       </div>
       <nav class="admin-nav">
-  <template x-for="item in menuItems.filter(i => !i.parent_id)" :key="item.id">
-    <div class="nav-group">
-      <!-- 一级菜单项 -->
-      <a
-        :href="item.route || '#'"
-        class="admin-nav-link"
-        :class="{ 'active': isActive(item) }"
-        @click="if (hasChildren(item)) { toggleDrawer(item.id); $event.preventDefault(); }"
-      >
-        <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
-        <span class="admin-nav-label" x-text="item.label"></span>
-        <span
-          x-show="hasChildren(item)"
-          class="admin-nav-arrow"
-          :class="{ 'open': openDrawers[item.id] }"
-        >→</span>
-      </a>
-    </div>
-  </template>
-
-  <!-- 抽屉遮罩 -->
-  <template x-for="item in menuItems.filter(i => !i.parent_id && openDrawers[i.id])" :key="'drawer-' + item.id">
-    <div
-      class="ui-drawer-overlay"
-      @click="closeDrawer(item.id)"
-    ></div>
-  </template>
-
-  <!-- 抽屉内容 -->
-  <template x-for="item in menuItems.filter(i => !i.parent_id)" :key="'panel-' + item.id">
-    <div
-      class="ui-drawer-panel"
-      x-show="openDrawers[item.id]"
-    >
-      <div class="ui-drawer-head">
-        <h3 class="ui-drawer-title" x-text="item.label + ' 子菜单'"></h3>
-        <button @click="closeDrawer(item.id)" class="ui-btn ui-btn-ghost">关闭</button>
-      </div>
-      <div class="ui-drawer-body">
-        <template x-for="child in getChildren(item.id)" :key="child.id">
-          <a
-            :href="child.route || '#'"
-            class="drawer-nav-item"
-            :class="{ 'active': isActive(child) }"
-          >
-            <span class="admin-nav-icon" x-html="getIcon(child.icon)"></span>
-            <span x-text="child.label"></span>
-          </a>
+        <!-- Use topMenuItems() instead of menuItems.filter -->
+        <template x-for="item in topMenuItems()" :key="item.id">
+          <div class="nav-item-wrapper">
+            <!-- 一级菜单项 -->
+            <a
+              :href="item.route || '#'"
+              class="admin-nav-link"
+              :class="{ 'active': isActive(item), 'has-children': hasChildren(item) }"
+              @click.prevent="handleMenuClick(item)"
+              :hx-get="item.route"
+              hx-target="#admin-content"
+              hx-swap="innerHTML"
+              hx-push-url="true"
+            >
+              <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
+              <span class="admin-nav-label" x-text="item.label"></span>
+              <!-- Arrow indicator for items with children -->
+              <span
+                x-show="hasChildren(item)"
+                class="admin-nav-arrow"
+                :class="{ 'expanded': isExpanded(item.id) }"
+              >›</span>
+            </a>
+            <!-- 子菜单 (inline, not drawer) -->
+            <div
+              x-show="isExpanded(item.id)"
+              class="nav-children"
+              x-transition
+            >
+              <template x-for="child in getChildren(item.id)" :key="child.id">
+                <a
+                  :href="child.route"
+                  class="nav-child-link"
+                  :class="{ 'active': isActive(child) }"
+                  :hx-get="child.route"
+                  hx-target="#admin-content"
+                  hx-swap="innerHTML"
+                  hx-push-url="true"
+                  x-text="child.label"
+                ></a>
+              </template>
+            </div>
+          </div>
         </template>
-      </div>
-    </div>
-  </template>
-</nav>
+
+        <!-- 退出登录 - in sidebar footer -->
+        <div class="nav-footer">
+          <a href="#" @click.prevent="logout()" class="admin-nav-link logout-link">
+            <span class="admin-nav-icon" x-html="getIcon('log-out')"></span>
+            <span class="admin-nav-label">Logout</span>
+          </a>
+        </div>
+      </nav>
     </aside>
     {% endblock %}
 
-    <main class="admin-main {% block additional_main_classes %}{% endblock %}" {% block main_attrs %}{% endblock %}>
-      {% block topbar %}
-      <header class="admin-topbar">
-        <div class="admin-topbar-title">Sushi Runtime Administration</div>
-        <div class="admin-topbar-meta">Enterprise Console</div>
-      </header>
-      {% endblock %}
-      <section class="admin-content">
-        {% block content %}{% endblock %}
-      </section>
+    <main id="admin-content" class="admin-main">
+      {% block content %}{% endblock %}
     </main>
   </div>
   <script src="{{ static_prefix }}/admin/js/menu.js"></script>
