@@ -14,10 +14,25 @@ Admin 面板使用动态菜单系统，菜单数据存储在数据库 `menu_item
 | position | INTEGER | 排序位置 |
 | parent_id | INTEGER | NULL=一级菜单，指向父ID=二级菜单 |
 | route | TEXT | 路由路径 |
+| is_hidden | INTEGER | 0=显示, 1=隐藏 |
 
 ### API
 
-- `GET /admin/api/menu` - 获取菜单列表
+| 方法 | 路径 | 功能 |
+|-----|------|------|
+| GET | /admin/api/menu | 获取菜单列表 |
+| POST | /admin/api/menu | 创建菜单项 |
+| PUT | /admin/api/menu/:id | 更新菜单项 |
+| DELETE | /admin/api/menu/:id | 删除菜单项 |
+
+### 菜单管理页面
+
+路由: `/admin/menus`
+
+功能:
+- 列表显示所有菜单项（树形结构）
+- 添加/编辑/删除菜单项
+- 显示/隐藏切换
 
 ### 图标
 
