@@ -345,6 +345,66 @@ async fn plugins_api_returns_list_payload() {
 }
 
 #[tokio::test]
+async fn config_api_returns_sanitized_config_payload() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/config")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+
+    assert!(payload.get("server").is_some(), "payload: {payload}");
+    assert!(payload.get("database").is_some(), "payload: {payload}");
+    assert!(payload.get("jwt").is_some(), "payload: {payload}");
+    assert!(payload.get("plugins").is_some(), "payload: {payload}");
+    assert!(
+        payload.pointer("/jwt/secret").is_none(),
+        "config api must not expose jwt secret: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn logs_api_returns_logs_array_payload() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/logs")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    let logs = payload.get("logs").and_then(Value::as_array);
+    assert!(
+        logs.is_some(),
+        "expected payload.logs array, got: {payload}"
+    );
+}
+
+#[tokio::test]
 async fn htmx_login_submit_returns_error_snippet_for_invalid_credentials() {
     let app = build_app(None).await;
 

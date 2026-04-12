@@ -5,7 +5,7 @@
       loaded: false,
       async init() {
         try {
-          const resp = await fetch('/api/config');
+          const resp = await fetch('/admin/api/config');
           if (resp.ok) {
             this.config = await resp.json();
           } else {

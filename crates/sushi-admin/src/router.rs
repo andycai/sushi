@@ -38,7 +38,10 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
 
     let mut router: Router<SushiContext> = Router::new()
         .merge(static_router)
-        .route("/admin-login", get(login::login_page).post(login::login_submit))
+        .route(
+            "/admin-login",
+            get(login::login_page).post(login::login_submit),
+        )
         .route(
             "/admin",
             get(axum::response::Redirect::temporary("/admin/")),
@@ -47,7 +50,9 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route("/admin/plugins", get(plugins::plugins_page))
         .route("/admin/users", get(users::users_page))
         .route("/admin/config", get(config::config_page))
+        .route("/admin/api/config", get(config::config_api))
         .route("/admin/logs", get(logs::logs_page))
+        .route("/admin/api/logs", get(logs::logs_api))
         .route(
             "/admin/partials/users/table",
             get(users::users_table_partial),
@@ -73,7 +78,9 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/plugins",
         "/admin/users",
         "/admin/config",
+        "/admin/api/config",
         "/admin/logs",
+        "/admin/api/logs",
         "/admin/partials/users/table",
         "/admin/partials/users/create",
         "/admin/partials/users/{id}",
