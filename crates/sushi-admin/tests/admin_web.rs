@@ -190,7 +190,7 @@ async fn login_and_static_routes_work() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/static/js/alpine-3.14.1.js")
+                .uri("/static/js/alpine-3.15.11.js")
                 .body(Body::empty())
                 .expect("failed to build request"),
         )
@@ -247,7 +247,7 @@ async fn custom_static_prefix_is_used_in_templates_and_routes() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/assets/js/alpine-3.14.1.js")
+                .uri("/assets/js/alpine-3.15.11.js")
                 .body(Body::empty())
                 .expect("failed to build request"),
         )

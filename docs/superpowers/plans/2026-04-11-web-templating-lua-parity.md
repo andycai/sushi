@@ -343,8 +343,8 @@ git commit -m "refactor(core): wire TemplateService into SushiContext bootstrap"
 #[test]
 fn base_template_uses_local_assets_only() {
     let base = std::fs::read_to_string("web/templates/base.html").unwrap();
-    assert!(base.contains("/static/js/alpine-3.14.1.js"));
-    assert!(base.contains("/static/js/tailwindcss-3.4.17.js"));
+    assert!(base.contains("/static/js/alpine-3.15.11.js"));
+    assert!(base.contains("/static/js/tailwindcss-4.2.2.js"));
     assert!(!base.contains("https://"));
 }
 ```
@@ -364,8 +364,8 @@ Expected: FAIL（`web/templates/base.html` 尚不存在）
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Sushi Admin{% endblock %}</title>
-  <script defer src="/static/js/alpine-3.14.1.js"></script>
-  <script src="/static/js/tailwindcss-3.4.17.js"></script>
+  <script defer src="/static/js/alpine-3.15.11.js"></script>
+  <script src="/static/js/tailwindcss-4.2.2.js"></script>
   <link rel="stylesheet" href="/static/admin/css/admin.css" />
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -884,7 +884,7 @@ git add plugins/kv-store/init.lua plugins/kv-store/plugin.toml web/templates/plu
 - [ ] `cargo test -p sushi-core --test db_gateway`
 - [ ] `cargo test -p sushi-admin --test admin_web`
 - [ ] `cargo test --workspace`
-- [ ] 手工验证：`/admin-login`、`/admin/users`、`/admin/kv`、`/static/js/alpine-3.14.1.js`
+- [ ] 手工验证：`/admin-login`、`/admin/users`、`/admin/kv`、`/static/js/alpine-3.15.11.js`
 - [ ] grep 验证无 CDN：`rg "https://unpkg.com|https://cdn.tailwindcss.com" web/templates`
 
 ## Spec Coverage Self-Review
