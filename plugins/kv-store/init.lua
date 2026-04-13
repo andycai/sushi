@@ -2,8 +2,20 @@
 -- Provides API routes, admin page, and CLI commands for key-value management
 -- using sushi.db.* bindings backed by SQLite.
 
--- JSON helpers (using native sushi bindings)
+local kv = {
+    utils = {},
+    infra = { db = {} },
+    domain = { store = {} },
+    interfaces = { api = {}, admin = {}, cli = {} },
+    bootstrap = {},
+}
+
 local json_encode = sushi.json.encode
+
+-- temporary compatibility: existing flat functions can still exist below,
+-- but all new/ported functions must attach to kv.* tables.
+
+-- JSON helpers (using native sushi bindings)
 local function json_parse(s)
     local ok, res = pcall(sushi.json.decode, s)
     if ok then return res end

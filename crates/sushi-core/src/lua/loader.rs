@@ -299,6 +299,21 @@ end)
         assert!(!static_source.contains("https://"));
     }
 
+    #[test]
+    fn kv_store_plugin_has_layered_namespace_tables() {
+        let repo_root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("local kv = {"));
+        assert!(source.contains("utils = {}"));
+        assert!(source.contains("infra = { db = {} }"));
+        assert!(source.contains("domain = { store = {} }"));
+        assert!(source.contains("interfaces = { api = {}, admin = {}, cli = {} }"));
+        assert!(source.contains("bootstrap = {}"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
