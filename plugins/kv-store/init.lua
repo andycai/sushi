@@ -61,7 +61,7 @@ kv.infra.db.query = function(sql, params)
     if not ok then
         return nil, "storage_error", tostring(rows_or_err)
     end
-    return rows_or_err
+    return rows_or_err, nil, nil
 end
 
 kv.infra.db.execute = function(sql, params)
@@ -71,7 +71,7 @@ kv.infra.db.execute = function(sql, params)
     if not ok then
         return nil, "storage_error", tostring(res_or_err)
     end
-    return res_or_err
+    return true, nil, nil
 end
 
 local function json_parse(s)
@@ -87,7 +87,7 @@ local function parse_form_urlencoded(body)
 end
 
 local function db_query(sql, params)
-    local rows, _, err_message = kv.infra.db.query(sql, params)
+    local rows, err_kind, err_message = kv.infra.db.query(sql, params)
     if not rows then
         return nil, err_message
     end
@@ -95,7 +95,7 @@ local function db_query(sql, params)
 end
 
 local function db_execute(sql, params)
-    local ok, _, err_message = kv.infra.db.execute(sql, params)
+    local ok, err_kind, err_message = kv.infra.db.execute(sql, params)
     if not ok then
         return nil, err_message
     end
