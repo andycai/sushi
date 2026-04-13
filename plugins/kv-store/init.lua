@@ -78,6 +78,9 @@ local function domain_error(kind, message)
     return nil, kind, message
 end
 
+local KV_UPSERT_SQL =
+    "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')"
+
 kv.domain.store.list = function()
     local rows, kind, msg = kv.infra.db.query(
         "SELECT key, value FROM kv_store ORDER BY key",
@@ -110,11 +113,11 @@ kv.domain.store.upsert = function(key, value)
     if not key or key == "" then
         return domain_error("invalid_key", "key cannot be empty")
     end
-    if value == nil or value == "" then
+    if value == nil or value == false then
         return domain_error("invalid_value", "value cannot be empty")
     end
     local ok, kind, msg = kv.infra.db.execute(
-        "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+        KV_UPSERT_SQL,
         { key, value }
     )
     if not ok then
@@ -171,7 +174,7 @@ end
 
 local function kv_upsert(key, value)
     return db_execute(
-        "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+        KV_UPSERT_SQL,
         { key, value }
     )
 end
