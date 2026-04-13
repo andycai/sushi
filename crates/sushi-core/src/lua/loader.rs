@@ -359,6 +359,29 @@ end)
         assert!(source.contains("kv.interfaces.cli.kv_del = function"));
     }
 
+    #[test]
+    fn kv_store_plugin_bootstrap_registration_contract_is_stable() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.bootstrap.register = function()"));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/api/kv\", kv.interfaces.api.dispatch)"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"DELETE\", \"/api/kv/*\", kv.interfaces.api.delete_dispatch)"
+        ));
+        assert!(source.contains(
+            "sushi.web.page(\"/admin/kv\", \"plugins/kv-store/kv.html\", { title = \"KV Store\" })"
+        ));
+        assert!(source.contains(
+            "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", kv.interfaces.cli.kv_set)"
+        ));
+        assert!(source.contains("function sushi.init()"));
+        assert!(source.contains("kv.bootstrap.register()"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();

@@ -152,22 +152,6 @@ local function parse_form_urlencoded(body)
     return kv.utils.parse_form_urlencoded(body)
 end
 
-local function db_query(sql, params)
-    local rows, err_kind, err_message = kv.infra.db.query(sql, params)
-    if not rows then
-        return nil, err_message
-    end
-    return rows
-end
-
-local function db_execute(sql, params)
-    local ok, err_kind, err_message = kv.infra.db.execute(sql, params)
-    if not ok then
-        return nil, err_message
-    end
-    return ok
-end
-
 local function api_error(kind, message)
     local status = 500
     if kind == "invalid_key" or kind == "invalid_value" then
@@ -178,13 +162,6 @@ local function api_error(kind, message)
         status = 500
     end
     return sushi.web.json(status, { error = tostring(message or kind or "error") })
-end
-
-local function kv_upsert(key, value)
-    return db_execute(
-        KV_UPSERT_SQL,
-        { key, value }
-    )
 end
 
 -- ========================
@@ -396,7 +373,7 @@ end
 -- Registration
 -- ========================
 
-function sushi.init()
+kv.bootstrap.register = function()
     -- API routes (using wildcard prefix for /api/kv/*)
     sushi.api.route("GET", "/api/kv", kv.interfaces.api.dispatch)
     sushi.api.route("GET", "/api/kv/*", kv.interfaces.api.dispatch)
@@ -415,6 +392,9 @@ function sushi.init()
     sushi.cli.command("kv-get", "Get a KV entry by key", kv.interfaces.cli.kv_get)
     sushi.cli.command("kv-set", "Set a KV entry (key + value)", kv.interfaces.cli.kv_set)
     sushi.cli.command("kv-del", "Delete a KV entry by key", kv.interfaces.cli.kv_del)
+end
 
+function sushi.init()
+    kv.bootstrap.register()
     sushi.log.info("kv-store plugin: registered API routes, admin page, and CLI commands")
 end
