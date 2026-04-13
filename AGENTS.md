@@ -154,6 +154,17 @@ The `sushi` context exposes these namespaces to Lua plugins:
 - Database migrations are managed in Rust, not Lua
 - Tests: Rust unit/integration tests + Lua plugin validation tests
 
+### Git Commit Conventions
+
+- Use Conventional Commit style: `type(scope): summary` (e.g. `feat(api): add kv list endpoint`).
+- Recommended `type` values: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `style`.
+- Keep each commit focused on a single logical change; avoid mixing unrelated changes.
+- Commit summary should be concise, imperative, and typically <= 72 characters.
+- In commit messages, **do not include signature/attribution trailers**, such as:
+  - `Co-Authored-By:`
+  - `Signed-off-by:`
+  - `Generated-by:` or similar attribution lines
+
 ## Build & Run
 
 ```bash
