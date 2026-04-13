@@ -183,5 +183,6 @@
 {% endblock %}
 
 {% block scripts %}
+  <script src="{{ static_url_prefix | default(value="/static") }}/admin/js/menu.js"></script>
   <script src="{{ static_url_prefix | default(value="/static") }}/admin/js/roles.js"></script>
 {% endblock %}

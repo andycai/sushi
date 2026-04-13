@@ -95,7 +95,8 @@
       {% block content %}{% endblock %}
     </main>
   </div>
-  <script src="{{ static_prefix }}/admin/js/menu.js"></script>
-  {% block scripts %}{% endblock %}
+  {% block scripts %}
+    <script src="{{ static_prefix }}/admin/js/menu.js"></script>
+  {% endblock %}
 </body>
 </html>
