@@ -86,6 +86,10 @@ database = "read" # or "write" / false
   - `sushi.web.page("/admin/<path>", "plugins/<name>/<page>.html", { ... })`
 - Partial endpoints should return template-rendered fragments.
 - Feedback fragments should follow shared flash protocol (`data-ui-flash`, `data-level`, `data-message`).
+- Navigation convention for scalable plugin IA:
+  - Keep global sidebar stable (`Plugins` is the global entry).
+  - Prefer plugin workspace pages under `/admin/plugins/<plugin>` for plugin-level navigation.
+  - Additional plugin pages should usually stay inside plugin workspace flows; avoid adding many global sidebar entries.
 
 ## 5. HTTP/API Contract Conventions
 
