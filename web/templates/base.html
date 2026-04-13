@@ -27,14 +27,14 @@
       <nav class="admin-nav">
         <div class="admin-nav-list">
           <template x-for="item in topMenuItems()" :key="item.id">
-            <div class="nav-item-wrapper">
+            <div class="nav-item-wrapper" :class="{ 'is-expanded': isExpanded(item.id) }">
               <a
                 :href="hasChildren(item) ? '#' : (item.route || '#')"
                 class="admin-nav-link"
                 :class="{ 'active': isActive(item), 'has-children': hasChildren(item) }"
                 @click="handleMenuClick($event, item)"
               >
-                <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
+                <span class="admin-nav-icon" x-html="getIcon(item.icon || 'folder')"></span>
                 <span class="admin-nav-label" x-text="item.label"></span>
                 <span
                   x-show="hasChildren(item)"
@@ -43,18 +43,44 @@
                 >›</span>
               </a>
               <div
-                x-show="isExpanded(item.id)"
-                class="nav-children"
-                x-transition
+                x-show="hasChildren(item) && isExpanded(item.id)"
+                class="nav-children depth-2"
+                x-transition.opacity.duration.200ms
               >
                 <template x-for="child in getChildren(item.id)" :key="child.id">
-                  <a
-                    :href="child.route"
-                    class="nav-child-link"
-                    :class="{ 'active': isActive(child) }"
-                    @click="handleMenuClick($event, child)"
-                    x-text="child.label"
-                  ></a>
+                  <div class="nav-subitem-wrapper">
+                    <a
+                      :href="hasChildren(child) ? '#' : (child.route || '#')"
+                      class="nav-child-link level-2"
+                      :class="{ 'active': isActive(child), 'has-children': hasChildren(child) }"
+                      @click="handleMenuClick($event, child)"
+                    >
+                      <span class="nav-child-icon" x-html="getIcon(child.icon || 'dot')"></span>
+                      <span class="nav-child-label" x-text="child.label"></span>
+                      <span
+                        x-show="hasChildren(child)"
+                        class="nav-child-arrow"
+                        :class="{ 'expanded': isExpanded(child.id) }"
+                      >›</span>
+                    </a>
+                    <div
+                      x-show="hasChildren(child) && isExpanded(child.id)"
+                      class="nav-children depth-3"
+                      x-transition.opacity.duration.180ms
+                    >
+                      <template x-for="grandchild in getChildren(child.id)" :key="grandchild.id">
+                        <a
+                          :href="grandchild.route || '#'"
+                          class="nav-child-link level-3"
+                          :class="{ 'active': isActive(grandchild) }"
+                          @click="handleMenuClick($event, grandchild)"
+                        >
+                          <span class="nav-child-icon" x-html="getIcon(grandchild.icon || 'dot')"></span>
+                          <span class="nav-child-label" x-text="grandchild.label"></span>
+                        </a>
+                      </template>
+                    </div>
+                  </div>
                 </template>
               </div>
             </div>
