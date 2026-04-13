@@ -23,7 +23,7 @@
   <script defer src="{{ static_prefix }}/js/tailwindcss-4.2.2.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body x-data="adminMenu()" {% block body_attrs %}class="{% block body_class %}{% endblock %}"{% endblock %}>
+<body x-data="{% block body_x_data %}adminMenu(){% endblock %}" {% block body_attrs %}class="{% block body_class %}{% endblock %}"{% endblock %}>
   <div class="admin-shell">
     {% block nav %}
     <aside class="admin-sidebar">
@@ -35,52 +35,46 @@
         </span>
       </div>
       <nav class="admin-nav">
-        <!-- Use topMenuItems() instead of menuItems.filter -->
-        <template x-for="item in topMenuItems()" :key="item.id">
-          <div class="nav-item-wrapper">
-            <!-- 一级菜单项 -->
-            <a
-              :href="item.route || '#'"
-              class="admin-nav-link"
-              :class="{ 'active': isActive(item), 'has-children': hasChildren(item) }"
-              @click.prevent="handleMenuClick(item)"
-              :hx-get="item.route"
-              hx-target="#admin-content"
-              hx-swap="innerHTML"
-              hx-push-url="true"
-            >
-              <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
-              <span class="admin-nav-label" x-text="item.label"></span>
-              <!-- Arrow indicator for items with children -->
-              <span
-                x-show="hasChildren(item)"
-                class="admin-nav-arrow"
-                :class="{ 'expanded': isExpanded(item.id) }"
-              >›</span>
-            </a>
-            <!-- 子菜单 (inline, not drawer) -->
-            <div
-              x-show="isExpanded(item.id)"
-              class="nav-children"
-              x-transition
-            >
-              <template x-for="child in getChildren(item.id)" :key="child.id">
-                <a
-                  :href="child.route"
-                  class="nav-child-link"
-                  :class="{ 'active': isActive(child) }"
-                  :hx-get="child.route"
-                  hx-target="#admin-content"
-                  hx-swap="innerHTML"
-                  hx-push-url="true"
-                  x-text="child.label"
-                ></a>
-              </template>
+        <div class="admin-nav-list">
+          <!-- Use topMenuItems() instead of menuItems.filter -->
+          <template x-for="item in topMenuItems()" :key="item.id">
+            <div class="nav-item-wrapper">
+              <!-- 一级菜单项 -->
+              <a
+                :href="hasChildren(item) ? '#' : (item.route || '#')"
+                class="admin-nav-link"
+                :class="{ 'active': isActive(item), 'has-children': hasChildren(item) }"
+                @click="handleMenuClick($event, item)"
+              >
+                <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
+                <span class="admin-nav-label" x-text="item.label"></span>
+                <!-- Arrow indicator for items with children -->
+                <span
+                  x-show="hasChildren(item)"
+                  class="admin-nav-arrow"
+                  :class="{ 'expanded': isExpanded(item.id) }"
+                >›</span>
+              </a>
+              <!-- 子菜单 (inline, not drawer) -->
+              <div
+                x-show="isExpanded(item.id)"
+                class="nav-children"
+                x-transition
+              >
+                <template x-for="child in getChildren(item.id)" :key="child.id">
+                  <a
+                    :href="child.route"
+                    class="nav-child-link"
+                    :class="{ 'active': isActive(child) }"
+                    x-text="child.label"
+                  ></a>
+                </template>
+              </div>
             </div>
-          </div>
-        </template>
+          </template>
+        </div>
 
-        <!-- 退出登录 - in sidebar footer -->
+        <!-- 退出登录 - always pinned to sidebar bottom -->
         <div class="nav-footer">
           <a href="#" @click.prevent="logout()" class="admin-nav-link logout-link">
             <span class="admin-nav-icon" x-html="getIcon('log-out')"></span>
@@ -91,7 +85,11 @@
     </aside>
     {% endblock %}
 
-    <main id="admin-content" class="admin-main">
+    <main
+      id="admin-content"
+      class="admin-main {% block additional_main_classes %}{% endblock %}"
+      {% block main_attrs %}{% endblock %}
+    >
       {% block content %}{% endblock %}
     </main>
   </div>

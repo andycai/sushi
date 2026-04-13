@@ -19,6 +19,32 @@ const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
 const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
 const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
 const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
+const LEGACY_MENU_SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS menu_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    icon TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    parent_id INTEGER,
+    route TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (parent_id) REFERENCES menu_items(id) ON DELETE SET NULL
+);
+
+INSERT OR IGNORE INTO menu_items (id, label, icon, position, parent_id, route) VALUES
+(1, 'Dashboard', 'layout-dashboard', 10, NULL, '/admin/'),
+(2, 'Users', 'users', 20, NULL, '/admin/users'),
+(3, 'Roles', 'shield', 30, NULL, '/admin/roles'),
+(4, 'Permissions', 'key', 40, NULL, '/admin/permissions'),
+(5, 'Plugins', 'package', 50, NULL, '/admin/plugins'),
+(6, 'Config', 'settings', 60, NULL, '/admin/config'),
+(7, 'Logs', 'file-text', 70, NULL, '/admin/logs');
+
+INSERT INTO menu_items (label, icon, position, parent_id, route) VALUES
+('KV Store', 'database', 51, 5, '/admin/kv'),
+('KV Store', 'database', 51, 5, '/admin/kv'),
+('KV Store', 'database', 51, 5, '/admin/kv');
+"#;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -208,6 +234,41 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
         .run_migrations(MENU_MIGRATION_SQL)
         .await
         .expect("failed to run migration 004_menu");
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+    let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
+
+    let ctx = SushiContext::new(config, storage, jwt, templates);
+    build_admin_router(&ctx).await
+}
+
+async fn build_app_with_legacy_menu_table() -> axum::Router {
+    let templates_dir = templates_root();
+    let static_dir = static_root();
+
+    let mut config = SushiConfig::default();
+    config.web.templates_dir = templates_dir.to_string_lossy().to_string();
+    config.web.static_dir = static_dir.to_string_lossy().to_string();
+
+    let config = ConfigStore::new(config);
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .run_migrations(KV_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(LEGACY_MENU_SCHEMA_SQL)
+        .await
+        .expect("failed to run legacy menu schema migration");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -411,6 +472,64 @@ async fn menu_api_returns_menu_items() {
     // 验证 Dashboard 存在
     let dashboard = menu.iter().find(|m| m.get("label").and_then(Value::as_str) == Some("Dashboard"));
     assert!(dashboard.is_some(), "Dashboard menu item should exist");
+
+    let menus = menu
+        .iter()
+        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/menus"));
+    assert!(menus.is_some(), "Menus management entry should exist");
+}
+
+#[tokio::test]
+async fn menu_api_handles_legacy_menu_table_without_is_hidden_column() {
+    let app = build_app_with_legacy_menu_table().await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/menu")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    let menu = payload
+        .get("menu")
+        .and_then(Value::as_array)
+        .expect("menu array missing");
+    assert!(!menu.is_empty(), "menu should have items for legacy schema");
+    let menus_count = menu
+        .iter()
+        .filter(|item| item.get("route").and_then(Value::as_str) == Some("/admin/menus"))
+        .count();
+    assert_eq!(menus_count, 1, "menus management entry should be unique");
+    let kv_count = menu
+        .iter()
+        .filter(|item| item.get("route").and_then(Value::as_str) == Some("/admin/kv"))
+        .count();
+    assert_eq!(kv_count, 1, "legacy duplicate kv menu entries should be deduplicated");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/admin/api/menu/1")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"is_hidden":true}"#))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

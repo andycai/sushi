@@ -46,11 +46,13 @@
         return item.route === window.location.pathname;
       },
 
-      handleMenuClick(item) {
+      handleMenuClick(event, item) {
         if (this.hasChildren(item)) {
+          if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+          }
           this.toggleExpand(item.id);
         }
-        // Note: actual navigation happens via HTMX hx-get on the element
       },
 
       async logout() {

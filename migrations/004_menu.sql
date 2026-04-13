@@ -20,6 +20,35 @@ INSERT OR IGNORE INTO menu_items (id, label, icon, position, parent_id, route) V
 (6, 'Config', 'settings', 60, NULL, '/admin/config'),
 (7, 'Logs', 'file-text', 70, NULL, '/admin/logs');
 
--- 初始化内置二级菜单 (使用 INSERT OR IGNORE 避免重复插入)
-INSERT OR IGNORE INTO menu_items (label, icon, position, parent_id, route) VALUES
-('KV Store', 'database', 51, 5, '/admin/kv');
+-- 初始化内置一级菜单（菜单管理）
+INSERT INTO menu_items (label, icon, position, parent_id, route)
+SELECT 'Menus', 'settings', 61, NULL, '/admin/menus'
+WHERE NOT EXISTS (
+    SELECT 1 FROM menu_items
+    WHERE parent_id IS NULL AND route = '/admin/menus'
+);
+
+-- 初始化内置二级菜单（KV Store）
+INSERT INTO menu_items (label, icon, position, parent_id, route)
+SELECT 'KV Store', 'database', 51, 5, '/admin/kv'
+WHERE NOT EXISTS (
+    SELECT 1 FROM menu_items
+    WHERE parent_id = 5 AND route = '/admin/kv'
+);
+
+-- 兼容历史重复数据：仅保留最早一条菜单记录
+DELETE FROM menu_items
+WHERE parent_id = 5
+  AND route = '/admin/kv'
+  AND id <> (
+      SELECT MIN(id) FROM menu_items
+      WHERE parent_id = 5 AND route = '/admin/kv'
+  );
+
+DELETE FROM menu_items
+WHERE parent_id IS NULL
+  AND route = '/admin/menus'
+  AND id <> (
+      SELECT MIN(id) FROM menu_items
+      WHERE parent_id IS NULL AND route = '/admin/menus'
+  );

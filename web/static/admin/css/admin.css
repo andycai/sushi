@@ -100,7 +100,18 @@ body {
 .admin-nav {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-nav-list {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .admin-nav-link {
@@ -826,7 +837,7 @@ body {
 
 /* 导航底部 */
 .nav-footer {
-  margin-top: auto;
+  margin-top: 12px;
   padding-top: 16px;
   border-top: 1px solid rgba(190, 209, 255, 0.15);
 }
@@ -872,8 +883,14 @@ body {
   }
 
   .admin-nav {
+    min-height: 0;
+  }
+
+  .admin-nav-list {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    overflow-y: visible;
+    padding-right: 0;
   }
 
   .admin-main {
