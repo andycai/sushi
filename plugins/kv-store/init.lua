@@ -16,40 +16,15 @@ local json_encode = sushi.json.encode
 -- but all new/ported functions must attach to kv.* tables.
 
 -- JSON helpers (using native sushi bindings)
-local function json_parse(s)
-    local ok, res = pcall(sushi.json.decode, s)
-    if ok then return res end
+kv.utils.json_parse = function(raw)
+    local ok, res = pcall(sushi.json.decode, raw)
+    if ok then
+        return res
+    end
     return nil
 end
 
-local function error_response(status, msg)
-    return sushi.web.json(status, { error = tostring(msg) })
-end
-
-local function db_query(sql, params)
-    local ok, rows = pcall(function()
-        return sushi.db.query(sql, params)
-    end)
-    if not ok then return nil, tostring(rows) end
-    return rows
-end
-
-local function db_execute(sql, params)
-    local ok, err = pcall(function()
-        return sushi.db.execute(sql, params)
-    end)
-    if not ok then return nil, tostring(err) end
-    return true
-end
-
-local function kv_upsert(key, value)
-    return db_execute(
-        "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
-        { key, value }
-    )
-end
-
-local function html_escape(value)
+kv.utils.html_escape = function(value)
     local text = tostring(value or "")
     text = text:gsub("&", "&amp;")
     text = text:gsub("<", "&lt;")
@@ -60,7 +35,9 @@ local function html_escape(value)
 end
 
 local function url_decode(value)
-    if not value then return "" end
+    if not value then
+        return ""
+    end
     local decoded = value:gsub("+", " ")
     decoded = decoded:gsub("%%(%x%x)", function(hex)
         return string.char(tonumber(hex, 16))
@@ -68,13 +45,72 @@ local function url_decode(value)
     return decoded
 end
 
-local function parse_form_urlencoded(body)
+kv.utils.parse_form_urlencoded = function(body)
     local out = {}
     local source = body or ""
     for key, value in string.gmatch(source, "([^&=]+)=?([^&]*)") do
         out[url_decode(key)] = url_decode(value)
     end
     return out
+end
+
+kv.infra.db.query = function(sql, params)
+    local ok, rows_or_err = pcall(function()
+        return sushi.db.query(sql, params)
+    end)
+    if not ok then
+        return nil, "storage_error", tostring(rows_or_err)
+    end
+    return rows_or_err
+end
+
+kv.infra.db.execute = function(sql, params)
+    local ok, res_or_err = pcall(function()
+        return sushi.db.execute(sql, params)
+    end)
+    if not ok then
+        return nil, "storage_error", tostring(res_or_err)
+    end
+    return res_or_err
+end
+
+local function json_parse(s)
+    return kv.utils.json_parse(s)
+end
+
+local function html_escape(value)
+    return kv.utils.html_escape(value)
+end
+
+local function parse_form_urlencoded(body)
+    return kv.utils.parse_form_urlencoded(body)
+end
+
+local function db_query(sql, params)
+    local rows, _, err_message = kv.infra.db.query(sql, params)
+    if not rows then
+        return nil, err_message
+    end
+    return rows
+end
+
+local function db_execute(sql, params)
+    local ok, _, err_message = kv.infra.db.execute(sql, params)
+    if not ok then
+        return nil, err_message
+    end
+    return ok
+end
+
+local function error_response(status, msg)
+    return sushi.web.json(status, { error = tostring(msg) })
+end
+
+local function kv_upsert(key, value)
+    return db_execute(
+        "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+        { key, value }
+    )
 end
 
 -- ========================

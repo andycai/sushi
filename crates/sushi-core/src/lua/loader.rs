@@ -314,6 +314,18 @@ end)
         assert!(source.contains("bootstrap = {}"));
     }
 
+    #[test]
+    fn kv_store_plugin_extracts_utils_and_db_adapter() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.utils.html_escape = function"));
+        assert!(source.contains("kv.utils.parse_form_urlencoded = function"));
+        assert!(source.contains("kv.infra.db.query = function"));
+        assert!(source.contains("kv.infra.db.execute = function"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
