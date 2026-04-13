@@ -9,6 +9,7 @@ This directory contains project-specific reusable skills for Codex/agent workflo
 - `sushi-cli-command-delivery`: CLI subcommand implementation checklist.
 - `sushi-lua-plugin-delivery`: Lua plugin scaffolding and parity checklist.
 - `sushi-release-verification`: Pre-commit and pre-merge verification gate.
+- `_shared/admin-ui-module-checklist.md`: Single source checklist reused by admin + plugin UI skills.
 
 ## Suggested Installation
 
