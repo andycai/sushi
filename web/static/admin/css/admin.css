@@ -876,6 +876,134 @@ body {
   overflow-y: auto;
 }
 
+.admin-workspace {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-workspace.is-enabled {
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-workspace-tabs {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+
+.admin-workspace.is-enabled .admin-workspace-tabs {
+  display: flex;
+}
+
+.admin-workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cfdaef;
+  border-radius: 11px;
+  background: #eef4ff;
+  color: #27416c;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.admin-workspace-tab.is-active {
+  background: #ffffff;
+  border-color: #9ebdf8;
+  box-shadow: 0 7px 20px rgba(13, 58, 130, 0.12);
+  color: #0f3269;
+}
+
+.admin-workspace-tab-trigger {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 6px 7px 10px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-workspace-tab-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 15px;
+  font-weight: 700;
+  opacity: 0.7;
+  border-radius: 8px;
+  width: 22px;
+  height: 22px;
+  margin-right: 5px;
+}
+
+.admin-workspace-tab-close:hover {
+  opacity: 1;
+  background: rgba(55, 92, 158, 0.14);
+}
+
+.admin-workspace-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-workspace.is-enabled .admin-workspace-panel {
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-soft);
+  padding: 16px;
+  overflow: auto;
+}
+
+.admin-workspace-pane {
+  display: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-workspace-pane.is-active {
+  display: block;
+}
+
+.admin-workspace-pane.is-loading {
+  min-height: 160px;
+}
+
+.admin-workspace-loading,
+.admin-workspace-error {
+  border: 1px dashed #c8d5ef;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: #f6f9ff;
+}
+
+.admin-workspace-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-workspace-error a {
+  color: var(--brand-strong);
+  font-weight: 600;
+}
+
 @media (max-width: 1024px) {
   .admin-sidebar {
     width: 224px;
@@ -909,6 +1037,10 @@ body {
 
   .admin-main {
     padding: 16px;
+  }
+
+  .admin-workspace.is-enabled .admin-workspace-panel {
+    padding: 12px;
   }
 
   .ui-login-shell {

@@ -3,9 +3,20 @@
     return {
       menuItems: [],
       expandedMenus: {},
+      activePath: '/admin/',
 
       async init() {
+        this.refreshActivePath();
         await this.loadMenu();
+
+        window.addEventListener('admin:workspace:change', (event) => {
+          const nextPath = this.normalizeRoute(event?.detail?.path);
+          if (!nextPath) {
+            return;
+          }
+          this.activePath = nextPath;
+          this.expandForRoute(nextPath);
+        });
       },
 
       async loadMenu() {
@@ -14,9 +25,69 @@
           if (resp.ok) {
             const data = await resp.json();
             this.menuItems = data.menu || [];
+            this.expandForRoute(this.activePath);
           }
         } catch (e) {
           console.error('Failed to load menu:', e);
+        }
+      },
+
+      normalizeRoute(route) {
+        if (!route || typeof route !== 'string') {
+          return '';
+        }
+        let path = route.trim();
+        if (!path) {
+          return '';
+        }
+        if (path === '/admin') {
+          return '/admin/';
+        }
+        if (path !== '/admin/' && path.endsWith('/')) {
+          path = path.replace(/\/+$/, '');
+        }
+        return path;
+      },
+
+      refreshActivePath() {
+        const workspacePath =
+          window.AdminWorkspace &&
+          typeof window.AdminWorkspace.getActivePath === 'function'
+            ? window.AdminWorkspace.getActivePath()
+            : '';
+        this.activePath =
+          this.normalizeRoute(workspacePath) ||
+          this.normalizeRoute(window.location.pathname) ||
+          '/admin/';
+      },
+
+      expandForRoute(route) {
+        const normalizedRoute = this.normalizeRoute(route);
+        if (!normalizedRoute || !this.menuItems.length) {
+          return;
+        }
+
+        const byId = new Map(this.menuItems.map((item) => [item.id, item]));
+        const target = this.menuItems.find(
+          (item) =>
+            !item.is_hidden && this.normalizeRoute(item.route || '') === normalizedRoute,
+        );
+        if (!target) {
+          return;
+        }
+
+        let changed = false;
+        let current = target;
+        while (current && current.parent_id) {
+          if (!this.expandedMenus[current.parent_id]) {
+            this.expandedMenus[current.parent_id] = true;
+            changed = true;
+          }
+          current = byId.get(current.parent_id) || null;
+        }
+
+        if (changed) {
+          this.expandedMenus = { ...this.expandedMenus };
         }
       },
 
@@ -43,7 +114,20 @@
       },
 
       isActive(item) {
-        return item.route === window.location.pathname;
+        const activeRoute = this.normalizeRoute(this.activePath);
+        const ownRoute = this.normalizeRoute(item.route || '');
+
+        if (ownRoute && ownRoute === activeRoute) {
+          return true;
+        }
+
+        if (!this.hasChildren(item)) {
+          return false;
+        }
+
+        return this.getChildren(item.id).some(
+          (child) => this.normalizeRoute(child.route || '') === activeRoute,
+        );
       },
 
       handleMenuClick(event, item) {
@@ -52,6 +136,30 @@
             event.preventDefault();
           }
           this.toggleExpand(item.id);
+          return;
+        }
+
+        const route = this.normalizeRoute(item.route || '');
+        if (!route) {
+          return;
+        }
+
+        if (
+          window.AdminWorkspace &&
+          typeof window.AdminWorkspace.openTab === 'function' &&
+          window.AdminWorkspace.isEnabled &&
+          window.AdminWorkspace.isEnabled()
+        ) {
+          if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+          }
+          const opened = window.AdminWorkspace.openTab(route, { title: item.label });
+          if (!opened) {
+            window.location.href = route;
+            return;
+          }
+          this.activePath = route;
+          this.expandForRoute(route);
         }
       },
 

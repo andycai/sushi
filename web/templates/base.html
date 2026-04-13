@@ -66,6 +66,7 @@
                     :href="child.route"
                     class="nav-child-link"
                     :class="{ 'active': isActive(child) }"
+                    @click="handleMenuClick($event, child)"
                     x-text="child.label"
                   ></a>
                 </template>
@@ -90,11 +91,31 @@
       class="admin-main {% block additional_main_classes %}{% endblock %}"
       {% block main_attrs %}{% endblock %}
     >
+      {% if active_section %}
+        <div id="admin-workspace" class="admin-workspace">
+          <div id="admin-workspace-tabs" class="admin-workspace-tabs" aria-label="Workspace tabs"></div>
+          <div id="admin-workspace-panel" class="admin-workspace-panel">
+      {% endif %}
       {% block content %}{% endblock %}
+      {% if active_section %}
+          </div>
+        </div>
+      {% endif %}
     </main>
   </div>
-  {% block scripts %}
+  {% if active_section %}
     <script src="{{ static_prefix }}/admin/js/menu.js"></script>
-  {% endblock %}
+    <script src="{{ static_prefix }}/admin/js/workspace.js"></script>
+    <script src="{{ static_prefix }}/admin/js/dashboard.js"></script>
+    <script src="{{ static_prefix }}/admin/js/users.js"></script>
+    <script src="{{ static_prefix }}/admin/js/roles.js"></script>
+    <script src="{{ static_prefix }}/admin/js/permissions.js"></script>
+    <script src="{{ static_prefix }}/admin/js/plugins.js"></script>
+    <script src="{{ static_prefix }}/admin/js/config.js"></script>
+    <script src="{{ static_prefix }}/admin/js/logs.js"></script>
+    <script src="{{ static_prefix }}/admin/js/menus.js"></script>
+    <script src="{{ static_prefix }}/plugins/kv-store/kv.js"></script>
+  {% endif %}
+  {% block scripts %}{% endblock %}
 </body>
 </html>
