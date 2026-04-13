@@ -299,6 +299,89 @@ end)
         assert!(!static_source.contains("https://"));
     }
 
+    #[test]
+    fn kv_store_plugin_has_layered_namespace_tables() {
+        let repo_root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("local kv = {"));
+        assert!(source.contains("utils = {}"));
+        assert!(source.contains("infra = { db = {} }"));
+        assert!(source.contains("domain = { store = {} }"));
+        assert!(source.contains("interfaces = { api = {}, admin = {}, cli = {} }"));
+        assert!(source.contains("bootstrap = {}"));
+    }
+
+    #[test]
+    fn kv_store_plugin_extracts_utils_and_db_adapter() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.utils.html_escape = function"));
+        assert!(source.contains("kv.utils.parse_form_urlencoded = function"));
+        assert!(source.contains("kv.infra.db.query = function"));
+        assert!(source.contains("kv.infra.db.execute = function"));
+    }
+
+    #[test]
+    fn kv_store_plugin_defines_domain_store_and_error_kinds() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.domain.store.list = function"));
+        assert!(source.contains("kv.domain.store.get = function"));
+        assert!(source.contains("kv.domain.store.upsert = function"));
+        assert!(source.contains("kv.domain.store.delete = function"));
+        assert!(source.contains("invalid_key"));
+        assert!(source.contains("invalid_value"));
+        assert!(source.contains("not_found"));
+        assert!(source.contains("storage_error"));
+    }
+
+    #[test]
+    fn kv_store_plugin_uses_interface_dispatchers() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.interfaces.api.dispatch = function"));
+        assert!(source.contains("kv.interfaces.api.delete_dispatch = function"));
+        assert!(source.contains("kv.interfaces.admin.table_partial = function"));
+        assert!(source.contains("kv.interfaces.admin.upsert_partial = function"));
+        assert!(source.contains("kv.interfaces.admin.delete_partial = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_list = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_get = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_set = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_del = function"));
+    }
+
+    #[test]
+    fn kv_store_plugin_bootstrap_registration_contract_is_stable() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.bootstrap.register = function()"));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/api/kv\", kv.interfaces.api.dispatch)"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"DELETE\", \"/api/kv/*\", kv.interfaces.api.delete_dispatch)"
+        ));
+        assert!(source.contains(
+            "sushi.web.page(\"/admin/kv\", \"plugins/kv-store/kv.html\", { title = \"KV Store\" })"
+        ));
+        assert!(source.contains(
+            "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", kv.interfaces.cli.kv_set)"
+        ));
+        assert!(source.contains("function sushi.init()"));
+        assert!(source.contains("kv.bootstrap.register()"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
