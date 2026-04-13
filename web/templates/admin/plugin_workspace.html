@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% set active_section = "plugins" %}
+
+{% block title %}{{ plugin.name }} Workspace — Sushi Admin{% endblock %}
+
+{% block content %}
+  {% include "admin/fragments/plugin_workspace_content.html" %}
+{% endblock %}

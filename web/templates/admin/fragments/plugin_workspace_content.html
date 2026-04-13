@@ -1,0 +1,56 @@
+<section class="admin-module" data-admin-workspace-module="plugins/{{ plugin.name }}">
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">{{ plugin.name }} Workspace</h1>
+      <p class="ui-subtitle">
+        {{ plugin.description | default(value="No description provided.") }}
+      </p>
+    </div>
+    <div class="ui-toolbar">
+      <span class="ui-badge muted">v{{ plugin.version | default(value="0.0.0") }}</span>
+      {% if plugin.loaded %}
+        <span class="ui-badge ok">Active</span>
+      {% else %}
+        <span class="ui-badge danger">Inactive</span>
+      {% endif %}
+      <a href="/admin/plugins" class="ui-btn ui-btn-secondary">Back to Registry</a>
+    </div>
+  </div>
+
+  <div class="ui-callout mb-3">
+    This plugin exposes <span class="ui-mono">{{ pages | length }}</span> admin page(s).
+  </div>
+
+  <section class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Admin pages</h2>
+      <span class="ui-results-text">Route catalog for this plugin</span>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Path</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for page in pages %}
+            <tr>
+              <td>{{ page.title }}</td>
+              <td><span class="ui-mono">{{ page.path }}</span></td>
+              <td class="actions">
+                <a class="ui-action-link" href="{{ page.path }}">Open page</a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="3" class="ui-empty">No admin pages registered for this plugin.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>

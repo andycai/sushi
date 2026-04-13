@@ -63,6 +63,7 @@
             <th>Description</th>
             <th>Permissions</th>
             <th class="text-center">Status</th>
+            <th class="actions">Actions</th>
           </tr>
         </thead>
         <tbody
@@ -73,7 +74,7 @@
           x-on:htmx:after-swap.camel="markLoaded()"
         >
           <tr>
-            <td colspan="5" class="ui-empty">Loading plugin inventory...</td>
+            <td colspan="6" class="ui-empty">Loading plugin inventory...</td>
           </tr>
         </tbody>
       </table>

@@ -20,9 +20,12 @@
         <span class="ui-badge danger">Inactive</span>
       {% endif %}
     </td>
+    <td class="actions">
+      <a class="ui-action-link" href="/admin/plugins/{{ p.name }}">Workspace</a>
+    </td>
   </tr>
 {% else %}
   <tr>
-    <td colspan="5" class="ui-empty">No plugins discovered.</td>
+    <td colspan="6" class="ui-empty">No plugins discovered.</td>
   </tr>
 {% endfor %}

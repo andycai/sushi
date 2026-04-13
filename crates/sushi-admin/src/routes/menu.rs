@@ -127,12 +127,26 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
             "INSERT OR IGNORE INTO menu_items (id, label, icon, position, parent_id, route)
              VALUES
                (1, 'Dashboard', 'layout-dashboard', 10, NULL, '/admin/'),
-               (2, 'Users', 'users', 20, NULL, '/admin/users'),
-               (3, 'Roles', 'shield', 30, NULL, '/admin/roles'),
-               (4, 'Permissions', 'key', 40, NULL, '/admin/permissions'),
                (5, 'Plugins', 'package', 50, NULL, '/admin/plugins'),
-               (6, 'Config', 'settings', 60, NULL, '/admin/config'),
-               (7, 'Logs', 'file-text', 70, NULL, '/admin/logs')",
+               (8, 'System', 'settings', 60, NULL, '/admin/system'),
+               (2, 'Users', 'users', 20, 8, '/admin/users'),
+               (3, 'Roles', 'shield', 30, 8, '/admin/roles'),
+               (4, 'Permissions', 'key', 40, 8, '/admin/permissions'),
+               (6, 'Config', 'settings', 60, 8, '/admin/config'),
+               (7, 'Logs', 'file-text', 70, 8, '/admin/logs')",
+            vec![],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    ctx.db
+        .execute(
+            "INSERT INTO menu_items (label, icon, position, parent_id, route)
+             SELECT 'System', 'settings', 60, NULL, '/admin/system'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM menu_items
+               WHERE route = '/admin/system'
+             )",
             vec![],
         )
         .await
@@ -142,10 +156,15 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
     ctx.db
         .execute(
             "INSERT INTO menu_items (label, icon, position, parent_id, route)
-             SELECT 'Menus', 'settings', 61, NULL, '/admin/menus'
+             SELECT 'Menus', 'settings', 61, (
+               SELECT id FROM menu_items
+               WHERE route = '/admin/system'
+               ORDER BY id
+               LIMIT 1
+             ), '/admin/menus'
              WHERE NOT EXISTS (
                SELECT 1 FROM menu_items
-               WHERE parent_id IS NULL AND route = '/admin/menus'
+               WHERE route = '/admin/menus'
              )",
             vec![],
         )
@@ -156,11 +175,40 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
     ctx.db
         .execute(
             "INSERT INTO menu_items (label, icon, position, parent_id, route)
-             SELECT 'KV Store', 'database', 51, 5, '/admin/kv'
+             SELECT 'KV Store', 'database', 51, (
+               SELECT id FROM menu_items
+               WHERE route = '/admin/plugins'
+               ORDER BY id
+               LIMIT 1
+             ), '/admin/kv'
              WHERE NOT EXISTS (
                SELECT 1 FROM menu_items
-               WHERE parent_id = 5 AND route = '/admin/kv'
+               WHERE route = '/admin/kv'
              )",
+            vec![],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Group built-in governance menus under System, but only when still top-level.
+    ctx.db
+        .execute(
+            "UPDATE menu_items
+             SET parent_id = (
+               SELECT id FROM menu_items
+               WHERE route = '/admin/system'
+               ORDER BY id
+               LIMIT 1
+             )
+             WHERE parent_id IS NULL
+               AND route IN (
+                 '/admin/users',
+                 '/admin/roles',
+                 '/admin/permissions',
+                 '/admin/config',
+                 '/admin/menus',
+                 '/admin/logs'
+               )",
             vec![],
         )
         .await
@@ -170,11 +218,10 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
     ctx.db
         .execute(
             "DELETE FROM menu_items
-             WHERE parent_id = 5
-               AND route = '/admin/kv'
+             WHERE route = '/admin/kv'
                AND id <> (
                  SELECT MIN(id) FROM menu_items
-                 WHERE parent_id = 5 AND route = '/admin/kv'
+                 WHERE route = '/admin/kv'
                )",
             vec![],
         )
@@ -184,11 +231,10 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
     ctx.db
         .execute(
             "DELETE FROM menu_items
-             WHERE parent_id IS NULL
-               AND route = '/admin/menus'
+             WHERE route = '/admin/menus'
                AND id <> (
                  SELECT MIN(id) FROM menu_items
-                 WHERE parent_id IS NULL AND route = '/admin/menus'
+                 WHERE route = '/admin/menus'
                )",
             vec![],
         )
@@ -206,6 +252,7 @@ fn is_system_route(route: &str) -> bool {
             | "/admin/roles"
             | "/admin/permissions"
             | "/admin/plugins"
+            | "/admin/system"
             | "/admin/config"
             | "/admin/logs"
             | "/admin/menus"

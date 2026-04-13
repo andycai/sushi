@@ -21,13 +21,27 @@ pub struct PluginInfo {
     pub permissions: PluginPermissionsView,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PluginAdminPageInfo {
+    pub plugin: String,
+    pub path: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone)]
+struct AdminHandlerBinding {
+    plugin_name: String,
+    handler_key: String,
+    title: String,
+}
+
 /// Manages loaded Lua plugin VMs and dispatches handler calls.
 #[derive(Clone, Default)]
 pub struct PluginManager {
     vms: Arc<RwLock<HashMap<String, mlua::Lua>>>,
     api_handlers: Arc<RwLock<HashMap<(String, String), (String, String)>>>,
     cli_handlers: Arc<RwLock<HashMap<String, (String, String)>>>,
-    admin_handlers: Arc<RwLock<HashMap<String, (String, String)>>>,
+    admin_handlers: Arc<RwLock<HashMap<String, AdminHandlerBinding>>>,
     plugin_info: Arc<RwLock<HashMap<String, PluginInfo>>>,
 }
 
@@ -134,11 +148,16 @@ impl PluginManager {
         &self,
         page_path: &str,
         plugin_name: &str,
+        title: &str,
         handler_key: &str,
     ) {
         self.admin_handlers.write().await.insert(
             page_path.to_string(),
-            (plugin_name.to_string(), handler_key.to_string()),
+            AdminHandlerBinding {
+                plugin_name: plugin_name.to_string(),
+                handler_key: handler_key.to_string(),
+                title: title.to_string(),
+            },
         );
     }
 
@@ -206,11 +225,14 @@ impl PluginManager {
 
     /// Call an admin page handler, returns HTML String.
     pub async fn call_admin_handler(&self, page_path: &str) -> Option<Result<String, String>> {
-        let (plugin_name, handler_key) = {
+        let binding = {
             let map = self.admin_handlers.read().await;
             map.get(page_path).cloned()?
         };
-        Some(self.call_handler_no_args(&plugin_name, &handler_key).await)
+        Some(
+            self.call_handler_no_args(&binding.plugin_name, &binding.handler_key)
+                .await,
+        )
     }
 
     /// List all registered API routes.
@@ -231,6 +253,29 @@ impl PluginManager {
     /// List all registered admin pages.
     pub async fn list_admin_pages(&self) -> Vec<String> {
         self.admin_handlers.read().await.keys().cloned().collect()
+    }
+
+    /// List all registered admin pages for a specific plugin.
+    pub async fn list_admin_pages_for_plugin(&self, plugin_name: &str) -> Vec<PluginAdminPageInfo> {
+        let mut pages = self
+            .admin_handlers
+            .read()
+            .await
+            .iter()
+            .filter_map(|(path, binding)| {
+                if binding.plugin_name == plugin_name {
+                    Some(PluginAdminPageInfo {
+                        plugin: binding.plugin_name.clone(),
+                        path: path.clone(),
+                        title: binding.title.clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        pages.sort_by(|a, b| a.path.cmp(&b.path));
+        pages
     }
 
     // -- private helpers --
@@ -362,5 +407,30 @@ mod tests {
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 1);
         assert!(plugins[0].loaded);
+    }
+
+    #[tokio::test]
+    async fn list_admin_pages_for_plugin_returns_titles() {
+        let manager = PluginManager::new();
+        manager
+            .register_admin_handler(
+                "/admin/plugins/kv-store",
+                "kv-store",
+                "KV Store Workspace",
+                "handler::workspace",
+            )
+            .await;
+        manager
+            .register_admin_handler("/admin/kv", "kv-store", "KV Store", "handler::kv")
+            .await;
+        manager
+            .register_admin_handler("/admin/example", "example", "Example", "handler::example")
+            .await;
+
+        let pages = manager.list_admin_pages_for_plugin("kv-store").await;
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].plugin, "kv-store");
+        assert_eq!(pages[0].title, "KV Store");
+        assert_eq!(pages[1].title, "KV Store Workspace");
     }
 }

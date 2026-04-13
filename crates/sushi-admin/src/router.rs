@@ -53,10 +53,14 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         )
         .route("/admin/", get(dashboard::dashboard_page))
         .route(
-            "/admin/workspace/{module}",
+            "/admin/workspace/{*module}",
             get(workspace::workspace_partial),
         )
         .route("/admin/plugins", get(plugins::plugins_page))
+        .route(
+            "/admin/plugins/{plugin}",
+            get(plugins::plugin_workspace_page),
+        )
         .route("/admin/users", get(users::users_page))
         .route("/admin/roles", get(roles::roles_page))
         .route("/admin/permissions", get(permissions::permissions_page))
@@ -122,14 +126,20 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             "/admin/partials/plugins/table",
             get(plugins::plugins_table_partial),
         )
-        .route("/admin/api/plugins", get(list_plugins_api));
+        .route("/admin/api/plugins", get(list_plugins_api))
+        .route(
+            "/admin/api/plugins/{plugin}/pages",
+            get(plugins::plugin_pages_api),
+        );
 
     let reserved_paths: HashSet<&str> = HashSet::from([
         "/admin-login",
         "/admin",
         "/admin/",
-        "/admin/workspace/{module}",
+        "/admin/workspace/{*module}",
         "/admin/plugins",
+        "/admin/plugins/{plugin}",
+        "/admin/system",
         "/admin/users",
         "/admin/roles",
         "/admin/permissions",
@@ -153,6 +163,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/partials/permissions/{id}/update",
         "/admin/partials/permissions/{id}",
         "/admin/partials/plugins/table",
+        "/admin/api/plugins/{plugin}/pages",
         "/admin/partials/menus/table",
         "/admin/partials/menus/create",
         "/admin/partials/menus/{id}/update",
@@ -162,7 +173,9 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
 
     // Add dynamic admin pages from Lua plugins
     for page_path in plugin_pages {
-        if reserved_paths.contains(page_path.as_str()) || page_path.starts_with("/admin/workspace/")
+        if reserved_paths.contains(page_path.as_str())
+            || page_path.starts_with("/admin/workspace/")
+            || is_plugin_workspace_root_path(page_path.as_str())
         {
             tracing::warn!("skip plugin admin page due to route collision: {page_path}");
             continue;
@@ -268,9 +281,6 @@ async fn admin_auth_middleware(
             let required_permission = match required_permission {
                 Some(permission) => permission,
                 None => {
-                    if method == "GET" && path.starts_with("/admin/workspace/") {
-                        return next.run(req).await;
-                    }
                     return (
                         axum::http::StatusCode::FORBIDDEN,
                         "Insufficient privileges for admin access",
@@ -316,8 +326,10 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
         ("GET", "/admin/config"),
         ("GET", "/admin/api/config"),
         ("GET", "/admin/plugins"),
+        ("GET", "/admin/plugins/{plugin}"),
         ("GET", "/admin/partials/plugins/table"),
         ("GET", "/admin/api/plugins"),
+        ("GET", "/admin/api/plugins/{plugin}/pages"),
         ("GET", "/admin/menus"),
         ("GET", "/admin/partials/menus/table"),
         ("GET", "/admin/api/menu"),
@@ -363,6 +375,8 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
             "/admin/plugins" | "/admin/partials/plugins/table" | "/admin/api/plugins" => {
                 "plugins.view"
             }
+            _ if admin_path_matches(path, "/admin/plugins/{plugin}") => "plugins.view",
+            _ if admin_path_matches(path, "/admin/api/plugins/{plugin}/pages") => "plugins.view",
             "/admin/menus" | "/admin/partials/menus/table" | "/admin/api/menu" => "menus.view",
             "/admin/users" | "/admin/partials/users/table" => "users.view",
             "/admin/roles" | "/admin/partials/roles/table" => "roles.view",
@@ -416,6 +430,14 @@ fn admin_path_matches(path: &str, pattern: &str) -> bool {
             }
             actual == expected
         })
+}
+
+fn is_plugin_workspace_root_path(path: &str) -> bool {
+    let segments = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    segments.len() == 3 && segments[0] == "admin" && segments[1] == "plugins"
 }
 
 fn matches_static_prefix(path: &str, prefix: &str) -> bool {

@@ -476,6 +476,86 @@ async fn plugins_api_returns_list_payload() {
 }
 
 #[tokio::test]
+async fn plugin_pages_api_rejects_unknown_plugin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/plugins/does-not-exist/pages")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn plugin_pages_api_returns_workspace_payload_for_discovered_plugin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let plugins_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/plugins")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(plugins_response.status(), StatusCode::OK);
+
+    let plugins_body = to_bytes(plugins_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let plugins_payload: Value =
+        serde_json::from_slice(&plugins_body).expect("invalid json payload for plugins");
+    let Some(first_plugin_name) = plugins_payload
+        .as_array()
+        .and_then(|plugins| plugins.first())
+        .and_then(|plugin| plugin.get("name"))
+        .and_then(Value::as_str)
+    else {
+        return;
+    };
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/admin/api/plugins/{first_plugin_name}/pages"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+
+    assert_eq!(
+        payload
+            .get("plugin")
+            .and_then(|plugin| plugin.get("name"))
+            .and_then(Value::as_str),
+        Some(first_plugin_name)
+    );
+    assert!(
+        payload.get("pages").and_then(Value::as_array).is_some(),
+        "expected pages array payload, got {payload}"
+    );
+}
+
+#[tokio::test]
 async fn menu_api_returns_menu_items() {
     let app = build_app(None).await;
     let token = admin_bearer_token();
@@ -513,6 +593,35 @@ async fn menu_api_returns_menu_items() {
         .iter()
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/menus"));
     assert!(menus.is_some(), "Menus management entry should exist");
+
+    let system = menu
+        .iter()
+        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/system"))
+        .expect("System menu item should exist");
+    let system_id = system
+        .get("id")
+        .and_then(Value::as_i64)
+        .expect("System menu id should exist");
+
+    for route in [
+        "/admin/users",
+        "/admin/roles",
+        "/admin/permissions",
+        "/admin/config",
+        "/admin/menus",
+        "/admin/logs",
+    ] {
+        let item = menu
+            .iter()
+            .find(|m| m.get("route").and_then(Value::as_str) == Some(route))
+            .unwrap_or_else(|| panic!("menu item for route {route} should exist"));
+        let parent_id = item.get("parent_id").and_then(Value::as_i64);
+        assert_eq!(
+            parent_id,
+            Some(system_id),
+            "route {route} should be grouped under System menu"
+        );
+    }
 }
 
 #[tokio::test]
@@ -555,6 +664,33 @@ async fn menu_api_handles_legacy_menu_table_without_is_hidden_column() {
         kv_count, 1,
         "legacy duplicate kv menu entries should be deduplicated"
     );
+    let system = menu
+        .iter()
+        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/system"))
+        .expect("System menu item should be backfilled");
+    let system_id = system
+        .get("id")
+        .and_then(Value::as_i64)
+        .expect("System menu id should exist");
+    for route in [
+        "/admin/users",
+        "/admin/roles",
+        "/admin/permissions",
+        "/admin/config",
+        "/admin/menus",
+        "/admin/logs",
+    ] {
+        let item = menu
+            .iter()
+            .find(|m| m.get("route").and_then(Value::as_str) == Some(route))
+            .unwrap_or_else(|| panic!("menu item for route {route} should exist"));
+        let parent_id = item.get("parent_id").and_then(Value::as_i64);
+        assert_eq!(
+            parent_id,
+            Some(system_id),
+            "legacy route {route} should be re-parented under System menu"
+        );
+    }
 
     let response = app
         .oneshot(
@@ -1031,6 +1167,71 @@ async fn workspace_unknown_module_returns_not_found() {
 }
 
 #[tokio::test]
+async fn workspace_nested_module_uses_catch_all_and_returns_workspace_not_found() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/plugins/fake-plugin")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload = String::from_utf8_lossy(&body);
+    assert!(
+        payload.contains("workspace module not found"),
+        "payload: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn workspace_plugin_nested_path_without_registered_page_returns_not_found() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/plugins/kv-store/details")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn plugin_workspace_page_rejects_unknown_plugin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/plugins/does-not-exist")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn viewer_cannot_access_users_workspace_without_permission() {
     let app = build_app(None).await;
     let token = bearer_token_for_role("viewer");
@@ -1039,6 +1240,44 @@ async fn viewer_cannot_access_users_workspace_without_permission() {
         .oneshot(
             Request::builder()
                 .uri("/admin/workspace/users")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn viewer_cannot_access_plugin_workspace_without_plugins_view_permission() {
+    let app = build_app(None).await;
+    let token = bearer_token_for_role("viewer");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/plugins/fake-plugin")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn viewer_cannot_access_plugin_pages_api_without_plugins_view_permission() {
+    let app = build_app(None).await;
+    let token = bearer_token_for_role("viewer");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/plugins/does-not-exist/pages")
                 .header("authorization", format!("Bearer {token}"))
                 .body(Body::empty())
                 .expect("failed to build request"),

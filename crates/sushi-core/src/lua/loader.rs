@@ -180,7 +180,7 @@ impl Plugin for LuaPlugin {
                     let title: String = entry.get("title").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     ctx.plugins
-                        .register_admin_handler(&path, plugin_name, &handler_key)
+                        .register_admin_handler(&path, plugin_name, &title, &handler_key)
                         .await;
                     tracing::debug!(
                         "plugin {} registered page {} ({}) (handler: {})",
