@@ -742,6 +742,31 @@ async fn htmx_login_submit_returns_error_snippet_for_invalid_credentials() {
 }
 
 #[tokio::test]
+async fn standard_login_submit_returns_login_template_error_for_invalid_credentials() {
+    let app = build_app(None).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin-login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("username=missing&password=wrong"))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("Invalid credentials"), "html: {html}");
+    assert!(html.contains("id=\"login-form\""), "html: {html}");
+}
+
+#[tokio::test]
 async fn users_partial_requires_auth() {
     let app = build_app(None).await;
 

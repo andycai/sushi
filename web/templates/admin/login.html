@@ -33,7 +33,13 @@
     <section class="ui-login-form">
       <h2>Sign in</h2>
       <p class="ui-subtitle">Use an administrator account to access all management capabilities.</p>
-      <div id="login-error" class="ui-feedback mt-4"></div>
+      <div id="login-error" class="ui-feedback mt-4">
+        {% if error_message %}
+          {% set level = "error" %}
+          {% set message = error_message %}
+          {% include "admin/partials/flash.html" %}
+        {% endif %}
+      </div>
 
       <form
         id="login-form"

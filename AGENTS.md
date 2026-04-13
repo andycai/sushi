@@ -138,6 +138,7 @@ The `sushi` context exposes these namespaces to Lua plugins:
 - Plugins must declare required permissions in `plugin.toml`
 - Keep plugins stateless where possible; use `sushi.config` for persistent state
 - Use `sushi.log` for all logging; never print directly to stdout
+- Do not embed raw HTML strings in Lua source (for example `init.lua`); place markup in HTML template files and render via `sushi.web.render(...)`
 
 ### Frontend Conventions (admin)
 

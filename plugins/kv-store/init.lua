@@ -144,10 +144,6 @@ local function json_parse(s)
     return kv.utils.json_parse(s)
 end
 
-local function html_escape(value)
-    return kv.utils.html_escape(value)
-end
-
 local function parse_form_urlencoded(body)
     return kv.utils.parse_form_urlencoded(body)
 end
@@ -270,16 +266,10 @@ end
 
 local function kv_flash(level, message)
     local normalized_level = tostring(level or "success")
-    local tone = "success"
-    if normalized_level == "error" then
-        tone = "danger"
-    end
-    local escaped_level = html_escape(normalized_level)
-    local escaped_message = html_escape(message)
-    return
-        "<div class=\"ui-flash " .. tone .. "\" data-ui-flash data-level=\"" .. escaped_level .. "\" data-message=\"" .. escaped_message .. "\">"
-        .. escaped_message
-        .. "</div>"
+    return sushi.web.render("plugins/kv-store/partials/flash.html", {
+        level = normalized_level,
+        message = tostring(message or ""),
+    })
 end
 
 kv.interfaces.admin.table_partial = function()

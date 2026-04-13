@@ -280,9 +280,11 @@ end)
 
         assert!(!plugin_source.contains("<!DOCTYPE html>"));
         assert!(!plugin_source.contains("<html"));
+        assert!(!plugin_source.contains("<div class=\\\"ui-flash"));
         assert!(!plugin_source.contains("sushi.admin.page"));
         assert!(plugin_source.contains("sushi.web.page"));
         assert!(plugin_source.contains("plugins/kv-store/kv.html"));
+        assert!(plugin_source.contains("sushi.web.render(\"plugins/kv-store/partials/flash.html\""));
 
         let template_path = repo_root.join("web/templates/plugins/kv-store/kv.html");
         assert!(template_path.exists());
@@ -290,6 +292,12 @@ end)
         assert!(template_source.contains("{% extends \"base.html\" %}"));
         assert!(!template_source.contains("http://"));
         assert!(!template_source.contains("https://"));
+
+        let flash_template_path =
+            repo_root.join("web/templates/plugins/kv-store/partials/flash.html");
+        assert!(flash_template_path.exists());
+        let flash_template_source = std::fs::read_to_string(&flash_template_path).unwrap();
+        assert!(flash_template_source.contains("class=\"ui-flash {{ tone }}\""));
 
         let static_path = repo_root.join("web/static/plugins/kv-store/kv.js");
         assert!(static_path.exists());
@@ -301,8 +309,7 @@ end)
 
     #[test]
     fn kv_store_plugin_has_layered_namespace_tables() {
-        let repo_root =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let plugin_path = repo_root.join("plugins/kv-store/init.lua");
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
@@ -366,9 +373,9 @@ end)
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
         assert!(source.contains("kv.bootstrap.register = function()"));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/api/kv\", kv.interfaces.api.dispatch)"
-        ));
+        assert!(
+            source.contains("sushi.api.route(\"GET\", \"/api/kv\", kv.interfaces.api.dispatch)")
+        );
         assert!(source.contains(
             "sushi.api.route(\"DELETE\", \"/api/kv/*\", kv.interfaces.api.delete_dispatch)"
         ));

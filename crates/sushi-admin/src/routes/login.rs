@@ -1,8 +1,9 @@
 use axum::extract::Form;
 use axum::extract::State;
 use axum::http::{header, header::HeaderName, HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Redirect};
+use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
+use serde_json::json;
 use std::sync::Arc;
 use sushi_core::auth::password;
 use sushi_core::auth::repository::UserRepository;
@@ -33,13 +34,13 @@ pub async fn login_submit(
 
     let user = match repo.find_by_username(&form.username).await {
         Ok(Some(user)) => user,
-        Ok(None) => return login_error_response("Invalid credentials", is_htmx),
-        Err(_) => return login_error_response("Login service is unavailable", is_htmx),
+        Ok(None) => return login_error_response(&ctx, "Invalid credentials", is_htmx).await,
+        Err(_) => return login_error_response(&ctx, "Login service is unavailable", is_htmx).await,
     };
 
     let verified = password::verify_password(&form.password, &user.password_hash).unwrap_or(false);
     if !verified {
-        return login_error_response("Invalid credentials", is_htmx);
+        return login_error_response(&ctx, "Invalid credentials", is_htmx).await;
     }
 
     let access_token =
@@ -48,7 +49,9 @@ pub async fn login_submit(
             .create_access_token(user.id, &user.username, &user.role.to_string())
         {
             Ok(token) => token,
-            Err(_) => return login_error_response("Failed to create session token", is_htmx),
+            Err(_) => {
+                return login_error_response(&ctx, "Failed to create session token", is_htmx).await
+            }
         };
 
     let cookie = format!(
@@ -78,17 +81,37 @@ pub async fn login_submit(
     }
     response
 }
-fn login_error_response(message: &str, is_htmx: bool) -> axum::response::Response {
+
+fn render_login_flash_html(ctx: &SushiContext, message: &str) -> Option<String> {
+    match ctx.templates.render(
+        "admin/partials/flash.html",
+        json!({
+            "level": "error",
+            "message": message,
+        }),
+    ) {
+        Ok(html) => Some(html),
+        Err(err) => {
+            tracing::error!("template render error for admin/partials/flash.html: {err}");
+            None
+        }
+    }
+}
+
+async fn login_error_response(ctx: &SushiContext, message: &str, is_htmx: bool) -> Response {
     if is_htmx {
-        let html = format!(
-            r#"<div class="ui-flash danger" data-ui-flash data-level="error" data-message="{message}">{message}</div>"#
-        );
-        return (StatusCode::UNAUTHORIZED, axum::response::Html(html)).into_response();
+        let body = render_login_flash_html(ctx, message).unwrap_or_else(|| message.to_string());
+        return (StatusCode::UNAUTHORIZED, axum::response::Html(body)).into_response();
     }
 
-    (
-        StatusCode::UNAUTHORIZED,
-        axum::response::Html(format!("<h1>Login failed</h1><p>{message}</p>")),
+    let mut response = crate::render::render_template_with_context(
+        ctx,
+        "admin/login.html",
+        json!({
+            "error_message": message,
+        }),
     )
-        .into_response()
+    .await;
+    *response.status_mut() = StatusCode::UNAUTHORIZED;
+    response
 }
