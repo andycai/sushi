@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
+use sushi_core::logs::tracing_bridge;
 use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::plugin::Plugin;
 use sushi_core::storage::sqlite::SqliteStorage;
@@ -98,6 +99,7 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         .with_context(|| format!("failed to init template root {}", templates_dir.display()))?;
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
+    tracing_bridge::register_log_service(ctx.logs.clone());
 
     // Load plugins
     let plugins_dir = {

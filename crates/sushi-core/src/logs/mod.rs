@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+pub mod tracing_bridge;
+
 const MAX_LOGS: usize = 1000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
