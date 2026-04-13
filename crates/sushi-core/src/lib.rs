@@ -1,10 +1,10 @@
-pub mod plugin;
+pub mod auth;
 pub mod config;
+pub mod context;
+pub mod db;
+pub mod logs;
+pub mod lua;
+pub mod plugin;
 pub mod registry;
 pub mod storage;
-pub mod db;
-pub mod auth;
-pub mod lua;
-pub mod context;
 pub mod web;
-pub mod logs;

@@ -24,7 +24,7 @@ pub struct ServerConfig {
     #[serde(default = "default_port")]
     pub port: u16,
     #[serde(default = "default_body_size_limit")]
-    pub body_size_limit: usize,  // in bytes
+    pub body_size_limit: usize, // in bytes
 }
 
 impl Default for ServerConfig {
@@ -44,7 +44,7 @@ fn default_port() -> u16 {
     3000
 }
 fn default_body_size_limit() -> usize {
-    1024 * 64  // 64KB default
+    1024 * 64 // 64KB default
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +89,7 @@ fn default_jwt_secret() -> String {
     // Generate a random secret if not configured
     use std::sync::OnceLock;
     static GENERATED_SECRET: OnceLock<String> = OnceLock::new();
-    
+
     let secret = GENERATED_SECRET.get_or_init(|| {
         tracing::warn!(
             "JWT secret not configured - using generated secret. \
@@ -101,18 +101,20 @@ fn default_jwt_secret() -> String {
 }
 
 fn generate_random_secret() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
-    
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     // Generate a cryptographically random secret
     let mut hasher = RandomState::new().build_hasher();
-    hasher.write_u128(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos());
+    hasher.write_u128(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+    );
     hasher.write_u64(std::process::id() as u64);
-    
+
     // Create a 32-character hex string (16 bytes of entropy)
     format!("{:032x}", hasher.finish())
 }
@@ -207,14 +209,14 @@ impl ConfigStore {
             );
             return Ok(Self::new(SushiConfig::default()));
         }
-        
+
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("failed to read config {}: {e}", path.display()))?;
-        
-        let config: SushiConfig = toml::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("failed to parse config: {e}"))?;
-        
+
+        let config: SushiConfig =
+            toml::from_str(&content).map_err(|e| anyhow::anyhow!("failed to parse config: {e}"))?;
+
         Ok(Self::new(config))
     }
 

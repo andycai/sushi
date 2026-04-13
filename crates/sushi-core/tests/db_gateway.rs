@@ -1,7 +1,7 @@
+use std::sync::Arc;
 use sushi_core::db::{DbGateway, DbGatewayError, DbPermission};
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
-use std::sync::Arc;
 
 #[tokio::test]
 async fn readonly_rejects_insert() {

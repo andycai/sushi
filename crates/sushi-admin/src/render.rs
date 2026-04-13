@@ -18,10 +18,7 @@ pub async fn render_template_with_context(
 
     let template_context = merge_static_prefix(context, &static_url_prefix);
 
-    match ctx.templates.render(
-        name,
-        template_context,
-    ) {
+    match ctx.templates.render(name, template_context) {
         Ok(html) => Html(html).into_response(),
         Err(err) => {
             tracing::error!("template render error for {name}: {err}");
@@ -30,7 +27,10 @@ pub async fn render_template_with_context(
     }
 }
 
-fn merge_static_prefix(mut context: serde_json::Value, static_url_prefix: &str) -> serde_json::Value {
+fn merge_static_prefix(
+    mut context: serde_json::Value,
+    static_url_prefix: &str,
+) -> serde_json::Value {
     match context {
         serde_json::Value::Object(ref mut map) => {
             map.insert(

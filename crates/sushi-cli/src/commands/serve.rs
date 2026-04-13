@@ -24,7 +24,6 @@ pub struct ServeArgs {
     /// Config file path
     #[arg(short, long, default_value = "config.toml")]
     pub config: PathBuf,
-
 }
 
 pub async fn run(args: ServeArgs) -> Result<()> {
@@ -44,13 +43,13 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         let cfg = ctx.config.get().await;
         cfg.server.body_size_limit
     };
-    
+
     let plugin_api_state = sushi_api::router::PluginApiState {
         plugins: ctx.plugins.clone(),
         body_size_limit,
         route_map: vec![],
     };
-    
+
     let auth_state = ctx.auth_state();
 
     let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
@@ -68,8 +67,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
     } else if args.admin_only {
         // Admin-only: admin UI + login page, no API or plugin API routes
         let admin_router = sushi_admin::router::build_admin_router(&ctx).await;
-        axum::Router::new()
-            .merge(admin_router)
+        axum::Router::new().merge(admin_router)
     } else {
         // Default: everything
         let api_router = sushi_api::router::build_app(&ctx);
@@ -85,9 +83,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
         .await
         .context(format!("failed to bind to {addr}"))?;
     tracing::info!("sushi listening on {addr}");
-    axum::serve(listener, app)
-        .await
-        .context("server error")?;
+    axum::serve(listener, app).await.context("server error")?;
 
     Ok(())
 }

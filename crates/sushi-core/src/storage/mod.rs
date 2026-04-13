@@ -34,25 +34,36 @@ pub struct StorageConn<'a> {
 impl<'a> StorageConn<'a> {
     pub fn execute(&mut self, sql: &str, params: Vec<Value>) -> Result<(), StorageError> {
         let params: Vec<rusqlite::types::Value> = params.into_iter().map(json_to_sqlite).collect();
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
-        self.conn.execute(sql, params_ref.as_slice())
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|p| p as &dyn rusqlite::types::ToSql)
+            .collect();
+        self.conn
+            .execute(sql, params_ref.as_slice())
             .map_err(|e| StorageError::QueryError(e.to_string()))?;
         Ok(())
     }
 
     pub fn query(&mut self, sql: &str, params: Vec<Value>) -> Result<Vec<Row>, StorageError> {
         let params: Vec<rusqlite::types::Value> = params.into_iter().map(json_to_sqlite).collect();
-        let params_ref: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
-        let mut stmt = self.conn.prepare(sql)
+        let params_ref: Vec<&dyn rusqlite::types::ToSql> = params
+            .iter()
+            .map(|p| p as &dyn rusqlite::types::ToSql)
+            .collect();
+        let mut stmt = self
+            .conn
+            .prepare(sql)
             .map_err(|e| StorageError::QueryError(e.to_string()))?;
         let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-        let mut rows = stmt.query(params_ref.as_slice())
+        let mut rows = stmt
+            .query(params_ref.as_slice())
             .map_err(|e| StorageError::QueryError(e.to_string()))?;
         let mut result = Vec::new();
         while let Ok(Some(row)) = rows.next() {
             let mut map = HashMap::new();
             for (i, col) in columns.iter().enumerate() {
-                let val: rusqlite::types::Value = row.get(i)
+                let val: rusqlite::types::Value = row
+                    .get(i)
                     .map_err(|e: rusqlite::Error| StorageError::QueryError(e.to_string()))?;
                 map.insert(col.clone(), sqlite_to_json(&val));
             }

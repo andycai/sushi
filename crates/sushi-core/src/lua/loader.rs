@@ -274,9 +274,7 @@ end)
 
     #[test]
     fn kv_store_plugin_no_longer_embeds_html() {
-        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..");
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let plugin_path = repo_root.join("plugins/kv-store/init.lua");
         let plugin_source = std::fs::read_to_string(&plugin_path).unwrap();
 

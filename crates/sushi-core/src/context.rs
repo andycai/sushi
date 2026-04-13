@@ -5,8 +5,8 @@ use crate::db::{DbGateway, DbPermission};
 use crate::logs::LogService;
 use crate::plugin::manager::PluginManager;
 use crate::registry::event::EventBus;
-use crate::storage::Storage;
 use crate::storage::sqlite::SqliteStorage;
+use crate::storage::Storage;
 use crate::web::template_service::TemplateService;
 use std::sync::Arc;
 

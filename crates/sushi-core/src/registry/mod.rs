@@ -141,10 +141,7 @@ mod tests {
         reg.register_route("POST", "/api/items").await;
         let routes = reg.get_routes().await;
         assert_eq!(routes.len(), 2);
-        assert_eq!(
-            routes[0],
-            ("GET".to_string(), "/api/hello".to_string())
-        );
+        assert_eq!(routes[0], ("GET".to_string(), "/api/hello".to_string()));
     }
 
     #[tokio::test]

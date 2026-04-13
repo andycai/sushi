@@ -21,7 +21,10 @@ fn map_db_permission(permission: &crate::plugin::DatabasePermission) -> Option<D
     }
 }
 
-fn lua_params(lua: &Lua, params: Option<mlua::Value>) -> Result<Vec<serde_json::Value>, mlua::Error> {
+fn lua_params(
+    lua: &Lua,
+    params: Option<mlua::Value>,
+) -> Result<Vec<serde_json::Value>, mlua::Error> {
     match params {
         None | Some(mlua::Value::Nil) => Ok(Vec::new()),
         Some(value) => lua.from_value(value),
@@ -31,9 +34,9 @@ fn lua_params(lua: &Lua, params: Option<mlua::Value>) -> Result<Vec<serde_json::
 fn map_db_gateway_error(err: DbGatewayError) -> mlua::Error {
     match err {
         DbGatewayError::PermissionDenied(message) => mlua::Error::RuntimeError(message),
-        other => mlua::Error::ExternalError(
-            Arc::new(other) as Arc<dyn std::error::Error + Send + Sync>
-        ),
+        other => {
+            mlua::Error::ExternalError(Arc::new(other) as Arc<dyn std::error::Error + Send + Sync>)
+        }
     }
 }
 
@@ -225,14 +228,12 @@ pub async fn inject_sushi_api(
         let render_prefix = static_url_prefix.clone();
         web_table.set(
             "render",
-            lua.create_function(
-                move |lua, (name, context): (String, Option<mlua::Table>)| {
-                    let json_ctx = build_web_context(lua, context, &render_prefix)?;
-                    render_templates
-                        .render(&name, json_ctx)
-                        .map_err(|e| mlua::Error::RuntimeError(format!("web render error: {e}")))
-                },
-            )?,
+            lua.create_function(move |lua, (name, context): (String, Option<mlua::Table>)| {
+                let json_ctx = build_web_context(lua, context, &render_prefix)?;
+                render_templates
+                    .render(&name, json_ctx)
+                    .map_err(|e| mlua::Error::RuntimeError(format!("web render error: {e}")))
+            })?,
         )?;
 
         let page_templates = templates.clone();
@@ -241,8 +242,7 @@ pub async fn inject_sushi_api(
         web_table.set(
             "page",
             lua.create_function(
-                move |lua,
-                      (path, template_name, opts): (String, String, Option<mlua::Table>)| {
+                move |lua, (path, template_name, opts): (String, String, Option<mlua::Table>)| {
                     if !page_admin {
                         return Err(mlua::Error::RuntimeError(
                             "sushi.web.page requires admin permission".to_string(),
@@ -289,11 +289,9 @@ pub async fn inject_sushi_api(
                         let template_name = handler_template_name.clone();
                         let context = handler_context.clone();
                         async move {
-                            templates
-                                .render(&template_name, context)
-                                .map_err(|e| {
-                                    mlua::Error::RuntimeError(format!("web render error: {e}"))
-                                })
+                            templates.render(&template_name, context).map_err(|e| {
+                                mlua::Error::RuntimeError(format!("web render error: {e}"))
+                            })
                         }
                     })?;
 
@@ -340,7 +338,10 @@ pub async fn inject_sushi_api(
                 let gateway = db_query_gateway.clone();
                 async move {
                     let params = lua_params(&lua, params)?;
-                    let rows = gateway.query(&sql, params).await.map_err(map_db_gateway_error)?;
+                    let rows = gateway
+                        .query(&sql, params)
+                        .await
+                        .map_err(map_db_gateway_error)?;
                     lua.to_value(&rows)
                 }
             })?,
@@ -808,7 +809,10 @@ mod tests {
         );
         assert_eq!(value.get("status").and_then(|v| v.as_u64()), Some(201));
         assert_eq!(
-            value.get("body").and_then(|v| v.get("ok")).and_then(|v| v.as_bool()),
+            value
+                .get("body")
+                .and_then(|v| v.get("ok"))
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
     }

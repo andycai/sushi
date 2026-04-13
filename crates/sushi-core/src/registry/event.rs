@@ -65,10 +65,7 @@ mod tests {
         let c = counter.clone();
         bus.on("test.event", move |data| {
             let c = c.clone();
-            let v = data
-                .get("value")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as usize;
+            let v = data.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
             Box::pin(async move {
                 c.fetch_add(v, Ordering::SeqCst);
             })
@@ -77,7 +74,8 @@ mod tests {
 
         let mut data = serde_json::Map::new();
         data.insert("value".to_string(), serde_json::json!(42));
-        bus.emit("test.event", &serde_json::Value::Object(data)).await;
+        bus.emit("test.event", &serde_json::Value::Object(data))
+            .await;
 
         assert_eq!(counter.load(Ordering::SeqCst), 42);
     }
@@ -90,14 +88,18 @@ mod tests {
         let c1 = counter.clone();
         bus.on("multi", move |_| {
             let c = c1.clone();
-            Box::pin(async move { c.fetch_add(1, Ordering::SeqCst); })
+            Box::pin(async move {
+                c.fetch_add(1, Ordering::SeqCst);
+            })
         })
         .await;
 
         let c2 = counter.clone();
         bus.on("multi", move |_| {
             let c = c2.clone();
-            Box::pin(async move { c.fetch_add(10, Ordering::SeqCst); })
+            Box::pin(async move {
+                c.fetch_add(10, Ordering::SeqCst);
+            })
         })
         .await;
 

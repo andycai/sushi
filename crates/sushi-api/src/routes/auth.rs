@@ -94,9 +94,10 @@ async fn refresh(
                 return (
                     StatusCode::UNAUTHORIZED,
                     Json(json!({ "error": "Invalid token type. Expected refresh token." })),
-                ).into_response();
+                )
+                    .into_response();
             }
-            
+
             match state.jwt.create_access_token(
                 claims.sub.parse().unwrap_or(0),
                 &claims.username,
@@ -125,7 +126,9 @@ async fn refresh(
     }
 }
 
-async fn me(axum::extract::Extension(user): axum::extract::Extension<AuthUser>) -> impl IntoResponse {
+async fn me(
+    axum::extract::Extension(user): axum::extract::Extension<AuthUser>,
+) -> impl IntoResponse {
     Json(json!({
         "id": user.0.id,
         "username": user.0.username,

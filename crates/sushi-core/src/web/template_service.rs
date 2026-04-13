@@ -1,4 +1,4 @@
-use minijinja::{Environment, path_loader};
+use minijinja::{path_loader, Environment};
 use serde::Serialize;
 use std::fs;
 use std::io::ErrorKind;
@@ -32,18 +32,19 @@ impl TemplateService {
         let mut env: Environment<'static> = Environment::new();
         env.set_loader(path_loader(root.to_path_buf()));
 
-        Ok(Self {
-            env: Arc::new(env),
-        })
+        Ok(Self { env: Arc::new(env) })
     }
 
     pub fn render<C: Serialize>(&self, name: &str, context: C) -> Result<String, TemplateError> {
-        let template = self.env.get_template(name).map_err(|source| {
-            TemplateError::TemplateLoad {
-                path: name.to_string(),
-                source,
-            }
-        })?;
-        template.render(context).map_err(|source| TemplateError::Render { source })
+        let template =
+            self.env
+                .get_template(name)
+                .map_err(|source| TemplateError::TemplateLoad {
+                    path: name.to_string(),
+                    source,
+                })?;
+        template
+            .render(context)
+            .map_err(|source| TemplateError::Render { source })
     }
 }

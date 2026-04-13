@@ -27,7 +27,10 @@ pub struct DbGateway {
 
 impl DbGateway {
     pub fn new(storage: Arc<dyn Storage>, permission: DbPermission) -> Self {
-        Self { storage, permission }
+        Self {
+            storage,
+            permission,
+        }
     }
 
     pub fn with_permission(&self, permission: DbPermission) -> Self {
@@ -193,10 +196,8 @@ fn classify_keyword(keyword: &str) -> Option<SqlOperation> {
     match keyword {
         "select" | "values" | "explain" => Some(SqlOperation::Read),
         "insert" | "update" | "delete" | "replace" | "upsert" => Some(SqlOperation::Write),
-        "create" | "drop" | "alter" | "truncate" | "pragma" | "attach" | "detach"
-        | "reindex" | "vacuum" | "begin" | "commit" | "rollback" | "analyze" => {
-            Some(SqlOperation::Admin)
-        }
+        "create" | "drop" | "alter" | "truncate" | "pragma" | "attach" | "detach" | "reindex"
+        | "vacuum" | "begin" | "commit" | "rollback" | "analyze" => Some(SqlOperation::Admin),
         _ => None,
     }
 }

@@ -29,15 +29,32 @@ impl JwtService {
         }
     }
 
-    pub fn create_access_token(&self, user_id: i64, username: &str, role: &str) -> Result<String, String> {
+    pub fn create_access_token(
+        &self,
+        user_id: i64,
+        username: &str,
+        role: &str,
+    ) -> Result<String, String> {
         self.create_token(user_id, username, role, self.access_ttl, "access")
     }
 
-    pub fn create_refresh_token(&self, user_id: i64, username: &str, role: &str) -> Result<String, String> {
+    pub fn create_refresh_token(
+        &self,
+        user_id: i64,
+        username: &str,
+        role: &str,
+    ) -> Result<String, String> {
         self.create_token(user_id, username, role, self.refresh_ttl, "refresh")
     }
 
-    fn create_token(&self, user_id: i64, username: &str, role: &str, ttl: i64, token_type: &str) -> Result<String, String> {
+    fn create_token(
+        &self,
+        user_id: i64,
+        username: &str,
+        role: &str,
+        ttl: i64,
+        token_type: &str,
+    ) -> Result<String, String> {
         let now = Utc::now();
         let claims = Claims {
             sub: user_id.to_string(),
