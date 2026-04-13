@@ -1,0 +1,73 @@
+<section class="admin-module" data-admin-workspace-module="config" x-data="configPage()">
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Runtime Configuration</h1>
+      <p class="ui-subtitle">Read-only operational snapshot of loaded server configuration.</p>
+    </div>
+    <div class="ui-toolbar">
+      <span class="ui-badge muted">Read only</span>
+      <button class="ui-btn ui-btn-secondary" type="button" @click="init()">Reload</button>
+    </div>
+  </div>
+
+  <div x-show="!loaded" class="ui-state-panel muted">
+    Loading configuration...
+  </div>
+
+  <div x-show="loaded && error" class="ui-state-panel danger">
+    <p class="m-0" x-text="error"></p>
+  </div>
+
+  <div x-show="loaded && !error" class="grid gap-4 md:grid-cols-2">
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">Server</h2>
+        <span class="ui-badge info">Network</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Host</dt><dd class="ui-mono" x-text="config.server?.host"></dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Port</dt><dd class="ui-mono" x-text="config.server?.port"></dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">Database</h2>
+        <span class="ui-badge info">Storage</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Path</dt><dd class="ui-mono" x-text="config.database?.path"></dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">JWT</h2>
+        <span class="ui-badge warn">Sensitive</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Secret</dt><dd class="ui-mono text-rose-600">••••••••</dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Access TTL</dt><dd class="ui-mono" x-text="config.jwt?.access_ttl + 's'"></dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Refresh TTL</dt><dd class="ui-mono" x-text="config.jwt?.refresh_ttl + 's'"></dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="ui-card">
+      <header class="ui-card-header">
+        <h2 class="text-lg font-semibold">Plugins</h2>
+        <span class="ui-badge info">Discovery</span>
+      </header>
+      <div class="ui-card-body">
+        <dl class="space-y-3 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-slate-500">Directory</dt><dd class="ui-mono" x-text="config.plugins?.directory"></dd></div>
+        </dl>
+      </div>
+    </section>
+  </div>
+</section>

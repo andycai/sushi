@@ -1,0 +1,199 @@
+<section class="admin-module" data-admin-workspace-module="menus" x-data="menusPage()" x-on:menus:close-editor.window="closeEditor()">
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Menu Catalog</h1>
+      <p class="ui-subtitle">Maintain sidebar navigation entries, hierarchy, and visibility for admin surfaces.</p>
+    </div>
+    <div class="ui-toolbar">
+      <div class="ui-table-search">
+        <input
+          type="text"
+          class="ui-input"
+          placeholder="Search by label, route, parent, or icon..."
+          x-model="table.query"
+          @input.debounce.150ms="applySearch()"
+        >
+      </div>
+      <button type="button" class="ui-btn ui-btn-primary" @click="openCreate()">Add Menu Item</button>
+    </div>
+  </div>
+
+  <div id="menus-feedback" class="ui-feedback"></div>
+
+  <div class="ui-callout mb-3">
+    Built-in system routes remain protected. Use custom menu entries for plugin-specific or workflow-specific navigation.
+  </div>
+
+  <section class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Menu registry</h2>
+      <div class="ui-toolbar">
+        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+          <option value="default">Default order</option>
+          <option value="alpha_asc">Label A-Z</option>
+          <option value="alpha_desc">Label Z-A</option>
+        </select>
+        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+          <template x-for="size in table.pageSizeOptions" :key="size">
+            <option :value="size" x-text="`${size}/page`"></option>
+          </template>
+        </select>
+        <div class="ui-page-controls">
+          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        </div>
+        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+      </div>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <thead>
+          <tr>
+            <th>Menu</th>
+            <th>Parent</th>
+            <th>Route</th>
+            <th>Position</th>
+            <th>Status</th>
+            <th class="actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody
+          id="menus-table-body"
+          hx-get="/admin/partials/menus/table"
+          hx-trigger="load, menus:refresh from:body"
+          hx-swap="innerHTML"
+          x-on:htmx:after-swap.camel="onMenusTableSwap()"
+        >
+          <tr>
+            <td colspan="6" class="ui-empty">Loading menu items...</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+        No menu items match your current keyword.
+      </div>
+    </div>
+  </section>
+
+  <div x-show="editor.open" class="ui-drawer-overlay" style="display:none">
+    <div class="ui-drawer-panel">
+      <div class="ui-drawer-head">
+        <h2 class="ui-drawer-title" x-text="editor.payload.mode === 'create' ? 'Add menu item' : 'Edit menu item'"></h2>
+        <button type="button" class="ui-btn ui-btn-ghost" @click="closeEditor()">Close</button>
+      </div>
+      <form
+        class="ui-drawer-body space-y-4"
+        :hx-post="editor.payload.mode === 'create' ? '/admin/partials/menus/create' : '/admin/partials/menus/' + editor.payload.id + '/update'"
+        hx-target="#menus-feedback"
+        hx-swap="innerHTML"
+        x-on:htmx:before-request.camel="onEditorBeforeRequest()"
+        x-on:htmx:after-request.camel="onEditorAfterRequest($event)"
+      >
+        <div>
+          <label class="ui-label" for="menu-label">Label</label>
+          <input
+            id="menu-label"
+            name="label"
+            type="text"
+            class="ui-input"
+            x-model="editor.payload.label"
+            maxlength="80"
+            required
+          >
+        </div>
+        <div>
+          <label class="ui-label" for="menu-icon">Icon</label>
+          <input
+            id="menu-icon"
+            name="icon"
+            type="text"
+            class="ui-input ui-mono"
+            x-model="editor.payload.icon"
+            maxlength="48"
+            placeholder="settings"
+          >
+        </div>
+        <div>
+          <label class="ui-label" for="menu-route">Route</label>
+          <input
+            id="menu-route"
+            name="route"
+            type="text"
+            class="ui-input ui-mono"
+            x-model="editor.payload.route"
+            maxlength="180"
+            placeholder="/admin/custom"
+          >
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="ui-label" for="menu-position">Position</label>
+            <input
+              id="menu-position"
+              name="position"
+              type="number"
+              min="0"
+              max="9999"
+              class="ui-input"
+              x-model="editor.payload.position"
+            >
+          </div>
+          <div>
+            <label class="ui-label" for="menu-parent-id">Parent menu</label>
+            <select
+              id="menu-parent-id"
+              name="parent_id"
+              class="ui-select"
+              x-model="editor.payload.parent_id"
+            >
+              <option value="">Top level</option>
+              <template x-for="option in parentOptions" :key="option.id">
+                <option :value="String(option.id)" x-text="option.label"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+        <label class="ui-toggle-row">
+          <input type="checkbox" name="is_hidden" value="1" x-model="editor.payload.is_hidden">
+          <span>Hide this menu item from sidebar</span>
+        </label>
+        <div class="ui-drawer-actions">
+          <button type="button" class="ui-btn ui-btn-secondary" @click="closeEditor()">Cancel</button>
+          <button type="submit" class="ui-btn ui-btn-primary" :disabled="editor.busy">
+            <span x-show="!editor.busy">Save menu item</span>
+            <span x-show="editor.busy">Saving...</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div x-show="deleteModal.open" class="ui-modal-overlay" style="display:none">
+    <div class="ui-modal-card">
+      <div class="ui-modal-head">
+        <h2 class="ui-modal-title">Delete menu item</h2>
+      </div>
+      <form
+        class="ui-modal-body"
+        :hx-delete="'/admin/partials/menus/' + deleteModal.payload.id"
+        hx-target="#menus-feedback"
+        hx-swap="innerHTML"
+        x-on:htmx:before-request.camel="onDeleteBeforeRequest()"
+        x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
+      >
+        <p class="text-sm text-slate-600">
+          Delete menu <span class="font-semibold text-slate-900" x-text="deleteModal.payload.label"></span>?
+          This action cannot be undone.
+        </p>
+        <div class="ui-modal-actions">
+          <button type="button" class="ui-btn ui-btn-secondary" @click="closeDelete()">Cancel</button>
+          <button type="submit" class="ui-btn ui-btn-danger" :disabled="deleteModal.busy || !deleteModal.payload.id || deleteModal.payload.is_system">
+            <span x-show="!deleteModal.busy">Delete</span>
+            <span x-show="deleteModal.busy">Deleting...</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>

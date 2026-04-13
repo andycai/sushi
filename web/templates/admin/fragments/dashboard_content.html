@@ -1,0 +1,50 @@
+<section class="admin-module" data-admin-workspace-module="dashboard" x-data="adminApp()">
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">Operations Dashboard</h1>
+      <p class="ui-subtitle">High-level runtime posture across plugins, identity, and data surfaces.</p>
+    </div>
+    <div class="ui-toolbar">
+      <span class="ui-badge info">Control plane</span>
+      <span class="ui-badge muted" x-text="`Updated ${pulse}`"></span>
+      <button type="button" class="ui-btn ui-btn-secondary" @click="refreshPulse()">Refresh pulse</button>
+    </div>
+  </div>
+
+  <section class="ui-grid-kpi">
+    <article class="ui-kpi">
+      <div class="ui-kpi-label">Plugins loaded</div>
+      <div class="ui-kpi-value" x-text="stats.plugins"></div>
+      <div class="ui-kpi-note">Active Lua runtime modules</div>
+    </article>
+    <article class="ui-kpi">
+      <div class="ui-kpi-label">Total users</div>
+      <div class="ui-kpi-value" x-text="stats.users"></div>
+      <div class="ui-kpi-note">Accounts in identity store</div>
+    </article>
+    <article class="ui-kpi">
+      <div class="ui-kpi-label">Session uptime</div>
+      <div class="ui-kpi-value" x-text="stats.uptime"></div>
+      <div class="ui-kpi-note">Current admin session signal</div>
+    </article>
+    <article class="ui-kpi">
+      <div class="ui-kpi-label">Mode</div>
+      <div class="ui-kpi-value">Protected</div>
+      <div class="ui-kpi-note">Admin role required for panel actions</div>
+    </article>
+  </section>
+
+  <section class="ui-card mt-4">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Next recommended actions</h2>
+      <span class="ui-badge warn">Prioritized</span>
+    </header>
+    <div class="ui-card-body">
+      <ul class="list-disc pl-5 space-y-2 text-sm text-slate-700">
+        <li>Review plugin permission assignments before enabling new modules.</li>
+        <li>Rotate administrator credentials periodically from the Users page.</li>
+        <li>Use KV Store for runtime flags and ensure key naming standards.</li>
+      </ul>
+    </div>
+  </section>
+</section>
