@@ -8,15 +8,15 @@ use sushi_core::{auth::rbac::RbacRepository, context::SushiContext, storage::Sto
 
 fn module_template(module: &str) -> Option<&'static str> {
     match module {
-        "dashboard" => Some("admin/workspace/dashboard.html"),
-        "users" => Some("admin/workspace/users.html"),
-        "roles" => Some("admin/workspace/roles.html"),
-        "permissions" => Some("admin/workspace/permissions.html"),
-        "plugins" => Some("admin/workspace/plugins.html"),
-        "kv" => Some("admin/workspace/kv.html"),
-        "config" => Some("admin/workspace/config.html"),
-        "logs" => Some("admin/workspace/logs.html"),
-        "menus" => Some("admin/workspace/menus.html"),
+        "dashboard" => Some("admin/fragments/dashboard_content.html"),
+        "users" => Some("admin/fragments/users_content.html"),
+        "roles" => Some("admin/fragments/roles_content.html"),
+        "permissions" => Some("admin/fragments/permissions_content.html"),
+        "plugins" => Some("admin/fragments/plugins_content.html"),
+        "kv" => Some("plugins/kv-store/fragments/kv_content.html"),
+        "config" => Some("admin/fragments/config_content.html"),
+        "logs" => Some("admin/fragments/logs_content.html"),
+        "menus" => Some("admin/fragments/menus_content.html"),
         _ => None,
     }
 }

@@ -1,13 +1,3 @@
-{% macro nav_link(href, label, key) %}
-  <a
-    href="{{ href }}"
-    class="admin-nav-link {% if active_section == key %}active{% endif %}"
-  >
-    <span class="admin-nav-dot"></span>
-    <span>{{ label }}</span>
-  </a>
-{% endmacro %}
-
 {% set static_prefix = static_url_prefix | default(value="/static") %}
 
 <!DOCTYPE html>
@@ -36,10 +26,8 @@
       </div>
       <nav class="admin-nav">
         <div class="admin-nav-list">
-          <!-- Use topMenuItems() instead of menuItems.filter -->
           <template x-for="item in topMenuItems()" :key="item.id">
             <div class="nav-item-wrapper">
-              <!-- 一级菜单项 -->
               <a
                 :href="hasChildren(item) ? '#' : (item.route || '#')"
                 class="admin-nav-link"
@@ -48,14 +36,12 @@
               >
                 <span class="admin-nav-icon" x-html="getIcon(item.icon)"></span>
                 <span class="admin-nav-label" x-text="item.label"></span>
-                <!-- Arrow indicator for items with children -->
                 <span
                   x-show="hasChildren(item)"
                   class="admin-nav-arrow"
                   :class="{ 'expanded': isExpanded(item.id) }"
                 >›</span>
               </a>
-              <!-- 子菜单 (inline, not drawer) -->
               <div
                 x-show="isExpanded(item.id)"
                 class="nav-children"
@@ -75,7 +61,6 @@
           </template>
         </div>
 
-        <!-- 退出登录 - always pinned to sidebar bottom -->
         <div class="nav-footer">
           <a href="#" @click.prevent="logout()" class="admin-nav-link logout-link">
             <span class="admin-nav-icon" x-html="getIcon('log-out')"></span>
