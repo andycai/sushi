@@ -74,6 +74,69 @@ kv.infra.db.execute = function(sql, params)
     return true, nil, nil
 end
 
+local function domain_error(kind, message)
+    return nil, kind, message
+end
+
+kv.domain.store.list = function()
+    local rows, kind, msg = kv.infra.db.query(
+        "SELECT key, value FROM kv_store ORDER BY key",
+        nil
+    )
+    if not rows then
+        return domain_error(kind or "storage_error", msg)
+    end
+    return rows
+end
+
+kv.domain.store.get = function(key)
+    if not key or key == "" then
+        return domain_error("invalid_key", "key cannot be empty")
+    end
+    local rows, kind, msg = kv.infra.db.query(
+        "SELECT value FROM kv_store WHERE key = ?1",
+        { key }
+    )
+    if not rows then
+        return domain_error(kind or "storage_error", msg)
+    end
+    if #rows == 0 then
+        return domain_error("not_found", "key not found")
+    end
+    return { key = key, value = rows[1].value }
+end
+
+kv.domain.store.upsert = function(key, value)
+    if not key or key == "" then
+        return domain_error("invalid_key", "key cannot be empty")
+    end
+    if value == nil or value == "" then
+        return domain_error("invalid_value", "value cannot be empty")
+    end
+    local ok, kind, msg = kv.infra.db.execute(
+        "INSERT INTO kv_store (key, value, updated_at) VALUES (?1, ?2, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+        { key, value }
+    )
+    if not ok then
+        return domain_error(kind or "storage_error", msg)
+    end
+    return { key = key, value = value }
+end
+
+kv.domain.store.delete = function(key)
+    if not key or key == "" then
+        return domain_error("invalid_key", "key cannot be empty")
+    end
+    local ok, kind, msg = kv.infra.db.execute(
+        "DELETE FROM kv_store WHERE key = ?1",
+        { key }
+    )
+    if not ok then
+        return domain_error(kind or "storage_error", msg)
+    end
+    return true
+end
+
 local function json_parse(s)
     return kv.utils.json_parse(s)
 end

@@ -326,6 +326,22 @@ end)
         assert!(source.contains("kv.infra.db.execute = function"));
     }
 
+    #[test]
+    fn kv_store_plugin_defines_domain_store_and_error_kinds() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.domain.store.list = function"));
+        assert!(source.contains("kv.domain.store.get = function"));
+        assert!(source.contains("kv.domain.store.upsert = function"));
+        assert!(source.contains("kv.domain.store.delete = function"));
+        assert!(source.contains("invalid_key"));
+        assert!(source.contains("invalid_value"));
+        assert!(source.contains("not_found"));
+        assert!(source.contains("storage_error"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
