@@ -363,19 +363,41 @@
       renderLoadError(pane, path);
     };
 
-    pane.addEventListener('htmx:afterSwap', afterSwapHandler);
-    pane.addEventListener('htmx:responseError', errorHandler);
-    pane.addEventListener('htmx:sendError', errorHandler);
+    const requestPane = () => {
+      pane.addEventListener('htmx:afterSwap', afterSwapHandler);
+      pane.addEventListener('htmx:responseError', errorHandler);
+      pane.addEventListener('htmx:sendError', errorHandler);
 
-    try {
-      window.htmx.ajax('GET', workspaceUrl(path), {
-        target: pane,
-        swap: 'innerHTML',
-      });
-    } catch (_) {
-      cleanup(afterSwapHandler, errorHandler);
-      window.location.href = path;
+      try {
+        window.htmx.ajax('GET', workspaceUrl(path), {
+          target: pane,
+          swap: 'innerHTML',
+        });
+      } catch (_) {
+        cleanup(afterSwapHandler, errorHandler);
+        window.location.href = path;
+      }
+    };
+
+    const moduleLoader =
+      window.AdminModuleLoader &&
+      typeof window.AdminModuleLoader.loadForPath === 'function'
+        ? window.AdminModuleLoader
+        : null;
+
+    if (!moduleLoader) {
+      requestPane();
+      return;
     }
+
+    Promise.resolve(moduleLoader.loadForPath(path))
+      .catch((err) => {
+        console.warn('Failed to preload workspace module script:', err);
+        return false;
+      })
+      .finally(() => {
+        requestPane();
+      });
   }
 
   function syncHistory(path, pushHistory) {
