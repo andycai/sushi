@@ -23,7 +23,7 @@
   <script defer src="{{ static_prefix }}/js/tailwindcss-4.2.2.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body x-data="adminMenu()" class="{% block body_class %}{% endblock %}">
+<body x-data="adminMenu()" {% block body_attrs %}class="{% block body_class %}{% endblock %}"{% endblock %}>
   <div class="admin-shell">
     {% block nav %}
     <aside class="admin-sidebar">
