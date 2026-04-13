@@ -146,6 +146,10 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/partials/permissions/{id}/update",
         "/admin/partials/permissions/{id}",
         "/admin/partials/plugins/table",
+        "/admin/partials/menus/table",
+        "/admin/partials/menus/create",
+        "/admin/partials/menus/{id}/update",
+        "/admin/partials/menus/{id}",
         "/admin/api/plugins",
     ]);
 

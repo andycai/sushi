@@ -466,11 +466,16 @@ async fn menu_api_returns_menu_items() {
         .expect("failed to read body");
     let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
 
-    let menu = payload.get("menu").and_then(Value::as_array).expect("menu array missing");
+    let menu = payload
+        .get("menu")
+        .and_then(Value::as_array)
+        .expect("menu array missing");
     assert!(!menu.is_empty(), "menu should have items");
 
     // 验证 Dashboard 存在
-    let dashboard = menu.iter().find(|m| m.get("label").and_then(Value::as_str) == Some("Dashboard"));
+    let dashboard = menu
+        .iter()
+        .find(|m| m.get("label").and_then(Value::as_str) == Some("Dashboard"));
     assert!(dashboard.is_some(), "Dashboard menu item should exist");
 
     let menus = menu
@@ -515,7 +520,10 @@ async fn menu_api_handles_legacy_menu_table_without_is_hidden_column() {
         .iter()
         .filter(|item| item.get("route").and_then(Value::as_str) == Some("/admin/kv"))
         .count();
-    assert_eq!(kv_count, 1, "legacy duplicate kv menu entries should be deduplicated");
+    assert_eq!(
+        kv_count, 1,
+        "legacy duplicate kv menu entries should be deduplicated"
+    );
 
     let response = app
         .oneshot(
@@ -547,7 +555,7 @@ async fn menu_api_crud_operations() {
                 .header("authorization", format!("Bearer {token}"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(
-                    r#"{"label":"Test Menu","icon":"settings","route":"/admin/test"}"#
+                    r#"{"label":"Test Menu","icon":"settings","route":"/admin/test"}"#,
                 ))
                 .expect("failed to build request"),
         )
@@ -572,10 +580,19 @@ async fn menu_api_crud_operations() {
         .await
         .expect("failed to read body");
     let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
-    let menu = payload.get("menu").and_then(Value::as_array).expect("menu array missing");
-    let test_menu = menu.iter().find(|m| m.get("label").and_then(Value::as_str) == Some("Test Menu"));
+    let menu = payload
+        .get("menu")
+        .and_then(Value::as_array)
+        .expect("menu array missing");
+    let test_menu = menu
+        .iter()
+        .find(|m| m.get("label").and_then(Value::as_str) == Some("Test Menu"));
     assert!(test_menu.is_some(), "Test Menu should exist after create");
-    let menu_id = test_menu.unwrap().get("id").and_then(Value::as_i64).expect("menu id missing");
+    let menu_id = test_menu
+        .unwrap()
+        .get("id")
+        .and_then(Value::as_i64)
+        .expect("menu id missing");
 
     // Update
     let response = app
@@ -586,9 +603,7 @@ async fn menu_api_crud_operations() {
                 .uri(format!("/admin/api/menu/{menu_id}"))
                 .header("authorization", format!("Bearer {token}"))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"label":"Updated Menu","is_hidden":true}"#
-                ))
+                .body(Body::from(r#"{"label":"Updated Menu","is_hidden":true}"#))
                 .expect("failed to build request"),
         )
         .await
@@ -841,6 +856,45 @@ async fn roles_and_permissions_partials_return_html_for_authenticated_admin() {
     assert!(
         permissions_html.contains("No permissions found") || permissions_html.contains("<tr"),
         "permissions_html: {permissions_html}"
+    );
+}
+
+#[tokio::test]
+async fn menus_page_and_partials_return_html_for_authenticated_admin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/menus")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(page_response.status(), StatusCode::OK);
+
+    let partial_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/menus/table")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(partial_response.status(), StatusCode::OK);
+    let partial_body = to_bytes(partial_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let partial_html = String::from_utf8_lossy(&partial_body);
+    assert!(
+        partial_html.contains("No menu items found") || partial_html.contains("<tr"),
+        "partial_html: {partial_html}"
     );
 }
 

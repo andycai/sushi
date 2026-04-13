@@ -366,6 +366,20 @@ body {
   color: var(--text-secondary);
 }
 
+.ui-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.ui-toggle-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+}
+
 .ui-table-wrap {
   overflow-x: auto;
 }
