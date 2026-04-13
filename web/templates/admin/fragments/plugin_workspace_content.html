@@ -1,4 +1,10 @@
-<section class="admin-module" data-admin-workspace-module="plugins/{{ plugin.name }}">
+<section
+  class="admin-module"
+  data-admin-workspace-module="plugins/{{ plugin.name }}"
+  data-plugin-name="{{ plugin.name }}"
+  x-data="pluginWorkspacePage()"
+  x-init="init()"
+>
   <div class="ui-page-header">
     <div>
       <h1 class="ui-title">{{ plugin.name }} Workspace</h1>
@@ -21,6 +27,65 @@
     This plugin exposes <span class="ui-mono">{{ pages | length }}</span> admin page(s).
   </div>
 
+  <section class="ui-card mb-3" data-plugin-workspace-nav>
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Quick navigation</h2>
+      <span class="ui-results-text">Pin important pages and keep recent visits within reach.</span>
+    </header>
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 p-4">
+      <div>
+        <h3 class="font-semibold mb-2">Pinned pages</h3>
+        <div class="ui-empty" x-show="pinnedPages().length === 0">
+          No pinned pages yet.
+        </div>
+        <ul class="space-y-2" x-show="pinnedPages().length > 0">
+          <template x-for="page in pinnedPages()" :key="'pin-' + page.path">
+            <li class="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                class="ui-action-link"
+                @click="openPage(page.path, page.title)"
+                x-text="page.title"
+              ></button>
+              <button
+                type="button"
+                class="ui-action-link danger"
+                @click="togglePin(page.path)"
+              >
+                Unpin
+              </button>
+            </li>
+          </template>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="font-semibold mb-2">Recently visited</h3>
+        <div class="ui-empty" x-show="recentPages().length === 0">
+          No recent pages yet.
+        </div>
+        <ul class="space-y-2" x-show="recentPages().length > 0">
+          <template x-for="page in recentPages()" :key="'recent-' + page.path">
+            <li class="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                class="ui-action-link"
+                @click="openPage(page.path, page.title)"
+                x-text="page.title"
+              ></button>
+              <button
+                type="button"
+                class="ui-action-link"
+                @click="togglePin(page.path)"
+                x-text="isPinned(page.path) ? 'Unpin' : 'Pin'"
+              ></button>
+            </li>
+          </template>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <section class="ui-card">
     <header class="ui-card-header">
       <h2 class="text-lg font-semibold">Admin pages</h2>
@@ -37,11 +102,26 @@
         </thead>
         <tbody>
           {% for page in pages %}
-            <tr>
+            <tr
+              data-plugin-page-path="{{ page.path }}"
+              data-plugin-page-title="{{ page.title }}"
+            >
               <td>{{ page.title }}</td>
               <td><span class="ui-mono">{{ page.path }}</span></td>
               <td class="actions">
-                <a class="ui-action-link" href="{{ page.path }}">Open page</a>
+                <a
+                  class="ui-action-link"
+                  href="{{ page.path }}"
+                  @click.prevent="openPage($el.closest('tr').dataset.pluginPagePath, $el.closest('tr').dataset.pluginPageTitle)"
+                >
+                  Open page
+                </a>
+                <button
+                  type="button"
+                  class="ui-action-link"
+                  @click="togglePin($el.closest('tr').dataset.pluginPagePath)"
+                  x-text="isPinned($el.closest('tr').dataset.pluginPagePath) ? 'Unpin' : 'Pin'"
+                ></button>
               </td>
             </tr>
           {% else %}

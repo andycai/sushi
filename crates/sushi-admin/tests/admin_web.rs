@@ -971,6 +971,16 @@ async fn users_and_plugins_partials_return_html_for_authenticated_admin() {
         plugins_html.contains("No plugins found") || plugins_html.contains("<tr"),
         "plugins_html: {plugins_html}"
     );
+    if plugins_html.contains("Workspace") {
+        assert!(
+            plugins_html.contains("data-workspace-path"),
+            "plugins workspace links should expose workspace path dataset: {plugins_html}"
+        );
+        assert!(
+            plugins_html.contains("@click.prevent=\"openWorkspace("),
+            "plugins workspace links should open via workspace tabs when available: {plugins_html}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1229,6 +1239,103 @@ async fn plugin_workspace_page_rejects_unknown_plugin() {
         .expect("request failed");
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn plugin_workspace_page_includes_quick_navigation_sections() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let plugins_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/plugins")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(plugins_response.status(), StatusCode::OK);
+    let plugins_body = to_bytes(plugins_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let plugins_payload: Value =
+        serde_json::from_slice(&plugins_body).expect("invalid json payload for plugins");
+    let Some(first_plugin_name) = plugins_payload
+        .as_array()
+        .and_then(|plugins| plugins.first())
+        .and_then(|plugin| plugin.get("name"))
+        .and_then(Value::as_str)
+    else {
+        return;
+    };
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/admin/plugins/{first_plugin_name}"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("Pinned pages"), "html: {html}");
+    assert!(html.contains("Recently visited"), "html: {html}");
+}
+
+#[test]
+fn plugin_workspace_template_includes_quick_navigation_blocks() {
+    let template_path = templates_root()
+        .join("admin")
+        .join("fragments")
+        .join("plugin_workspace_content.html");
+    let html =
+        fs::read_to_string(&template_path).expect("failed to read plugin workspace template");
+
+    assert!(
+        html.contains("data-plugin-workspace-nav"),
+        "template missing workspace nav block marker: {}",
+        template_path.display()
+    );
+    assert!(
+        html.contains("Pinned pages"),
+        "template missing pinned navigation heading: {}",
+        template_path.display()
+    );
+    assert!(
+        html.contains("Recently visited"),
+        "template missing recent navigation heading: {}",
+        template_path.display()
+    );
+}
+
+#[test]
+fn plugins_rows_template_opens_workspace_in_tab_when_available() {
+    let template_path = templates_root()
+        .join("admin")
+        .join("partials")
+        .join("plugins_rows.html");
+    let html = fs::read_to_string(&template_path).expect("failed to read plugins rows template");
+
+    assert!(
+        html.contains("data-workspace-path"),
+        "plugins rows should include workspace path dataset: {}",
+        template_path.display()
+    );
+    assert!(
+        html.contains("@click.prevent=\"openWorkspace("),
+        "plugins rows should use openWorkspace handler for tab navigation: {}",
+        template_path.display()
+    );
 }
 
 #[tokio::test]

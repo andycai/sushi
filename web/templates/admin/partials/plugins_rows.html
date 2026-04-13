@@ -21,7 +21,15 @@
       {% endif %}
     </td>
     <td class="actions">
-      <a class="ui-action-link" href="/admin/plugins/{{ p.name }}">Workspace</a>
+      <a
+        class="ui-action-link"
+        href="/admin/plugins/{{ p.name }}"
+        data-workspace-path="/admin/plugins/{{ p.name }}"
+        data-workspace-title="{{ p.name }} Workspace"
+        @click.prevent="openWorkspace($el.dataset.workspacePath, $el.dataset.workspaceTitle)"
+      >
+        Workspace
+      </a>
     </td>
   </tr>
 {% else %}
