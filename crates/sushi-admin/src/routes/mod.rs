@@ -7,3 +7,4 @@ pub mod permissions;
 pub mod plugins;
 pub mod roles;
 pub mod users;
+pub mod workspace;

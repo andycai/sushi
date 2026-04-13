@@ -373,6 +373,28 @@ async fn admin_requires_auth_without_token() {
 }
 
 #[tokio::test]
+async fn workspace_route_requires_auth_without_token() {
+    let app = build_app(None).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/users")
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(location, Some("/admin-login"));
+}
+
+#[tokio::test]
 async fn custom_static_prefix_is_used_in_templates_and_routes() {
     let app = build_app(Some("/assets")).await;
 
@@ -935,6 +957,63 @@ async fn viewer_cannot_access_users_page_without_permission() {
         .oneshot(
             Request::builder()
                 .uri("/admin/users")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn workspace_users_module_loads_for_authenticated_admin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/users")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn workspace_unknown_module_returns_not_found() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/unknown-module")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn viewer_cannot_access_users_workspace_without_permission() {
+    let app = build_app(None).await;
+    let token = bearer_token_for_role("viewer");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/users")
                 .header("authorization", format!("Bearer {token}"))
                 .body(Body::empty())
                 .expect("failed to build request"),

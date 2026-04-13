@@ -1,4 +1,6 @@
-use crate::routes::{config, dashboard, login, logs, menu, permissions, plugins, roles, users};
+use crate::routes::{
+    config, dashboard, login, logs, menu, permissions, plugins, roles, users, workspace,
+};
 use axum::{
     extract::Request,
     extract::State,
@@ -50,6 +52,10 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             get(axum::response::Redirect::temporary("/admin/")),
         )
         .route("/admin/", get(dashboard::dashboard_page))
+        .route(
+            "/admin/workspace/{module}",
+            get(workspace::workspace_partial),
+        )
         .route("/admin/plugins", get(plugins::plugins_page))
         .route("/admin/users", get(users::users_page))
         .route("/admin/roles", get(roles::roles_page))
@@ -122,6 +128,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin-login",
         "/admin",
         "/admin/",
+        "/admin/workspace/{module}",
         "/admin/plugins",
         "/admin/users",
         "/admin/roles",
@@ -155,7 +162,8 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
 
     // Add dynamic admin pages from Lua plugins
     for page_path in plugin_pages {
-        if reserved_paths.contains(page_path.as_str()) {
+        if reserved_paths.contains(page_path.as_str()) || page_path.starts_with("/admin/workspace/")
+        {
             tracing::warn!("skip plugin admin page due to route collision: {page_path}");
             continue;
         }
@@ -256,6 +264,9 @@ async fn admin_auth_middleware(
             let required_permission = match required_permission {
                 Some(permission) => permission,
                 None => {
+                    if method == "GET" && path.starts_with("/admin/workspace/") {
+                        return next.run(req).await;
+                    }
                     return (
                         axum::http::StatusCode::FORBIDDEN,
                         "Insufficient privileges for admin access",
@@ -288,6 +299,12 @@ async fn admin_auth_middleware(
 
 fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
     // Routes with identical access semantics are grouped for maintainability.
+    if method == "GET" {
+        if let Some(module) = path.strip_prefix("/admin/workspace/") {
+            return workspace::permission_for_module(module);
+        }
+    }
+
     let read_map: &[(&str, &str)] = &[
         ("GET", "/admin/"),
         ("GET", "/admin/logs"),
