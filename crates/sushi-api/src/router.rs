@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use sushi_core::auth::middleware::require_auth;
 use sushi_core::context::SushiContext;
+use sushi_core::logs::LogService;
 use sushi_core::plugin::manager::PluginManager;
 
 pub fn build_api_router(ctx: &SushiContext) -> Router {
@@ -46,6 +47,7 @@ pub fn build_app(ctx: &SushiContext) -> Router {
 #[derive(Clone)]
 pub struct PluginApiState {
     pub plugins: PluginManager,
+    pub logs: Arc<LogService>,
     pub body_size_limit: usize,
     pub route_map: Vec<(String, String)>, // (method, path) pairs
 }
@@ -136,12 +138,17 @@ async fn plugin_api_dispatch(
                     .into_response()
             }
         }
-        Some(Err(e)) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            [(axum::http::header::CONTENT_TYPE, "text/plain")],
-            e,
-        )
-            .into_response(),
+        Some(Err(e)) => {
+            let message = format!("plugin runtime error on {method} {path}: {e}");
+            tracing::error!("{message}");
+            state.logs.error(&message).await;
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                [(axum::http::header::CONTENT_TYPE, "text/plain")],
+                e,
+            )
+                .into_response()
+        }
         None => (
             axum::http::StatusCode::NOT_FOUND,
             [(axum::http::header::CONTENT_TYPE, "text/plain")],
@@ -225,6 +232,7 @@ mod tests {
 
         let state = PluginApiState {
             plugins: manager,
+            logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
             route_map: Vec::new(),
         };
@@ -269,6 +277,7 @@ mod tests {
 
         let state = PluginApiState {
             plugins: manager,
+            logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
             route_map: Vec::new(),
         };
@@ -287,6 +296,60 @@ mod tests {
             .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert_eq!(body, r#"{"status":201,"body":{"ok":true}}"#);
+    }
+
+    #[tokio::test]
+    async fn test_plugin_api_dispatch_records_runtime_errors_in_log_service() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_test";
+        let handler = lua
+            .create_async_function(|lua, ()| async move {
+                lua.load("error('boom from lua')").eval::<String>()
+            })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .await;
+
+        let logs = Arc::new(LogService::new());
+        let state = PluginApiState {
+            plugins: manager,
+            logs: logs.clone(),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/test")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+
+        let entries = logs.list(20).await;
+        assert!(
+            entries.iter().any(|entry| {
+                entry.level == "ERROR"
+                    && entry.message.contains("plugin runtime error")
+                    && entry.message.contains("GET /api/test")
+                    && entry.message.contains("boom from lua")
+            }),
+            "expected runtime error to be recorded in log service"
+        );
     }
 
     #[tokio::test]

@@ -46,6 +46,7 @@ pub async fn run(args: ServeArgs) -> Result<()> {
 
     let plugin_api_state = sushi_api::router::PluginApiState {
         plugins: ctx.plugins.clone(),
+        logs: ctx.logs.clone(),
         body_size_limit,
         route_map: vec![],
     };

@@ -246,9 +246,12 @@ impl PluginManager {
             .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;
 
         let func = self.get_handler_fn(lua, handler_key)?;
-        func.call_async::<String>(())
-            .await
-            .map_err(|e| format!("handler error: {e}"))
+        func.call_async::<String>(()).await.map_err(|e| {
+            tracing::error!(
+                "lua plugin handler failed: plugin={plugin_name} handler={handler_key} error={e}"
+            );
+            format!("handler error: {e}")
+        })
     }
 
     async fn call_handler_with_args(
@@ -274,9 +277,12 @@ impl PluginManager {
                 .map_err(|e| format!("set arg: {e}"))?;
         }
 
-        func.call_async::<String>(args_table)
-            .await
-            .map_err(|e| format!("handler error: {e}"))
+        func.call_async::<String>(args_table).await.map_err(|e| {
+            tracing::error!(
+                "lua plugin handler failed: plugin={plugin_name} handler={handler_key} error={e}"
+            );
+            format!("handler error: {e}")
+        })
     }
 
     fn get_handler_fn(&self, lua: &mlua::Lua, handler_key: &str) -> Result<mlua::Function, String> {

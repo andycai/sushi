@@ -170,12 +170,16 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
 
         let path = page_path.clone();
         let pm = ctx.plugins.clone();
+        let logs = ctx.logs.clone();
         router = router.route(
             &page_path,
             get(move || async move {
                 match pm.call_admin_handler(&path).await {
                     Some(Ok(html)) => axum::response::Html(html).into_response(),
                     Some(Err(e)) => {
+                        let message = format!("plugin runtime error on admin page {path}: {e}");
+                        tracing::error!("{message}");
+                        logs.error(&message).await;
                         (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
                     }
                     None => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),

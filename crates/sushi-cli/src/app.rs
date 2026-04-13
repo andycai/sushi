@@ -115,6 +115,9 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
 
             if let Err(e) = plugin.init(&ctx).await {
                 tracing::warn!("failed to init plugin {plugin_name}: {e}");
+                ctx.logs
+                    .warn(&format!("failed to init plugin {plugin_name}: {e}"))
+                    .await;
                 ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
                 continue;
             }

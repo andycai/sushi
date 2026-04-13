@@ -20,7 +20,19 @@ pub async fn run(args: RunArgs) -> Result<()> {
         .await
     {
         Some(Ok(output)) => println!("{output}"),
-        Some(Err(e)) => anyhow::bail!("plugin error: {e}"),
+        Some(Err(e)) => {
+            tracing::error!(
+                "plugin runtime error on CLI command {}: {e}",
+                args.plugin_name
+            );
+            ctx.logs
+                .error(&format!(
+                    "plugin runtime error on CLI command {}: {e}",
+                    args.plugin_name
+                ))
+                .await;
+            anyhow::bail!("plugin error: {e}")
+        }
         None => anyhow::bail!("command '{}' not found in any plugin", args.plugin_name),
     }
 
