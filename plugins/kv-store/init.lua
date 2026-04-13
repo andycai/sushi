@@ -168,8 +168,16 @@ local function db_execute(sql, params)
     return ok
 end
 
-local function error_response(status, msg)
-    return sushi.web.json(status, { error = tostring(msg) })
+local function api_error(kind, message)
+    local status = 500
+    if kind == "invalid_key" or kind == "invalid_value" then
+        status = 400
+    elseif kind == "not_found" then
+        status = 404
+    elseif kind == "storage_error" then
+        status = 500
+    end
+    return sushi.web.json(status, { error = tostring(message or kind or "error") })
 end
 
 local function kv_upsert(key, value)
@@ -185,84 +193,81 @@ end
 
 -- GET /api/kv — list all entries
 local function api_list()
-    local rows, err = db_query("SELECT key, value FROM kv_store ORDER BY key", nil)
-    if not rows then return error_response(500, err) end
+    local rows, kind, msg = kv.domain.store.list()
+    if not rows then return api_error(kind, msg) end
     return json_encode(rows)
 end
 
 -- POST /api/kv — create entry {key, value}
-local function api_create(path, body)
+local function api_create(body)
     local data = json_parse(body)
-    if not data or not data.key or not data.value then
-        return error_response(400, "missing key or value")
+    if not data or data.key == nil or data.value == nil then
+        return sushi.web.json(400, { error = "missing key or value" })
     end
     if data.key == "" then
-        return error_response(400, "key cannot be empty")
+        return sushi.web.json(400, { error = "key cannot be empty" })
     end
-    local ok, err = kv_upsert(data.key, data.value)
-    if not ok then return error_response(500, err) end
-    return json_encode({ key = data.key, value = data.value })
+    local entry, kind, msg = kv.domain.store.upsert(data.key, data.value)
+    if not entry then return api_error(kind, msg) end
+    return json_encode(entry)
 end
 
 -- GET /api/kv/{key} — get single entry
 local function api_get_key(path)
     local key = path:match("^/api/kv/(.+)$")
-    if not key then return error_response(400, "invalid path") end
-    local rows, err = db_query("SELECT value FROM kv_store WHERE key = ?1", { key })
-    if not rows then return error_response(500, err) end
-    if #rows == 0 then return error_response(404, "key not found") end
-    return json_encode({ key = key, value = rows[1].value })
+    if not key then return sushi.web.json(400, { error = "invalid path" }) end
+    local entry, kind, msg = kv.domain.store.get(key)
+    if not entry then return api_error(kind, msg) end
+    return json_encode(entry)
 end
 
 -- PUT /api/kv/{key} — update entry
 local function api_update_key(path, body)
     local key = path:match("^/api/kv/(.+)$")
-    if not key then return error_response(400, "invalid path") end
+    if not key then return sushi.web.json(400, { error = "invalid path" }) end
     local data = json_parse(body)
-    if not data or not data.value then
-        return error_response(400, "missing value")
+    if not data or data.value == nil then
+        return sushi.web.json(400, { error = "missing value" })
     end
     if key == "" then
-        return error_response(400, "key cannot be empty")
+        return sushi.web.json(400, { error = "key cannot be empty" })
     end
-    local ok, err = kv_upsert(key, data.value)
-    if not ok then return error_response(500, err) end
-    return json_encode({ key = key, value = data.value })
+    local entry, kind, msg = kv.domain.store.upsert(key, data.value)
+    if not entry then return api_error(kind, msg) end
+    return json_encode(entry)
 end
 
 -- DELETE /api/kv/{key} — delete entry
 local function api_delete_key(path)
     local key = path:match("^/api/kv/(.+)$")
-    if not key then return error_response(400, "invalid path") end
-    local ok, err = db_execute("DELETE FROM kv_store WHERE key = ?1", { key })
-    if not ok then return error_response(500, err) end
+    if not key then return sushi.web.json(400, { error = "invalid path" }) end
+    local ok, kind, msg = kv.domain.store.delete(key)
+    if not ok then return api_error(kind, msg) end
     return json_encode({ ok = true })
 end
 
 -- Main API dispatch handler for /api/kv/* routes
 -- Receives a Lua table: { [1] = path, [2] = body? }
-local function kv_api_dispatch(args)
+kv.interfaces.api.dispatch = function(args)
     local path = args[1] or ""
     local body = args[2]
 
     if path == "/api/kv" then
         if body then
-            return api_create(path, body)
-        else
-            return api_list()
+            return api_create(body)
         end
+        return api_list()
     elseif path:match("^/api/kv/[^/]+$") then
         if body then
             return api_update_key(path, body)
-        else
-            return api_get_key(path)
         end
+        return api_get_key(path)
     end
-    return error_response(404, "not found")
+    return sushi.web.json(404, { error = "not found" })
 end
 
 -- DELETE dispatch for /api/kv/* (no body)
-local function kv_api_delete_dispatch(args)
+kv.interfaces.api.delete_dispatch = function(args)
     local path = args[1] or ""
     return api_delete_key(path)
 end
@@ -272,11 +277,11 @@ end
 -- ========================
 
 local function kv_rows_partial(error_message)
-    local rows, err = db_query("SELECT key, value FROM kv_store ORDER BY key", nil)
+    local rows, kind, msg = kv.domain.store.list()
     if not rows then
         return sushi.web.render("plugins/kv-store/partials/rows.html", {
             items = {},
-            error_message = error_message or tostring(err),
+            error_message = error_message or tostring(msg),
         })
     end
 
@@ -300,11 +305,11 @@ local function kv_flash(level, message)
         .. "</div>"
 end
 
-local function kv_admin_table_partial()
+kv.interfaces.admin.table_partial = function()
     return kv_rows_partial(nil)
 end
 
-local function kv_admin_upsert_partial(args)
+kv.interfaces.admin.upsert_partial = function(args)
     local body = args[2] or ""
     local form = parse_form_urlencoded(body)
     local key = form.key or ""
@@ -323,14 +328,14 @@ local function kv_admin_upsert_partial(args)
         return kv_flash("error", "Changing key is not supported while editing")
     end
 
-    local ok, err = kv_upsert(key, value)
-    if not ok then
-        return kv_flash("error", "Failed to save entry: " .. tostring(err))
+    local entry, kind, msg = kv.domain.store.upsert(key, value)
+    if not entry then
+        return kv_flash("error", "Failed to save entry: " .. tostring(msg))
     end
     return kv_flash("success", "Saved key: " .. key)
 end
 
-local function kv_admin_delete_partial(args)
+kv.interfaces.admin.delete_partial = function(args)
     local body = args[2] or ""
     local form = parse_form_urlencoded(body)
     local key = form.key or ""
@@ -338,9 +343,9 @@ local function kv_admin_delete_partial(args)
         return kv_flash("error", "Missing key")
     end
 
-    local ok, err = db_execute("DELETE FROM kv_store WHERE key = ?1", { key })
+    local ok, kind, msg = kv.domain.store.delete(key)
     if not ok then
-        return kv_flash("error", "Failed to delete key: " .. tostring(err))
+        return kv_flash("error", "Failed to delete key: " .. tostring(msg))
     end
     return kv_flash("success", "Deleted key: " .. key)
 end
@@ -349,9 +354,9 @@ end
 -- CLI Handlers
 -- ========================
 
-local function cli_kv_list(args)
-    local rows, err = db_query("SELECT key, value FROM kv_store ORDER BY key", nil)
-    if not rows then return "Error: " .. tostring(err) end
+kv.interfaces.cli.kv_list = function(args)
+    local rows, kind, msg = kv.domain.store.list()
+    if not rows then return "Error: " .. tostring(msg) end
     if #rows == 0 then return "No KV entries found." end
     local lines = {}
     for i = 1, #rows do
@@ -360,26 +365,30 @@ local function cli_kv_list(args)
     return table.concat(lines, "\n")
 end
 
-local function cli_kv_get(args)
+kv.interfaces.cli.kv_get = function(args)
     if not args[1] then return "Usage: sushi run kv-get <key>" end
     local key = args[1]
-    local rows, err = db_query("SELECT value FROM kv_store WHERE key = ?1", { key })
-    if not rows then return "Error: " .. tostring(err) end
-    if #rows == 0 then return "Key not found: " .. key end
-    return rows[1].value
+    local entry, kind, msg = kv.domain.store.get(key)
+    if not entry then
+        if kind == "not_found" then
+            return "Key not found: " .. key
+        end
+        return "Error: " .. tostring(msg)
+    end
+    return entry.value
 end
 
-local function cli_kv_set(args)
+kv.interfaces.cli.kv_set = function(args)
     if not args[1] or not args[2] then return "Usage: sushi run kv-set <key> <value>" end
-    local ok, err = kv_upsert(args[1], args[2])
-    if not ok then return "Error: " .. tostring(err) end
+    local entry, kind, msg = kv.domain.store.upsert(args[1], args[2])
+    if not entry then return "Error: " .. tostring(msg) end
     return "OK: " .. args[1] .. " = " .. args[2]
 end
 
-local function cli_kv_delete(args)
+kv.interfaces.cli.kv_del = function(args)
     if not args[1] then return "Usage: sushi run kv-del <key>" end
-    local ok, err = db_execute("DELETE FROM kv_store WHERE key = ?1", { args[1] })
-    if not ok then return "Error: " .. tostring(err) end
+    local ok, kind, msg = kv.domain.store.delete(args[1])
+    if not ok then return "Error: " .. tostring(msg) end
     return "Deleted: " .. args[1]
 end
 
@@ -389,23 +398,23 @@ end
 
 function sushi.init()
     -- API routes (using wildcard prefix for /api/kv/*)
-    sushi.api.route("GET", "/api/kv", kv_api_dispatch)
-    sushi.api.route("GET", "/api/kv/*", kv_api_dispatch)
-    sushi.api.route("POST", "/api/kv", kv_api_dispatch)
-    sushi.api.route("PUT", "/api/kv/*", kv_api_dispatch)
-    sushi.api.route("DELETE", "/api/kv/*", kv_api_delete_dispatch)
-    sushi.api.route("GET", "/admin/partials/kv/table", kv_admin_table_partial)
-    sushi.api.route("POST", "/admin/partials/kv/upsert", kv_admin_upsert_partial)
-    sushi.api.route("POST", "/admin/partials/kv/delete", kv_admin_delete_partial)
+    sushi.api.route("GET", "/api/kv", kv.interfaces.api.dispatch)
+    sushi.api.route("GET", "/api/kv/*", kv.interfaces.api.dispatch)
+    sushi.api.route("POST", "/api/kv", kv.interfaces.api.dispatch)
+    sushi.api.route("PUT", "/api/kv/*", kv.interfaces.api.dispatch)
+    sushi.api.route("DELETE", "/api/kv/*", kv.interfaces.api.delete_dispatch)
+    sushi.api.route("GET", "/admin/partials/kv/table", kv.interfaces.admin.table_partial)
+    sushi.api.route("POST", "/admin/partials/kv/upsert", kv.interfaces.admin.upsert_partial)
+    sushi.api.route("POST", "/admin/partials/kv/delete", kv.interfaces.admin.delete_partial)
 
     -- Admin page
     sushi.web.page("/admin/kv", "plugins/kv-store/kv.html", { title = "KV Store" })
 
     -- CLI commands
-    sushi.cli.command("kv-list", "List all KV entries", cli_kv_list)
-    sushi.cli.command("kv-get", "Get a KV entry by key", cli_kv_get)
-    sushi.cli.command("kv-set", "Set a KV entry (key + value)", cli_kv_set)
-    sushi.cli.command("kv-del", "Delete a KV entry by key", cli_kv_delete)
+    sushi.cli.command("kv-list", "List all KV entries", kv.interfaces.cli.kv_list)
+    sushi.cli.command("kv-get", "Get a KV entry by key", kv.interfaces.cli.kv_get)
+    sushi.cli.command("kv-set", "Set a KV entry (key + value)", kv.interfaces.cli.kv_set)
+    sushi.cli.command("kv-del", "Delete a KV entry by key", kv.interfaces.cli.kv_del)
 
     sushi.log.info("kv-store plugin: registered API routes, admin page, and CLI commands")
 end

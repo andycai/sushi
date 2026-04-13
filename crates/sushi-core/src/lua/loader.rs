@@ -342,6 +342,23 @@ end)
         assert!(source.contains("storage_error"));
     }
 
+    #[test]
+    fn kv_store_plugin_uses_interface_dispatchers() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("kv.interfaces.api.dispatch = function"));
+        assert!(source.contains("kv.interfaces.api.delete_dispatch = function"));
+        assert!(source.contains("kv.interfaces.admin.table_partial = function"));
+        assert!(source.contains("kv.interfaces.admin.upsert_partial = function"));
+        assert!(source.contains("kv.interfaces.admin.delete_partial = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_list = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_get = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_set = function"));
+        assert!(source.contains("kv.interfaces.cli.kv_del = function"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
