@@ -19,6 +19,7 @@ const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
 const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
 const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
 const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
+const MENUS_RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/005_menus_rbac.sql");
 const LEGACY_MENU_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -234,6 +235,10 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
         .run_migrations(MENU_MIGRATION_SQL)
         .await
         .expect("failed to run migration 004_menu");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -269,6 +274,10 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
         .run_migrations(LEGACY_MENU_SCHEMA_SQL)
         .await
         .expect("failed to run legacy menu schema migration");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -1298,6 +1307,180 @@ async fn custom_role_tokens_follow_permission_matrix() {
         .await
         .expect("request failed");
     assert_eq!(cannot_create_users.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn custom_role_menus_permissions_are_enforced() {
+    let app = build_app(None).await;
+    let admin = admin_bearer_token();
+
+    let create_role_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/roles/create")
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "slug=menu_operator&name=Menu+Operator&description=Menu+catalog+operator",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(create_role_response.status(), StatusCode::OK);
+
+    let roles_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/roles/table")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let roles_table_body = to_bytes(roles_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let roles_table_html = String::from_utf8_lossy(&roles_table_body);
+    let role_id = extract_dataset_id_by_slug(
+        &roles_table_html,
+        "data-role-slug",
+        "menu_operator",
+        "data-role-id",
+    )
+    .expect("role id should be discoverable");
+
+    let permissions_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let permissions_table_body = to_bytes(permissions_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let permissions_table_html = String::from_utf8_lossy(&permissions_table_body);
+    let menus_view_permission_id = extract_dataset_id_by_slug(
+        &permissions_table_html,
+        "data-permission-slug",
+        "menus.view",
+        "data-permission-id",
+    )
+    .expect("menus.view permission id should be discoverable");
+    let menus_manage_permission_id = extract_dataset_id_by_slug(
+        &permissions_table_html,
+        "data-permission-slug",
+        "menus.manage",
+        "data-permission-id",
+    )
+    .expect("menus.manage permission id should be discoverable");
+
+    let assign_view_only_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/admin/partials/roles/{role_id}/permissions"))
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "permission_ids={menus_view_permission_id}"
+                )))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(assign_view_only_response.status(), StatusCode::OK);
+
+    let menu_operator = bearer_token_for_role("menu_operator");
+
+    let can_view_menus_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/menus")
+                .header("authorization", format!("Bearer {menu_operator}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(can_view_menus_page.status(), StatusCode::OK);
+
+    let can_view_menu_api = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/menu")
+                .header("authorization", format!("Bearer {menu_operator}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(can_view_menu_api.status(), StatusCode::OK);
+
+    let cannot_create_menu_without_manage = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/menus/create")
+                .header("authorization", format!("Bearer {menu_operator}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "label=Ops+Menu&icon=settings&route=%2Fadmin%2Fops&position=81",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(
+        cannot_create_menu_without_manage.status(),
+        StatusCode::FORBIDDEN
+    );
+
+    let assign_view_and_manage_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/admin/partials/roles/{role_id}/permissions"))
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "permission_ids={menus_manage_permission_id}"
+                )))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(assign_view_and_manage_response.status(), StatusCode::OK);
+
+    let can_create_menu_with_manage = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/menus/create")
+                .header("authorization", format!("Bearer {menu_operator}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "label=Ops+Menu&icon=settings&route=%2Fadmin%2Fops&position=81",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(can_create_menu_with_manage.status(), StatusCode::OK);
 }
 
 #[tokio::test]

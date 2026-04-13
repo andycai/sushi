@@ -297,6 +297,9 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
         ("GET", "/admin/plugins"),
         ("GET", "/admin/partials/plugins/table"),
         ("GET", "/admin/api/plugins"),
+        ("GET", "/admin/menus"),
+        ("GET", "/admin/partials/menus/table"),
+        ("GET", "/admin/api/menu"),
         ("GET", "/admin/users"),
         ("GET", "/admin/partials/users/table"),
         ("GET", "/admin/roles"),
@@ -316,6 +319,12 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
         ("POST", "/admin/partials/permissions/create"),
         ("POST", "/admin/partials/permissions/{id}/update"),
         ("DELETE", "/admin/partials/permissions/{id}"),
+        ("POST", "/admin/partials/menus/create"),
+        ("POST", "/admin/partials/menus/{id}/update"),
+        ("DELETE", "/admin/partials/menus/{id}"),
+        ("POST", "/admin/api/menu"),
+        ("PUT", "/admin/api/menu/{id}"),
+        ("DELETE", "/admin/api/menu/{id}"),
     ];
 
     if path == "/admin/kv" || path.starts_with("/admin/partials/kv/") {
@@ -333,6 +342,7 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
             "/admin/plugins" | "/admin/partials/plugins/table" | "/admin/api/plugins" => {
                 "plugins.view"
             }
+            "/admin/menus" | "/admin/partials/menus/table" | "/admin/api/menu" => "menus.view",
             "/admin/users" | "/admin/partials/users/table" => "users.view",
             "/admin/roles" | "/admin/partials/roles/table" => "roles.view",
             "/admin/permissions" | "/admin/partials/permissions/table" => "permissions.view",
@@ -351,6 +361,10 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
             _ if path.starts_with("/admin/partials/roles/") => "roles.manage",
             "/admin/partials/permissions/create" => "permissions.manage",
             _ if path.starts_with("/admin/partials/permissions/") => "permissions.manage",
+            "/admin/partials/menus/create" => "menus.manage",
+            _ if path.starts_with("/admin/partials/menus/") => "menus.manage",
+            "/admin/api/menu" => "menus.manage",
+            _ if path.starts_with("/admin/api/menu/") => "menus.manage",
             _ => return None,
         });
     }
