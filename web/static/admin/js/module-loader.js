@@ -58,6 +58,16 @@
     pathAssetCache: new Map(),
     staticPrefix: inferStaticPrefix(),
   };
+  const builtinModuleScripts = new Set([
+    'dashboard',
+    'users',
+    'roles',
+    'permissions',
+    'plugins',
+    'config',
+    'logs',
+    'menus',
+  ]);
 
   function normalizeModule(raw) {
     if (!raw || typeof raw !== 'string') {
@@ -143,8 +153,8 @@
       return registered;
     }
 
-    // Keep fallback convention simple and predictable for built-in modules.
-    if (key.includes('/')) {
+    // Only built-in Rust admin sections use admin/js/<module>.js fallback.
+    if (key.includes('/') || !builtinModuleScripts.has(key)) {
       return '';
     }
 
