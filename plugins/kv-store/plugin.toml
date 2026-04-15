@@ -9,3 +9,7 @@ routes = true
 commands = true
 admin = true
 database = "write"
+
+[admin.assets.bundles.workspace]
+js = ["kv.js"]
+css = []

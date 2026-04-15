@@ -27,6 +27,9 @@ If plugin provides admin UI:
 
 - Template files: `plugins/<plugin-name>/web/templates/...`
 - Static files: `plugins/<plugin-name>/web/static/...`
+- Do **not** place plugin assets in repository-global paths:
+  - `web/templates/plugins/**`
+  - `web/static/plugins/**`
 
 Do not inline large HTML strings in Lua for admin pages.
 
@@ -59,6 +62,24 @@ database = "read" # or "write" / false
 - Request only what is required.
 - `database = "write"` must have explicit business need.
 
+### 3.4 Admin asset bundles
+
+Plugins with admin JS/CSS must declare list-based bundles in `plugin.toml`:
+
+```toml
+[admin.assets.bundles.workspace]
+js = ["kv.js", "shared/table.js"]
+css = ["kv.css"]
+```
+
+Rules:
+
+- `js` and `css` use **lists** (not scalar strings).
+- Paths are relative to `plugins/<name>/web/static/`.
+- `sushi.web.page(..., { assets = { bundles = {...}, js = {...}, css = {...} } })`
+  may combine bundle names with page-local lists.
+- Paths must be plugin-local relative paths only (no `http://`, `https://`, `//`, absolute path, or `..`).
+
 ## 4. Lua Implementation Rules
 
 ### 4.1 Entry and Registration
@@ -89,6 +110,7 @@ database = "read" # or "write" / false
 
 - Page registration:
   - `sushi.web.page("/admin/<path>", "plugins/<name>/<page>.html", { ... })`
+- If the page requires JS/CSS, declare `assets = { bundles = {...}, js = {...}, css = {...} }` in `sushi.web.page(...)`.
 - Partial endpoints should return template-rendered fragments.
 - Feedback fragments should follow shared flash protocol (`data-ui-flash`, `data-level`, `data-message`).
 - Navigation convention for scalable plugin IA:

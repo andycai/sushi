@@ -140,8 +140,13 @@ The `sushi` context exposes these namespaces to Lua plugins:
 - Plugin admin templates and static assets must live inside the plugin directory:
   - `plugins/<plugin-name>/web/templates/...`
   - `plugins/<plugin-name>/web/static/...`
+- Do not place plugin templates/static assets under repo-global `web/templates/plugins/**` or `web/static/plugins/**`.
 - Plugin page registration and template rendering should continue to use logical template names like `plugins/<plugin-name>/...` (resolved by runtime template loader).
 - Plugin static assets should be referenced through `/static/plugins/<plugin-name>/...` (mounted from plugin-local `web/static`).
+- Plugin asset declarations use list-based config:
+  - `plugin.toml` bundle definitions under `[admin.assets.bundles.<bundle>]` with `js = []` and `css = []`.
+  - `sushi.web.page(..., { assets = { bundles = {...}, js = {...}, css = {...} } })`.
+  - Asset paths must be plugin-local relative paths (no URL/absolute/`..` forms).
 - Keep plugins stateless where possible; use `sushi.config` for persistent state
 - Use `sushi.log` for all logging; never print directly to stdout
 - Do not embed raw HTML strings in Lua source (for example `init.lua`); place markup in HTML template files and render via `sushi.web.render(...)`

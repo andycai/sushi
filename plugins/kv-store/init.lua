@@ -375,7 +375,10 @@ kv.bootstrap.register = function()
     sushi.api.route("POST", "/admin/partials/kv/delete", kv.interfaces.admin.delete_partial)
 
     -- Admin page
-    sushi.web.page("/admin/kv", "plugins/kv-store/kv.html", { title = "KV Store" })
+    sushi.web.page("/admin/kv", "plugins/kv-store/kv.html", {
+        title = "KV Store",
+        assets = { bundles = { "workspace" } },
+    })
 
     -- CLI commands
     sushi.cli.command("kv-list", "List all KV entries", kv.interfaces.cli.kv_list)

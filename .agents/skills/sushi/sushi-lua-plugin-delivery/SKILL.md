@@ -40,6 +40,10 @@ Reference alignment:
 - Put JS/CSS assets under `plugins/<name>/web/static/`.
 - Use logical template names `plugins/<name>/...` in Lua (`sushi.web.page`, `sushi.web.render`), even though files are stored in plugin-local `web/templates`.
 - Use static URLs under `/static/plugins/<name>/...` (runtime mounts plugin-local `web/static` automatically).
+- Declare admin assets via list-based bundle config:
+  - `plugin.toml`: `[admin.assets.bundles.<bundle>]` with `js = []` / `css = []`
+  - `sushi.web.page(..., { assets = { bundles = {...}, js = {...}, css = {...} } })`
+- Asset paths must be plugin-local relative paths (no URL, absolute path, or `..` segments).
 - Avoid embedding full HTML UIs directly in Lua strings.
 - Return feedback fragments compatible with shared UI (`data-ui-flash`, `data-level`, `data-message`).
 - Use HTMX for server-first requests and partial refresh; use Alpine for local state only.
