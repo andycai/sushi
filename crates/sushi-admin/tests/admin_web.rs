@@ -435,6 +435,15 @@ fn base_template_has_no_plugin_specific_module_mappings() {
 }
 
 #[test]
+fn base_template_uses_dynamic_active_section_script_loading() {
+    let base = templates_root().join("base.html");
+    let html = fs::read_to_string(&base).expect("failed to read base template");
+
+    assert!(html.contains("admin/js/{{ active_section }}.js"));
+    assert!(!html.contains("active_section == \"dashboard\""));
+}
+
+#[test]
 fn legacy_global_plugin_asset_dirs_have_no_files() {
     let root = workspace_root();
     let legacy_template_dir = root.join("web/templates/plugins");

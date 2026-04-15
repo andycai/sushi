@@ -1,4 +1,54 @@
 (() => {
+  function normalizeStaticPrefix(raw) {
+    if (typeof raw !== 'string') {
+      return '/static';
+    }
+    const value = raw.trim();
+    if (!value || value === '/') {
+      return '/static';
+    }
+    const prefix = value.startsWith('/') ? value : `/${value}`;
+    return prefix.replace(/\/+$/, '');
+  }
+
+  function inferStaticPrefix() {
+    const current = document.currentScript;
+    const scripts = [];
+    if (current && typeof current.src === 'string') {
+      scripts.push(current.src);
+    }
+    scripts.push(...Array.from(document.querySelectorAll('script[src]')).map((node) => node.src));
+
+    for (const src of scripts) {
+      if (typeof src !== 'string' || !src) {
+        continue;
+      }
+      let url;
+      try {
+        url = new URL(src, window.location.origin);
+      } catch (_) {
+        continue;
+      }
+      const matched = (url.pathname || '').match(/^(.*)\/admin\/js\/module-loader\.js$/);
+      if (matched && matched[1]) {
+        return normalizeStaticPrefix(matched[1]);
+      }
+    }
+
+    return '/static';
+  }
+
+  function normalizeModuleSegment(raw) {
+    if (typeof raw !== 'string') {
+      return '';
+    }
+    const value = raw.trim().toLowerCase();
+    if (!value) {
+      return '';
+    }
+    return /^[a-z0-9][a-z0-9_-]*$/.test(value) ? value : '';
+  }
+
   const state = {
     moduleScripts: {},
     loadedModules: new Set(),
@@ -6,13 +56,31 @@
     loadedAssets: new Set(),
     loadingAssets: new Map(),
     pathAssetCache: new Map(),
+    staticPrefix: inferStaticPrefix(),
   };
 
   function normalizeModule(raw) {
     if (!raw || typeof raw !== 'string') {
       return '';
     }
-    return raw.trim().replace(/^\/+|\/+$/g, '').toLowerCase();
+    const segments = raw
+      .trim()
+      .replace(/^\/+|\/+$/g, '')
+      .split('/')
+      .filter(Boolean);
+    if (!segments.length) {
+      return '';
+    }
+
+    const normalized = [];
+    for (const segment of segments) {
+      const value = normalizeModuleSegment(segment);
+      if (!value) {
+        return '';
+      }
+      normalized.push(value);
+    }
+    return normalized.join('/');
   }
 
   function normalizePath(rawPath) {
@@ -48,12 +116,103 @@
     if (normalizedPath === '/admin/') {
       return 'dashboard';
     }
-    return normalizedPath
-      .replace(/^\/admin\//, '')
-      .split('/')
-      .filter(Boolean)
-      .map((part) => encodeURIComponent(part))
-      .join('/');
+    return normalizeModule(normalizedPath.replace(/^\/admin\//, ''));
+  }
+
+  function moduleCandidates(moduleName) {
+    const key = normalizeModule(moduleName);
+    if (!key) {
+      return [];
+    }
+
+    const topLevel = key.split('/')[0];
+    if (topLevel && topLevel !== key) {
+      return [key, topLevel];
+    }
+    return [key];
+  }
+
+  function resolveModuleScriptUrl(moduleName) {
+    const key = normalizeModule(moduleName);
+    if (!key) {
+      return '';
+    }
+
+    const registered = state.moduleScripts[key];
+    if (registered) {
+      return registered;
+    }
+
+    // Keep fallback convention simple and predictable for built-in modules.
+    if (key.includes('/')) {
+      return '';
+    }
+
+    return `${state.staticPrefix}/admin/js/${key}.js`;
+  }
+
+  function loadModuleScript(moduleKey, scriptUrl) {
+    if (state.loadedModules.has(moduleKey)) {
+      return Promise.resolve(true);
+    }
+
+    if (!scriptUrl) {
+      return Promise.resolve(false);
+    }
+
+    if (state.loadingModules.has(moduleKey)) {
+      return state.loadingModules.get(moduleKey);
+    }
+
+    const existing = document.querySelector(`script[data-admin-module="${moduleKey}"]`);
+    if (existing) {
+      if (existing.dataset.adminModuleLoaded === 'true') {
+        state.loadedModules.add(moduleKey);
+        return Promise.resolve(true);
+      }
+
+      const reusedPromise = new Promise((resolve, reject) => {
+        const onLoad = () => {
+          existing.dataset.adminModuleLoaded = 'true';
+          state.loadedModules.add(moduleKey);
+          resolve(true);
+        };
+        const onError = () => {
+          reject(new Error(`failed to load module script: ${moduleKey}`));
+        };
+        existing.addEventListener('load', onLoad, { once: true });
+        existing.addEventListener('error', onError, { once: true });
+      }).finally(() => state.loadingModules.delete(moduleKey));
+
+      state.loadingModules.set(moduleKey, reusedPromise);
+      return reusedPromise;
+    }
+
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.async = true;
+    script.dataset.adminModule = moduleKey;
+
+    const promise = new Promise((resolve, reject) => {
+      script.addEventListener(
+        'load',
+        () => {
+          script.dataset.adminModuleLoaded = 'true';
+          state.loadedModules.add(moduleKey);
+          resolve(true);
+        },
+        { once: true },
+      );
+      script.addEventListener(
+        'error',
+        () => reject(new Error(`failed to load module script: ${moduleKey}`)),
+        { once: true },
+      );
+    }).finally(() => state.loadingModules.delete(moduleKey));
+
+    state.loadingModules.set(moduleKey, promise);
+    document.body.appendChild(script);
+    return promise;
   }
 
   function registerFromDom() {
@@ -74,10 +233,11 @@
     }
     Object.entries(moduleMap).forEach(([moduleName, src]) => {
       const key = normalizeModule(moduleName);
-      if (!key || typeof src !== 'string' || !src.trim()) {
+      const normalizedSrc = normalizeAssetUrl(src, 'js');
+      if (!key || !normalizedSrc) {
         return;
       }
-      state.moduleScripts[key] = src;
+      state.moduleScripts[key] = normalizedSrc;
     });
   }
 
@@ -89,81 +249,71 @@
   }
 
   function loadModule(moduleName) {
-    const key = normalizeModule(moduleName);
-    if (!key) {
+    const candidates = moduleCandidates(moduleName);
+    if (!candidates.length) {
       return Promise.resolve(false);
     }
 
-    if (state.loadedModules.has(key)) {
-      return Promise.resolve(true);
-    }
-
-    const scriptUrl = state.moduleScripts[key];
-    if (!scriptUrl) {
-      return Promise.resolve(false);
-    }
-
-    if (state.loadingModules.has(key)) {
-      return state.loadingModules.get(key);
-    }
-
-    const existing = document.querySelector(`script[data-admin-module="${key}"]`);
-    if (existing) {
-      if (existing.dataset.adminModuleLoaded === 'true') {
-        state.loadedModules.add(key);
-        return Promise.resolve(true);
+    const loadNext = (index) => {
+      if (index >= candidates.length) {
+        return Promise.resolve(false);
       }
 
-      const reusedPromise = new Promise((resolve, reject) => {
-        const onLoad = () => {
-          existing.dataset.adminModuleLoaded = 'true';
-          state.loadedModules.add(key);
-          resolve(true);
-        };
-        const onError = () => {
-          reject(new Error(`failed to load module script: ${key}`));
-        };
-        existing.addEventListener('load', onLoad, { once: true });
-        existing.addEventListener('error', onError, { once: true });
-      }).finally(() => state.loadingModules.delete(key));
+      const key = candidates[index];
+      const scriptUrl = resolveModuleScriptUrl(key);
+      if (!scriptUrl) {
+        return loadNext(index + 1);
+      }
 
-      state.loadingModules.set(key, reusedPromise);
-      return reusedPromise;
-    }
+      return loadModuleScript(key, scriptUrl).catch((err) => {
+        if (index + 1 < candidates.length) {
+          return loadNext(index + 1);
+        }
+        throw err;
+      });
+    };
 
-    const script = document.createElement('script');
-    script.src = scriptUrl;
-    script.async = true;
-    script.dataset.adminModule = key;
-
-    const promise = new Promise((resolve, reject) => {
-      script.addEventListener(
-        'load',
-        () => {
-          script.dataset.adminModuleLoaded = 'true';
-          state.loadedModules.add(key);
-          resolve(true);
-        },
-        { once: true },
-      );
-      script.addEventListener(
-        'error',
-        () => reject(new Error(`failed to load module script: ${key}`)),
-        { once: true },
-      );
-    }).finally(() => state.loadingModules.delete(key));
-
-    state.loadingModules.set(key, promise);
-    document.body.appendChild(script);
-    return promise;
+    return loadNext(0);
   }
 
-  function sanitizeAssetList(value) {
+  function normalizeAssetUrl(value, kind) {
+    if (typeof value !== 'string') {
+      return '';
+    }
+
+    const raw = value.trim();
+    if (!raw) {
+      return '';
+    }
+
+    let url;
+    try {
+      url = new URL(raw, window.location.origin);
+    } catch (_) {
+      return '';
+    }
+
+    const pathname = (url.pathname || '').toLowerCase();
+    if (!pathname) {
+      return '';
+    }
+
+    if (kind === 'js' && !pathname.endsWith('.js')) {
+      return '';
+    }
+    if (kind === 'css' && !pathname.endsWith('.css')) {
+      return '';
+    }
+
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function sanitizeAssetList(value, kind) {
     if (!Array.isArray(value)) {
       return [];
     }
     return value
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .map((item) => normalizeAssetUrl(item, kind))
       .filter(Boolean);
   }
 
@@ -197,8 +347,8 @@
       })
       .then((payload) => {
         const normalized = {
-          js: sanitizeAssetList(payload && payload.js),
-          css: sanitizeAssetList(payload && payload.css),
+          js: sanitizeAssetList(payload && payload.js, 'js'),
+          css: sanitizeAssetList(payload && payload.css, 'css'),
         };
         state.pathAssetCache.set(normalizedPath, normalized);
         return normalized;

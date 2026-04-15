@@ -116,37 +116,7 @@
   </div>
   {% if active_section %}
     <script src="{{ static_prefix }}/admin/js/module-loader.js"></script>
-    <script>
-      if (window.AdminModuleLoader && typeof window.AdminModuleLoader.registerModules === 'function') {
-        window.AdminModuleLoader.registerModules({
-          dashboard: "{{ static_prefix }}/admin/js/dashboard.js",
-          users: "{{ static_prefix }}/admin/js/users.js",
-          roles: "{{ static_prefix }}/admin/js/roles.js",
-          permissions: "{{ static_prefix }}/admin/js/permissions.js",
-          plugins: "{{ static_prefix }}/admin/js/plugins.js",
-          config: "{{ static_prefix }}/admin/js/config.js",
-          logs: "{{ static_prefix }}/admin/js/logs.js",
-          menus: "{{ static_prefix }}/admin/js/menus.js"
-        });
-      }
-    </script>
-    {% if active_section == "dashboard" %}
-      <script src="{{ static_prefix }}/admin/js/dashboard.js" data-admin-module="dashboard" data-admin-module-loaded="true"></script>
-    {% elif active_section == "users" %}
-      <script src="{{ static_prefix }}/admin/js/users.js" data-admin-module="users" data-admin-module-loaded="true"></script>
-    {% elif active_section == "roles" %}
-      <script src="{{ static_prefix }}/admin/js/roles.js" data-admin-module="roles" data-admin-module-loaded="true"></script>
-    {% elif active_section == "permissions" %}
-      <script src="{{ static_prefix }}/admin/js/permissions.js" data-admin-module="permissions" data-admin-module-loaded="true"></script>
-    {% elif active_section == "plugins" %}
-      <script src="{{ static_prefix }}/admin/js/plugins.js" data-admin-module="plugins" data-admin-module-loaded="true"></script>
-    {% elif active_section == "config" %}
-      <script src="{{ static_prefix }}/admin/js/config.js" data-admin-module="config" data-admin-module-loaded="true"></script>
-    {% elif active_section == "logs" %}
-      <script src="{{ static_prefix }}/admin/js/logs.js" data-admin-module="logs" data-admin-module-loaded="true"></script>
-    {% elif active_section == "menus" %}
-      <script src="{{ static_prefix }}/admin/js/menus.js" data-admin-module="menus" data-admin-module-loaded="true"></script>
-    {% endif %}
+    <script src="{{ static_prefix }}/admin/js/{{ active_section }}.js" data-admin-module="{{ active_section }}" data-admin-module-loaded="true"></script>
     <script src="{{ static_prefix }}/admin/js/menu.js"></script>
     <script src="{{ static_prefix }}/admin/js/workspace.js"></script>
   {% endif %}
