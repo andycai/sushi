@@ -15,21 +15,37 @@ Related references:
 
 ## 2. Required Directory Layout
 
-Each plugin lives under `plugins/<plugin-name>/`:
+Each plugin must live under one of the tier roots:
 
 ```text
-plugins/<plugin-name>/
-├── plugin.toml
-└── init.lua
+plugins/
+├── official/
+│   └── <plugin-name>/
+│       ├── plugin.toml
+│       ├── init.lua
+│       ├── lua/
+│       └── web/
+└── third_party/
+    └── <plugin-name>/
+        ├── plugin.toml
+        ├── init.lua
+        ├── lua/
+        └── web/
 ```
 
 If plugin provides admin UI:
 
-- Template files: `plugins/<plugin-name>/web/templates/...`
-- Static files: `plugins/<plugin-name>/web/static/...`
+- Template files:
+  - `plugins/official/<plugin-name>/web/templates/...`
+  - `plugins/third_party/<plugin-name>/web/templates/...`
+- Static files:
+  - `plugins/official/<plugin-name>/web/static/...`
+  - `plugins/third_party/<plugin-name>/web/static/...`
 - Do **not** place plugin assets in repository-global paths:
   - `web/templates/plugins/**`
   - `web/static/plugins/**`
+
+Legacy flat layout `plugins/<plugin-name>/` is not supported and causes startup failure.
 
 Do not inline large HTML strings in Lua for admin pages.
 
@@ -43,6 +59,7 @@ name = "my-plugin"
 version = "0.1.0"
 description = "What this plugin provides"
 entry = "init.lua"
+kind = "third_party" # or "official"
 
 [permissions]
 routes = true
@@ -56,11 +73,13 @@ database = "read" # or "write" / false
 - `name`: lowercase kebab-case, stable once released.
 - `version`: semantic versioning (`MAJOR.MINOR.PATCH`).
 - `description`: concise, behavior-oriented.
+- `kind`: must match directory category (`official` plugins under `plugins/official/`, `third_party` plugins under `plugins/third_party/`).
 
 ### 3.3 Permission minimization
 
-- Request only what is required.
-- `database = "write"` must have explicit business need.
+- For `third_party` plugins: request only what is required.
+- `database = "write"` (or above) must have explicit business need.
+- For `official` plugins: runtime enforces full permissions (`routes`, `commands`, `admin`, `database = "admin"`), regardless of manifest declaration.
 
 ### 3.4 Admin asset bundles
 
@@ -75,7 +94,9 @@ css = ["kv.css"]
 Rules:
 
 - `js` and `css` use **lists** (not scalar strings).
-- Paths are relative to `plugins/<name>/web/static/`.
+- Paths are relative to tiered plugin static root:
+  - `plugins/official/<name>/web/static/`
+  - `plugins/third_party/<name>/web/static/`
 - `sushi.web.page(..., { assets = { bundles = {...}, js = {...}, css = {...} } })`
   may combine bundle names with page-local lists.
 - Paths must be plugin-local relative paths only (no `http://`, `https://`, `//`, absolute path, or `..`).
@@ -109,7 +130,7 @@ Rules:
 ### 4.5 Admin UI Convention
 
 - Page registration:
-  - `sushi.web.page("/admin/<path>", "plugins/<name>/<page>.html", { ... })`
+  - `sushi.web.page("/admin/<path>", "plugins/<tier>/<name>/<page>.html", { ... })`
 - If the page requires JS/CSS, declare `assets = { bundles = {...}, js = {...}, css = {...} }` in `sushi.web.page(...)`.
 - Partial endpoints should return template-rendered fragments.
 - Feedback fragments should follow shared flash protocol (`data-ui-flash`, `data-level`, `data-message`).
