@@ -2266,6 +2266,7 @@ async fn templates_and_ui_scripts_avoid_native_confirm_apis() {
 async fn kv_rows_template_uses_dataset_for_alpine_edit_action() {
     let path = workspace_root()
         .join("plugins")
+        .join("official")
         .join("kv-store")
         .join("web")
         .join("templates")

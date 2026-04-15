@@ -15,7 +15,7 @@ fn module_template(module: &str) -> Option<&'static str> {
         "roles" => Some("admin/fragments/roles_content.html"),
         "permissions" => Some("admin/fragments/permissions_content.html"),
         "plugins" => Some("admin/fragments/plugins_content.html"),
-        "kv" => Some("plugins/kv-store/fragments/kv_content.html"),
+        "kv" => Some("plugins/official/kv-store/fragments/kv_content.html"),
         "config" => Some("admin/fragments/config_content.html"),
         "logs" => Some("admin/fragments/logs_content.html"),
         "menus" => Some("admin/fragments/menus_content.html"),

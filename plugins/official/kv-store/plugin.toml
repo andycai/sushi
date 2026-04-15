@@ -1,14 +1,15 @@
 [plugin]
 name = "kv-store"
-version = "0.1.0"
+version = "0.2.0"
 description = "KV store management — API, admin UI, and CLI"
 entry = "init.lua"
+kind = "official"
 
 [permissions]
 routes = true
 commands = true
 admin = true
-database = "write"
+database = "admin"
 
 [admin.assets.bundles.workspace]
 js = ["kv.js"]

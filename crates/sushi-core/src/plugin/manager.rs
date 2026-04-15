@@ -514,8 +514,8 @@ mod tests {
                 "KV Store Workspace",
                 "handler::workspace",
                 PageResolvedAssets {
-                    js: vec!["/static/plugins/kv-store/kv.js".to_string()],
-                    css: vec!["/static/plugins/kv-store/kv.css".to_string()],
+                    js: vec!["/static/plugins/official/kv-store/kv.js".to_string()],
+                    css: vec!["/static/plugins/official/kv-store/kv.css".to_string()],
                 },
             )
             .await;
@@ -527,11 +527,11 @@ mod tests {
 
         assert_eq!(
             assets.js,
-            vec!["/static/plugins/kv-store/kv.js".to_string()]
+            vec!["/static/plugins/official/kv-store/kv.js".to_string()]
         );
         assert_eq!(
             assets.css,
-            vec!["/static/plugins/kv-store/kv.css".to_string()]
+            vec!["/static/plugins/official/kv-store/kv.css".to_string()]
         );
     }
 
