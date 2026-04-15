@@ -98,3 +98,38 @@ fn base_template_uses_local_assets_only() {
         "base template should not reference protocol-relative // resources"
     );
 }
+
+#[test]
+fn render_plugin_template_from_plugin_scoped_template_root() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("base.html"),
+        "<html>{% block body %}{% endblock %}</html>",
+    )
+    .unwrap();
+
+    let plugin_templates = tempfile::tempdir().unwrap();
+    std::fs::write(
+        plugin_templates.path().join("page.html"),
+        "{% extends \"base.html\" %}{% block body %}Plugin {{ title }}{% endblock %}",
+    )
+    .unwrap();
+
+    let svc = TemplateService::new_with_plugin_roots(
+        root.path(),
+        vec![(
+            "kv-store".to_string(),
+            plugin_templates.path().to_path_buf(),
+        )],
+    )
+    .unwrap();
+
+    let html = svc
+        .render(
+            "plugins/kv-store/page.html",
+            serde_json::json!({"title": "Workspace"}),
+        )
+        .unwrap();
+
+    assert_eq!(html, "<html>Plugin Workspace</html>");
+}

@@ -59,6 +59,14 @@ impl LuaPlugin {
         &self.manifest
     }
 
+    pub fn web_templates_dir(&self) -> PathBuf {
+        self.plugin_dir.join("web").join("templates")
+    }
+
+    pub fn web_static_dir(&self) -> PathBuf {
+        self.plugin_dir.join("web").join("static")
+    }
+
     /// Take the Lua VM out of the plugin after init.
     /// This transfers ownership to the caller (typically PluginManager).
     pub fn into_vm(self) -> Option<mlua::Lua> {

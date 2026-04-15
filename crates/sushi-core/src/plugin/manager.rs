@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -43,6 +44,7 @@ pub struct PluginManager {
     cli_handlers: Arc<RwLock<HashMap<String, (String, String)>>>,
     admin_handlers: Arc<RwLock<HashMap<String, AdminHandlerBinding>>>,
     plugin_info: Arc<RwLock<HashMap<String, PluginInfo>>>,
+    plugin_static_roots: Arc<RwLock<HashMap<String, PathBuf>>>,
 }
 
 impl PluginManager {
@@ -278,6 +280,27 @@ impl PluginManager {
         pages
     }
 
+    /// Register plugin-scoped static assets root (`plugins/<name>/web/static`).
+    pub async fn register_plugin_static_root(&self, plugin_name: &str, static_root: PathBuf) {
+        self.plugin_static_roots
+            .write()
+            .await
+            .insert(plugin_name.to_string(), static_root);
+    }
+
+    /// List all registered plugin static roots sorted by plugin name.
+    pub async fn list_plugin_static_roots(&self) -> Vec<(String, PathBuf)> {
+        let mut roots = self
+            .plugin_static_roots
+            .read()
+            .await
+            .iter()
+            .map(|(name, root)| (name.clone(), root.clone()))
+            .collect::<Vec<_>>();
+        roots.sort_by(|a, b| a.0.cmp(&b.0));
+        roots
+    }
+
     // -- private helpers --
 
     async fn call_handler_no_args(
@@ -432,5 +455,21 @@ mod tests {
         assert_eq!(pages[0].plugin, "kv-store");
         assert_eq!(pages[0].title, "KV Store");
         assert_eq!(pages[1].title, "KV Store Workspace");
+    }
+
+    #[tokio::test]
+    async fn list_plugin_static_roots_returns_sorted_entries() {
+        let manager = PluginManager::new();
+        manager
+            .register_plugin_static_root("zeta", PathBuf::from("/tmp/zeta"))
+            .await;
+        manager
+            .register_plugin_static_root("alpha", PathBuf::from("/tmp/alpha"))
+            .await;
+
+        let roots = manager.list_plugin_static_roots().await;
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].0, "alpha");
+        assert_eq!(roots[1].0, "zeta");
     }
 }

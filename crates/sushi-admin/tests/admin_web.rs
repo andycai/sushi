@@ -93,6 +93,10 @@ fn collect_html_files(dir: &Path, paths: &mut Vec<PathBuf>) {
 }
 
 fn collect_files_with_extension(dir: &Path, ext: &str, paths: &mut Vec<PathBuf>) {
+    if !dir.exists() {
+        return;
+    }
+
     for entry in dir.read_dir().expect("failed to read directory") {
         let entry = entry.expect("failed to read directory entry");
         let path = entry.path();
@@ -110,6 +114,29 @@ fn collect_template_and_ui_paths() -> Vec<PathBuf> {
     collect_files_with_extension(&templates_root(), "html", &mut paths);
     collect_files_with_extension(&static_root().join("admin"), "js", &mut paths);
     collect_files_with_extension(&static_root().join("plugins"), "js", &mut paths);
+
+    let plugins_root = workspace_root().join("plugins");
+    if plugins_root.exists() {
+        for entry in plugins_root
+            .read_dir()
+            .expect("failed to read plugins directory")
+        {
+            let entry = entry.expect("failed to read plugin entry");
+            let plugin_root = entry.path();
+            if !plugin_root.is_dir() {
+                continue;
+            }
+            let plugin_templates = plugin_root.join("web").join("templates");
+            if plugin_templates.exists() {
+                collect_files_with_extension(&plugin_templates, "html", &mut paths);
+            }
+            let plugin_static = plugin_root.join("web").join("static");
+            if plugin_static.exists() {
+                collect_files_with_extension(&plugin_static, "js", &mut paths);
+            }
+        }
+    }
+
     paths
 }
 
@@ -246,6 +273,49 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
     build_admin_router(&ctx).await
 }
 
+async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Path) -> axum::Router {
+    let templates_dir = templates_root();
+    let static_dir = static_root();
+
+    let mut config = SushiConfig::default();
+    config.web.templates_dir = templates_dir.to_string_lossy().to_string();
+    config.web.static_dir = static_dir.to_string_lossy().to_string();
+
+    let config = ConfigStore::new(config);
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .run_migrations(KV_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 004_menu");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+    let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
+
+    let ctx = SushiContext::new(config, storage, jwt, templates);
+    ctx.plugins
+        .register_plugin_static_root(plugin_name, plugin_static_dir.to_path_buf())
+        .await;
+
+    build_admin_router(&ctx).await
+}
+
 async fn build_app_with_legacy_menu_table() -> axum::Router {
     let templates_dir = templates_root();
     let static_dir = static_root();
@@ -348,6 +418,45 @@ async fn login_and_static_routes_work() {
         .expect("request failed");
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn plugin_static_assets_are_served_from_plugin_directories() {
+    let plugin_static_dir = std::env::temp_dir().join(format!(
+        "sushi-admin-plugin-static-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&plugin_static_dir).expect("failed to create plugin static tempdir");
+    fs::write(
+        plugin_static_dir.join("kv.js"),
+        "window.__pluginStaticLoaded = true;",
+    )
+    .expect("failed to write plugin static asset");
+
+    let app = build_app_with_plugin_static("kv-store", &plugin_static_dir).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/plugins/kv-store/kv.js")
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024)
+        .await
+        .expect("failed to read body");
+    let content = String::from_utf8(body.to_vec()).expect("static body must be utf-8");
+    assert!(content.contains("__pluginStaticLoaded"));
+
+    fs::remove_dir_all(&plugin_static_dir).expect("failed to clean plugin static tempdir");
 }
 
 #[tokio::test]

@@ -80,6 +80,11 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         resolve_static_dir(config_path, &guard.web.static_dir)?
     };
 
+    let plugins_dir = {
+        let guard = config.get().await;
+        PathBuf::from(&guard.plugins.directory)
+    };
+
     config
         .update(|cfg| {
             cfg.web.static_dir = static_dir.to_string_lossy().to_string();
@@ -95,38 +100,55 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             )
         })?;
 
-    let templates = TemplateService::new(&templates_dir)
-        .with_context(|| format!("failed to init template root {}", templates_dir.display()))?;
+    let mut lua_plugins = Vec::new();
+    let mut plugin_template_roots = Vec::new();
+    let mut plugin_static_roots = Vec::new();
+    if plugins_dir.exists() {
+        lua_plugins = LuaPlugin::scan_dir(&plugins_dir)
+            .await
+            .context("failed to scan plugins directory")?;
+        for plugin in &lua_plugins {
+            let template_root = plugin.web_templates_dir();
+            if template_root.is_dir() {
+                plugin_template_roots.push((plugin.name().to_string(), template_root));
+            }
+            let static_root = plugin.web_static_dir();
+            if static_root.is_dir() {
+                plugin_static_roots.push((plugin.name().to_string(), static_root));
+            }
+        }
+    }
+
+    let templates =
+        TemplateService::new_with_plugin_roots(&templates_dir, plugin_template_roots)
+            .with_context(|| format!("failed to init template root {}", templates_dir.display()))?;
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     tracing_bridge::register_log_service(ctx.logs.clone());
 
-    // Load plugins
-    let plugins_dir = {
-        let guard = ctx.config.get().await;
-        PathBuf::from(&guard.plugins.directory)
-    };
-    if plugins_dir.exists() {
-        let lua_plugins = LuaPlugin::scan_dir(&plugins_dir)
-            .await
-            .context("failed to scan plugins directory")?;
-        for plugin in lua_plugins {
-            let plugin_name = plugin.name().to_string();
-            let manifest = plugin.manifest().clone();
-            ctx.plugins.register_plugin_manifest(&manifest).await;
+    for (plugin_name, static_root) in plugin_static_roots {
+        ctx.plugins
+            .register_plugin_static_root(&plugin_name, static_root)
+            .await;
+    }
 
-            if let Err(e) = plugin.init(&ctx).await {
-                tracing::warn!("failed to init plugin {plugin_name}: {e}");
-                ctx.logs
-                    .warn(&format!("failed to init plugin {plugin_name}: {e}"))
-                    .await;
-                ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
-                continue;
-            }
-            if let Some(lua) = plugin.into_vm() {
-                ctx.plugins.register_vm(&plugin_name, lua).await;
-                tracing::debug!("registered VM for plugin {plugin_name}");
-            }
+    // Load plugins
+    for plugin in lua_plugins {
+        let plugin_name = plugin.name().to_string();
+        let manifest = plugin.manifest().clone();
+        ctx.plugins.register_plugin_manifest(&manifest).await;
+
+        if let Err(e) = plugin.init(&ctx).await {
+            tracing::warn!("failed to init plugin {plugin_name}: {e}");
+            ctx.logs
+                .warn(&format!("failed to init plugin {plugin_name}: {e}"))
+                .await;
+            ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            continue;
+        }
+        if let Some(lua) = plugin.into_vm() {
+            ctx.plugins.register_vm(&plugin_name, lua).await;
+            tracing::debug!("registered VM for plugin {plugin_name}");
         }
     }
 

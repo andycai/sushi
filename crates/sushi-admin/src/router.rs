@@ -34,10 +34,28 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         )
     };
     let plugin_pages = ctx.plugins.list_admin_pages().await;
+    let plugin_static_roots = ctx.plugins.list_plugin_static_roots().await;
 
     let static_url_prefix = crate::render::normalize_static_url_prefix(&static_url_prefix);
 
-    let static_router: Router<SushiContext> = Router::new()
+    let mut static_router = Router::new();
+    for (plugin_name, plugin_static_root) in plugin_static_roots {
+        if plugin_name.trim().is_empty() || plugin_name.contains('/') {
+            tracing::warn!("skip invalid plugin static mount name: {plugin_name}");
+            continue;
+        }
+        if !plugin_static_root.is_dir() {
+            tracing::warn!(
+                "skip missing plugin static root for {}: {}",
+                plugin_name,
+                plugin_static_root.display()
+            );
+            continue;
+        }
+        let mount_path = format!("{static_url_prefix}/plugins/{plugin_name}");
+        static_router = static_router.nest_service(&mount_path, ServeDir::new(plugin_static_root));
+    }
+    let static_router: Router<SushiContext> = static_router
         .nest_service(&static_url_prefix, ServeDir::new(static_dir))
         .with_state(());
 
