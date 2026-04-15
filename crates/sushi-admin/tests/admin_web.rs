@@ -464,8 +464,8 @@ async fn workspace_assets_api_returns_plugin_assets_for_page_path() {
     let app = build_app_with_plugin_page_assets(
         "/admin/kv",
         PageResolvedAssets {
-            js: vec!["/static/plugins/kv-store/kv.js".to_string()],
-            css: vec!["/static/plugins/kv-store/kv.css".to_string()],
+            js: vec!["/static/plugins/official/kv-store/kv.js".to_string()],
+            css: vec!["/static/plugins/official/kv-store/kv.css".to_string()],
         },
     )
     .await;
@@ -587,12 +587,12 @@ async fn plugin_static_assets_are_served_from_plugin_directories() {
     )
     .expect("failed to write plugin static asset");
 
-    let app = build_app_with_plugin_static("kv-store", &plugin_static_dir).await;
+    let app = build_app_with_plugin_static("official/kv-store", &plugin_static_dir).await;
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/static/plugins/kv-store/kv.js")
+                .uri("/static/plugins/official/kv-store/kv.js")
                 .body(Body::empty())
                 .expect("failed to build request"),
         )

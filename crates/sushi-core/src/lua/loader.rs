@@ -283,7 +283,7 @@ fn validate_resolvable_relative_path(path: &str, field: &str) -> Result<(), Plug
 }
 
 fn push_resolved_assets(
-    plugin_name: &str,
+    plugin_path_id: &str,
     static_url_prefix: &str,
     static_root: &Path,
     source_paths: &[String],
@@ -307,7 +307,7 @@ fn push_resolved_assets(
         }
 
         target.push(format!(
-            "{static_url_prefix}/plugins/{plugin_name}/{}",
+            "{static_url_prefix}/plugins/{plugin_path_id}/{}",
             normalized_path
         ));
     }
@@ -316,7 +316,7 @@ fn push_resolved_assets(
 }
 
 fn resolve_page_assets(
-    plugin_name: &str,
+    plugin_path_id: &str,
     manifest: &PluginManifest,
     bundle_names: &[String],
     page_js: &[String],
@@ -339,7 +339,7 @@ fn resolve_page_assets(
             })?;
 
         push_resolved_assets(
-            plugin_name,
+            plugin_path_id,
             static_url_prefix,
             static_root,
             &bundle.js,
@@ -348,7 +348,7 @@ fn resolve_page_assets(
             &mut seen_js,
         )?;
         push_resolved_assets(
-            plugin_name,
+            plugin_path_id,
             static_url_prefix,
             static_root,
             &bundle.css,
@@ -359,7 +359,7 @@ fn resolve_page_assets(
     }
 
     push_resolved_assets(
-        plugin_name,
+        plugin_path_id,
         static_url_prefix,
         static_root,
         page_js,
@@ -368,7 +368,7 @@ fn resolve_page_assets(
         &mut seen_js,
     )?;
     push_resolved_assets(
-        plugin_name,
+        plugin_path_id,
         static_url_prefix,
         static_root,
         page_css,
@@ -503,7 +503,7 @@ impl Plugin for LuaPlugin {
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     let (bundle_names, page_js, page_css) = parse_page_assets_entry(&entry)?;
                     let assets = resolve_page_assets(
-                        plugin_name,
+                        &self.plugin_path_id,
                         &self.manifest,
                         &bundle_names,
                         &page_js,
@@ -584,7 +584,7 @@ mod tests {
     }
 
     fn resolve_page_assets_for_test(
-        plugin_name: &str,
+        plugin_path_id: &str,
         manifest: &PluginManifest,
         bundle_names: &[String],
         page_js: &[String],
@@ -592,7 +592,7 @@ mod tests {
         static_root: &Path,
     ) -> Result<PageResolvedAssets, PluginError> {
         resolve_page_assets(
-            plugin_name,
+            plugin_path_id,
             manifest,
             bundle_names,
             page_js,
@@ -955,7 +955,7 @@ js = ["kv.js"]
         .unwrap();
 
         let resolved = resolve_page_assets_for_test(
-            "asset_plugin",
+            "third_party/asset_plugin",
             &manifest,
             &["workspace".to_string()],
             &["pages/extra.js".to_string()],
@@ -967,8 +967,8 @@ js = ["kv.js"]
         assert_eq!(
             resolved.js,
             vec![
-                "/static/plugins/asset_plugin/kv.js".to_string(),
-                "/static/plugins/asset_plugin/pages/extra.js".to_string()
+                "/static/plugins/third_party/asset_plugin/kv.js".to_string(),
+                "/static/plugins/third_party/asset_plugin/pages/extra.js".to_string()
             ]
         );
         assert!(resolved.css.is_empty());
@@ -998,7 +998,7 @@ js = ["missing.js"]
         .unwrap();
 
         let err = resolve_page_assets_for_test(
-            "asset_plugin",
+            "third_party/asset_plugin",
             &manifest,
             &["workspace".to_string()],
             &[],

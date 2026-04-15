@@ -41,7 +41,7 @@ impl TemplateService {
         let plugin_roots = Arc::new(normalized_plugin_roots);
         env.set_loader(move |name: &str| {
             if let Some((plugin_name, plugin_path)) = split_plugin_template_name(name) {
-                if let Some(plugin_root) = plugin_roots.get(plugin_name) {
+                if let Some(plugin_root) = plugin_roots.get(plugin_name.as_str()) {
                     if let Some(source) = load_template(plugin_root, plugin_path)? {
                         return Ok(Some(source));
                     }
@@ -95,13 +95,16 @@ fn validate_root_optional(root: &Path) -> Result<(), TemplateError> {
     validate_root(root)
 }
 
-fn split_plugin_template_name(name: &str) -> Option<(&str, &str)> {
+fn split_plugin_template_name(name: &str) -> Option<(String, &str)> {
     let rest = name.strip_prefix("plugins/")?;
-    let (plugin_name, plugin_path) = rest.split_once('/')?;
-    if plugin_name.is_empty() || plugin_path.is_empty() {
+    let mut segments = rest.splitn(3, '/');
+    let tier = segments.next()?;
+    let plugin_name = segments.next()?;
+    let plugin_path = segments.next()?;
+    if tier.is_empty() || plugin_name.is_empty() || plugin_path.is_empty() {
         return None;
     }
-    Some((plugin_name, plugin_path))
+    Some((format!("{tier}/{plugin_name}"), plugin_path))
 }
 
 fn load_template(root: &Path, template_name: &str) -> Result<Option<String>, MinijinjaError> {

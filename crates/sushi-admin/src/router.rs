@@ -41,7 +41,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
 
     let mut static_router = Router::new();
     for (plugin_name, plugin_static_root) in plugin_static_roots {
-        if plugin_name.trim().is_empty() || plugin_name.contains('/') {
+        if !is_valid_plugin_mount_id(&plugin_name) {
             tracing::warn!("skip invalid plugin static mount name: {plugin_name}");
             continue;
         }
@@ -254,6 +254,32 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             admin_auth_middleware,
         ))
         .with_state(ctx.clone())
+}
+
+fn is_valid_plugin_mount_id(plugin_mount_id: &str) -> bool {
+    if plugin_mount_id.is_empty()
+        || plugin_mount_id.starts_with('/')
+        || plugin_mount_id.ends_with('/')
+        || plugin_mount_id.contains("..")
+    {
+        return false;
+    }
+
+    let mut has_segment = false;
+    for segment in plugin_mount_id.split('/') {
+        if segment.is_empty() {
+            return false;
+        }
+        has_segment = true;
+        if !segment
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+        {
+            return false;
+        }
+    }
+
+    has_segment
 }
 
 async fn list_plugins_api(State(ctx): State<SushiContext>) -> impl IntoResponse {

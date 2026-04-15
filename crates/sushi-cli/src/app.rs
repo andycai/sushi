@@ -108,13 +108,14 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             .await
             .context("failed to scan plugins directory")?;
         for plugin in &lua_plugins {
+            let plugin_path_id = plugin.path_id().to_string();
             let template_root = plugin.web_templates_dir();
             if template_root.is_dir() {
-                plugin_template_roots.push((plugin.name().to_string(), template_root));
+                plugin_template_roots.push((plugin_path_id.clone(), template_root));
             }
             let static_root = plugin.web_static_dir();
             if static_root.is_dir() {
-                plugin_static_roots.push((plugin.name().to_string(), static_root));
+                plugin_static_roots.push((plugin_path_id, static_root));
             }
         }
     }
@@ -135,8 +136,12 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     // Load plugins
     for plugin in lua_plugins {
         let plugin_name = plugin.name().to_string();
-        let manifest = plugin.manifest().clone();
-        ctx.plugins.register_plugin_manifest(&manifest).await;
+        ctx.plugins
+            .register_plugin_manifest_with_permissions(
+                plugin.manifest(),
+                plugin.effective_permissions(),
+            )
+            .await;
 
         if let Err(e) = plugin.init(&ctx).await {
             tracing::warn!("failed to init plugin {plugin_name}: {e}");

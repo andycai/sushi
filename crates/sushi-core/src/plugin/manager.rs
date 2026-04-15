@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::{DatabasePermission, PluginManifest};
+use super::{DatabasePermission, Permissions, PluginManifest};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PluginPermissionsView {
@@ -60,6 +60,15 @@ impl PluginManager {
     }
 
     pub async fn register_plugin_manifest(&self, manifest: &PluginManifest) {
+        self.register_plugin_manifest_with_permissions(manifest, &manifest.permissions)
+            .await;
+    }
+
+    pub async fn register_plugin_manifest_with_permissions(
+        &self,
+        manifest: &PluginManifest,
+        effective_permissions: &Permissions,
+    ) {
         let mut plugin_info = self.plugin_info.write().await;
         let loaded = plugin_info
             .get(&manifest.plugin.name)
@@ -74,10 +83,10 @@ impl PluginManager {
                 description: manifest.plugin.description.clone(),
                 loaded,
                 permissions: PluginPermissionsView {
-                    routes: manifest.permissions.routes,
-                    commands: manifest.permissions.commands,
-                    admin: manifest.permissions.admin,
-                    database: db_permission_name(&manifest.permissions.database).to_string(),
+                    routes: effective_permissions.routes,
+                    commands: effective_permissions.commands,
+                    admin: effective_permissions.admin,
+                    database: db_permission_name(&effective_permissions.database).to_string(),
                 },
             },
         );
@@ -540,5 +549,38 @@ mod tests {
         assert_eq!(roots.len(), 2);
         assert_eq!(roots[0].0, "alpha");
         assert_eq!(roots[1].0, "zeta");
+    }
+
+    #[tokio::test]
+    async fn register_plugin_manifest_with_effective_permissions_uses_effective_values() {
+        let manager = PluginManager::new();
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "kv-store".to_string(),
+                version: "1.0.0".to_string(),
+                description: "KV plugin".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: Permissions::default(),
+            admin: None,
+        };
+
+        let effective = Permissions {
+            routes: true,
+            commands: true,
+            admin: true,
+            database: DatabasePermission::Admin,
+        };
+
+        manager
+            .register_plugin_manifest_with_permissions(&manifest, &effective)
+            .await;
+        let plugins = manager.list_plugins().await;
+
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].permissions.database, "admin");
+        assert!(plugins[0].permissions.routes);
+        assert!(plugins[0].permissions.commands);
+        assert!(plugins[0].permissions.admin);
     }
 }

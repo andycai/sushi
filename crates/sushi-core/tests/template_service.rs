@@ -100,7 +100,7 @@ fn base_template_uses_local_assets_only() {
 }
 
 #[test]
-fn render_plugin_template_from_plugin_scoped_template_root() {
+fn render_plugin_template_from_tiered_plugin_template_root() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
         root.path().join("base.html"),
@@ -117,16 +117,13 @@ fn render_plugin_template_from_plugin_scoped_template_root() {
 
     let svc = TemplateService::new_with_plugin_roots(
         root.path(),
-        vec![(
-            "kv-store".to_string(),
-            plugin_templates.path().to_path_buf(),
-        )],
+        vec![("official/kv-store".to_string(), plugin_templates.path().to_path_buf())],
     )
     .unwrap();
 
     let html = svc
         .render(
-            "plugins/kv-store/page.html",
+            "plugins/official/kv-store/page.html",
             serde_json::json!({"title": "Workspace"}),
         )
         .unwrap();
