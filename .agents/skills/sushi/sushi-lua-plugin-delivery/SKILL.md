@@ -9,6 +9,11 @@ description: Use when creating or refactoring Sushi Lua plugins that register ro
 
 Use this skill to ship Lua plugins that match Sushi's parity model and production quality bar.
 
+Reference alignment:
+
+- Project conventions: `AGENTS.md`
+- Plugin standard details: `docs/engineering/plugin-authoring-standards.md`
+
 ## Quality Bar (Non-Negotiable)
 
 - Plugin admin pages must not be demo-grade; they should look and behave like first-party admin modules.
@@ -31,13 +36,25 @@ Use this skill to ship Lua plugins that match Sushi's parity model and productio
 
 ## Admin UI Rules
 
-- Prefer `sushi.web.page` + template files under `web/templates/plugins/<name>/`.
-- Put JS/CSS assets under `web/static/plugins/<name>/`.
+- Prefer `sushi.web.page` + template files under `plugins/<name>/web/templates/`.
+- Put JS/CSS assets under `plugins/<name>/web/static/`.
+- Use logical template names `plugins/<name>/...` in Lua (`sushi.web.page`, `sushi.web.render`), even though files are stored in plugin-local `web/templates`.
+- Use static URLs under `/static/plugins/<name>/...` (runtime mounts plugin-local `web/static` automatically).
 - Avoid embedding full HTML UIs directly in Lua strings.
 - Return feedback fragments compatible with shared UI (`data-ui-flash`, `data-level`, `data-message`).
 - Use HTMX for server-first requests and partial refresh; use Alpine for local state only.
 - Use `HX-Trigger` headers for deterministic refresh and close actions after successful mutations.
 - Reuse shared `AdminUI` helpers instead of writing custom notification/table logic.
+
+## Resource Isolation & Auto-Validation
+
+- Treat plugin web resources as isolated ownership: no new plugin templates/static files under repository-level `web/templates/plugins/...` or `web/static/plugins/...`.
+- Keep plugin paths internally consistent:
+  - Files: `plugins/<name>/web/templates/...`, `plugins/<name>/web/static/...`
+  - Lua references: `plugins/<name>/...` template names, `/static/plugins/<name>/...` asset URLs
+- For any plugin resource migration or new plugin admin UI, run and record:
+  - `cargo test -p sushi-core --test template_service -q`
+  - `cargo test -p sushi-admin --test admin_web -q`
 
 ## Shared Checklist
 
@@ -63,4 +80,5 @@ Use this skill to ship Lua plugins that match Sushi's parity model and productio
 - Plugin loads cleanly and registers expected capabilities.
 - Admin/API/CLI paths are manually smoke-tested.
 - Plugin admin page supports loading, empty, validation-error, and success states.
+- Plugin resources are stored in `plugins/<name>/web/...` and pass the targeted resource-validation tests.
 - `cargo test --workspace -q` passes.

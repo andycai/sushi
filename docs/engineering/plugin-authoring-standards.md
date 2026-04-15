@@ -2,6 +2,11 @@
 
 This guide defines how to build production-grade Lua plugins for Sushi.
 
+Related references:
+
+- Project-wide operating conventions: `AGENTS.md`
+- Execution workflow checklist: `.agents/skills/sushi/sushi-lua-plugin-delivery/SKILL.md`
+
 ## 1. Plugin Philosophy
 
 - Plugins are first-class modules, not scripting afterthoughts.
@@ -20,8 +25,8 @@ plugins/<plugin-name>/
 
 If plugin provides admin UI:
 
-- Template files: `web/templates/plugins/<plugin-name>/...`
-- Static files: `web/static/plugins/<plugin-name>/...`
+- Template files: `plugins/<plugin-name>/web/templates/...`
+- Static files: `plugins/<plugin-name>/web/static/...`
 
 Do not inline large HTML strings in Lua for admin pages.
 
@@ -122,6 +127,9 @@ Before merge/release, verify:
 - Invalid input returns correct error responses.
 - Admin mutations show feedback and refresh list correctly.
 - Database operations behave correctly for read/write paths.
+- Resource-isolation checks pass:
+  - `cargo test -p sushi-core --test template_service -q`
+  - `cargo test -p sushi-admin --test admin_web -q`
 - Workspace tests pass:
   - `cargo test --workspace -q`
 

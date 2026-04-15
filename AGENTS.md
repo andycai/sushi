@@ -120,6 +120,7 @@ The `sushi` context exposes these namespaces to Lua plugins:
 
 - Coding standards (admin/api/cli): `docs/engineering/coding-standards.md`
 - Plugin authoring standards: `docs/engineering/plugin-authoring-standards.md`
+- Plugin delivery skill (workflow + done criteria): `.agents/skills/sushi/sushi-lua-plugin-delivery/SKILL.md`
 - Reusable project skills: `.agents/skills/sushi/`
 
 ### Rust Conventions
@@ -136,9 +137,23 @@ The `sushi` context exposes these namespaces to Lua plugins:
 - One plugin = one directory under `plugins/`
 - Entry point is always `init.lua` (configurable in manifest)
 - Plugins must declare required permissions in `plugin.toml`
+- Plugin admin templates and static assets must live inside the plugin directory:
+  - `plugins/<plugin-name>/web/templates/...`
+  - `plugins/<plugin-name>/web/static/...`
+- Plugin page registration and template rendering should continue to use logical template names like `plugins/<plugin-name>/...` (resolved by runtime template loader).
+- Plugin static assets should be referenced through `/static/plugins/<plugin-name>/...` (mounted from plugin-local `web/static`).
 - Keep plugins stateless where possible; use `sushi.config` for persistent state
 - Use `sushi.log` for all logging; never print directly to stdout
 - Do not embed raw HTML strings in Lua source (for example `init.lua`); place markup in HTML template files and render via `sushi.web.render(...)`
+
+### Plugin Resource Auto-Validation
+
+- Every plugin resource change should include automated checks proving template/static resources are plugin-local and still load correctly.
+- Minimum verification commands:
+  - `cargo test -p sushi-core --test template_service -q`
+  - `cargo test -p sushi-admin --test admin_web -q`
+- Before merge, run full validation:
+  - `cargo test --workspace -q`
 
 ### Frontend Conventions (admin)
 
