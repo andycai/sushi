@@ -126,8 +126,7 @@
           plugins: "{{ static_prefix }}/admin/js/plugins.js",
           config: "{{ static_prefix }}/admin/js/config.js",
           logs: "{{ static_prefix }}/admin/js/logs.js",
-          menus: "{{ static_prefix }}/admin/js/menus.js",
-          kv: "{{ static_prefix }}/plugins/kv-store/kv.js"
+          menus: "{{ static_prefix }}/admin/js/menus.js"
         });
       }
     </script>
@@ -147,8 +146,6 @@
       <script src="{{ static_prefix }}/admin/js/logs.js" data-admin-module="logs" data-admin-module-loaded="true"></script>
     {% elif active_section == "menus" %}
       <script src="{{ static_prefix }}/admin/js/menus.js" data-admin-module="menus" data-admin-module-loaded="true"></script>
-    {% elif active_section == "kv" %}
-      <script src="{{ static_prefix }}/plugins/kv-store/kv.js" data-admin-module="kv" data-admin-module-loaded="true"></script>
     {% endif %}
     <script src="{{ static_prefix }}/admin/js/menu.js"></script>
     <script src="{{ static_prefix }}/admin/js/workspace.js"></script>

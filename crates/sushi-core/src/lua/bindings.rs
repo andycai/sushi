@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::{path::Component, path::Path};
 
 use crate::context::SushiContext;
 use crate::db::{DbGatewayError, DbPermission};
@@ -63,6 +64,121 @@ fn build_web_context(
             "data": json_ctx,
         })),
     }
+}
+
+fn validate_asset_path(path: &str, field: &str) -> Result<(), mlua::Error> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(mlua::Error::RuntimeError(format!(
+            "sushi.web.page assets.{field} entries must be safe relative paths"
+        )));
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") || trimmed.starts_with("//") {
+        return Err(mlua::Error::RuntimeError(format!(
+            "sushi.web.page assets.{field} entries must be safe relative paths"
+        )));
+    }
+
+    if Path::new(trimmed).is_absolute() {
+        return Err(mlua::Error::RuntimeError(format!(
+            "sushi.web.page assets.{field} entries must be safe relative paths"
+        )));
+    }
+
+    if trimmed.contains("..") {
+        return Err(mlua::Error::RuntimeError(format!(
+            "sushi.web.page assets.{field} entries must be safe relative paths"
+        )));
+    }
+
+    for component in Path::new(trimmed).components() {
+        if matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        ) {
+            return Err(mlua::Error::RuntimeError(format!(
+                "sushi.web.page assets.{field} entries must be safe relative paths"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_asset_string_array(
+    lua: &Lua,
+    assets: &mlua::Table,
+    field: &str,
+    validate_path: bool,
+) -> Result<Option<mlua::Table>, mlua::Error> {
+    fn ensure_array_shape(values: &mlua::Table, field: &str) -> Result<usize, mlua::Error> {
+        let len = values.raw_len();
+        let mut entries = 0usize;
+        for pair in values.pairs::<mlua::Value, mlua::Value>() {
+            let (key, _) = pair?;
+            entries += 1;
+            match key {
+                mlua::Value::Integer(index) if index >= 1 && (index as usize) <= len => {}
+                _ => {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "sushi.web.page assets.{field} must be an array of strings"
+                    )))
+                }
+            }
+        }
+
+        if entries != len {
+            return Err(mlua::Error::RuntimeError(format!(
+                "sushi.web.page assets.{field} must be an array of strings"
+            )));
+        }
+
+        Ok(len)
+    }
+
+    match assets.get::<mlua::Value>(field)? {
+        mlua::Value::Nil => Ok(None),
+        mlua::Value::Table(values) => {
+            let out = lua.create_table()?;
+            let len = ensure_array_shape(&values, field)?;
+            for idx in 1..=len {
+                let value = match values.get::<mlua::Value>(idx)? {
+                    mlua::Value::String(item) => item.to_str()?.to_string(),
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "sushi.web.page assets.{field} must be an array of strings"
+                        )))
+                    }
+                };
+                if validate_path {
+                    validate_asset_path(&value, field)?;
+                }
+                out.set(idx, value)?;
+            }
+            Ok(Some(out))
+        }
+        _ => Err(mlua::Error::RuntimeError(format!(
+            "sushi.web.page assets.{field} must be an array of strings"
+        ))),
+    }
+}
+
+fn parse_page_assets(lua: &Lua, assets: mlua::Table) -> Result<mlua::Table, mlua::Error> {
+    let parsed = lua.create_table()?;
+
+    if let Some(bundles) = parse_asset_string_array(lua, &assets, "bundles", false)? {
+        parsed.set("bundles", bundles)?;
+    }
+    if let Some(js) = parse_asset_string_array(lua, &assets, "js", true)? {
+        parsed.set("js", js)?;
+    }
+    if let Some(css) = parse_asset_string_array(lua, &assets, "css", true)? {
+        parsed.set("css", css)?;
+    }
+
+    Ok(parsed)
 }
 
 /// Inject the `sushi` global table into the Lua VM.
@@ -249,7 +365,7 @@ pub async fn inject_sushi_api(
                         ));
                     }
 
-                    let (title, context_table) = match opts {
+                    let (title, context_table, assets_table) = match opts {
                         Some(table) => {
                             let title = match table.get::<mlua::Value>("title")? {
                                 mlua::Value::Nil => template_name.clone(),
@@ -269,9 +385,18 @@ pub async fn inject_sushi_api(
                                     ))
                                 }
                             };
-                            (title, context)
+                            let assets = match table.get::<mlua::Value>("assets")? {
+                                mlua::Value::Nil => None,
+                                mlua::Value::Table(assets) => Some(parse_page_assets(lua, assets)?),
+                                _ => {
+                                    return Err(mlua::Error::RuntimeError(
+                                        "sushi.web.page opts.assets must be a table".to_string(),
+                                    ))
+                                }
+                            };
+                            (title, context, assets)
                         }
-                        None => (template_name.clone(), None),
+                        None => (template_name.clone(), None, None),
                     };
 
                     let json_ctx = build_web_context(lua, context_table, &page_prefix)?;
@@ -301,6 +426,9 @@ pub async fn inject_sushi_api(
                     entry.set("path", path)?;
                     entry.set("title", title)?;
                     entry.set("handler_key", handler_key)?;
+                    if let Some(assets) = assets_table {
+                        entry.set("assets", assets)?;
+                    }
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
                     Ok(())
@@ -786,6 +914,171 @@ mod tests {
         let handler: mlua::Function = handlers.get(handler_key).unwrap();
         let rendered: String = handler.call_async(()).await.unwrap();
         assert!(rendered.contains("Page Lua"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_accepts_assets_and_stores_entries() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        lua.load(
+            r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                title = "Asset Page",
+                assets = {
+                    bundles = { "workspace", "charts" },
+                    js = { "pages/workspace.js", "vendor/charts.js" },
+                    css = { "pages/workspace.css" }
+                }
+            })"#,
+        )
+        .exec()
+        .unwrap();
+
+        let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+        let pending: mlua::Table = sushi.get("__pending_pages").unwrap();
+        let entry: mlua::Table = pending.get(1).unwrap();
+        let assets: mlua::Table = entry.get("assets").unwrap();
+
+        let bundles: mlua::Table = assets.get("bundles").unwrap();
+        assert_eq!(bundles.get::<String>(1).unwrap(), "workspace");
+        assert_eq!(bundles.get::<String>(2).unwrap(), "charts");
+
+        let js: mlua::Table = assets.get("js").unwrap();
+        assert_eq!(js.get::<String>(1).unwrap(), "pages/workspace.js");
+        assert_eq!(js.get::<String>(2).unwrap(), "vendor/charts.js");
+
+        let css: mlua::Table = assets.get("css").unwrap();
+        assert_eq!(css.get::<String>(1).unwrap(), "pages/workspace.css");
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_rejects_invalid_asset_path() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                    assets = { js = { "../escape.js" } }
+                })"#,
+            )
+            .exec();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("safe relative paths"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_rejects_non_array_bundles() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                    assets = { bundles = { workspace = "main" } }
+                })"#,
+            )
+            .exec();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("assets.bundles must be an array of strings"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_rejects_non_string_js_element() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                    assets = { js = { "pages/workspace.js", 42 } }
+                })"#,
+            )
+            .exec();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("assets.js must be an array of strings"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_rejects_absolute_js_asset_path() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                    assets = { js = { "/absolute.js" } }
+                })"#,
+            )
+            .exec();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("safe relative paths"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_rejects_url_js_asset_path() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                    assets = { js = { "https://cdn.example.com/app.js" } }
+                })"#,
+            )
+            .exec();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("safe relative paths"));
+    }
+
+    #[tokio::test]
+    async fn test_lua_web_page_rejects_whitespace_js_asset_path() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.admin = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.web.page("/admin/assets", "admin/page.html", {
+                    assets = { js = { "   " } }
+                })"#,
+            )
+            .exec();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("safe relative paths"));
     }
 
     #[tokio::test]

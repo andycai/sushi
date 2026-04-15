@@ -1,8 +1,10 @@
 use crate::context::SushiContext;
 use crate::lua::bindings::inject_sushi_api;
 use crate::lua::vm::create_sandboxed_vm;
+use crate::plugin::manager::PageResolvedAssets;
 use crate::plugin::{Plugin, PluginError, PluginManifest};
 use async_trait::async_trait;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// A Lua-based plugin loaded from the filesystem.
@@ -72,6 +74,234 @@ impl LuaPlugin {
     pub fn into_vm(self) -> Option<mlua::Lua> {
         self.lua
     }
+}
+
+fn normalize_static_url_prefix(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "/static".to_string();
+    }
+
+    let mut prefix = if trimmed.starts_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("/{trimmed}")
+    };
+
+    if prefix.len() > 1 {
+        prefix = prefix.trim_end_matches('/').to_string();
+    }
+
+    if prefix == "/" {
+        return "/static".to_string();
+    }
+
+    prefix
+}
+
+fn parse_optional_string_array(
+    entry: &mlua::Table,
+    field: &str,
+) -> Result<Vec<String>, PluginError> {
+    match entry
+        .get::<mlua::Value>(field)
+        .map_err(|e| PluginError::InitFailed(format!("invalid page assets.{field}: {e}")))?
+    {
+        mlua::Value::Nil => Ok(Vec::new()),
+        mlua::Value::Table(values) => {
+            let len = values.raw_len();
+            let mut entries = 0usize;
+            for pair in values.pairs::<mlua::Value, mlua::Value>() {
+                let (key, _) = pair.map_err(|e| {
+                    PluginError::InitFailed(format!("invalid page assets.{field} keys: {e}"))
+                })?;
+                entries += 1;
+                match key {
+                    mlua::Value::Integer(index) if index >= 1 && (index as usize) <= len => {}
+                    _ => {
+                        return Err(PluginError::InitFailed(format!(
+                            "page assets.{field} must be an array of strings"
+                        )))
+                    }
+                }
+            }
+            if entries != len {
+                return Err(PluginError::InitFailed(format!(
+                    "page assets.{field} must be an array of strings"
+                )));
+            }
+
+            let mut out = Vec::with_capacity(len);
+            for index in 1..=len {
+                let value = values.get::<mlua::Value>(index).map_err(|e| {
+                    PluginError::InitFailed(format!(
+                        "invalid page assets.{field}[{index}] value: {e}"
+                    ))
+                })?;
+                let item = match value {
+                    mlua::Value::String(item) => item
+                        .to_str()
+                        .map_err(|e| {
+                            PluginError::InitFailed(format!(
+                                "invalid utf-8 in page assets.{field}[{index}]: {e}"
+                            ))
+                        })?
+                        .to_string(),
+                    _ => {
+                        return Err(PluginError::InitFailed(format!(
+                            "page assets.{field} entries must be strings"
+                        )))
+                    }
+                };
+                out.push(item);
+            }
+            Ok(out)
+        }
+        _ => Err(PluginError::InitFailed(format!(
+            "page assets.{field} must be an array of strings"
+        ))),
+    }
+}
+
+fn parse_page_assets_entry(
+    entry: &mlua::Table,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>), PluginError> {
+    let assets_value = entry
+        .get::<mlua::Value>("assets")
+        .map_err(|e| PluginError::InitFailed(format!("invalid page assets field: {e}")))?;
+    let mlua::Value::Table(assets) = assets_value else {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    };
+
+    let bundles = parse_optional_string_array(&assets, "bundles")?;
+    let js = parse_optional_string_array(&assets, "js")?;
+    let css = parse_optional_string_array(&assets, "css")?;
+
+    Ok((bundles, js, css))
+}
+
+fn validate_resolvable_relative_path(path: &str, field: &str) -> Result<(), PluginError> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(PluginError::InitFailed(format!(
+            "invalid assets.{field} path: empty value"
+        )));
+    }
+    if Path::new(trimmed).is_absolute() {
+        return Err(PluginError::InitFailed(format!(
+            "invalid assets.{field} path '{trimmed}': absolute paths are not allowed"
+        )));
+    }
+    if trimmed.contains("..") {
+        return Err(PluginError::InitFailed(format!(
+            "invalid assets.{field} path '{trimmed}': parent directory segments are not allowed"
+        )));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") || trimmed.starts_with("//") {
+        return Err(PluginError::InitFailed(format!(
+            "invalid assets.{field} path '{trimmed}': URL values are not allowed"
+        )));
+    }
+    Ok(())
+}
+
+fn push_resolved_assets(
+    plugin_name: &str,
+    static_url_prefix: &str,
+    static_root: &Path,
+    source_paths: &[String],
+    field: &str,
+    target: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) -> Result<(), PluginError> {
+    for path in source_paths {
+        let normalized_path = path.trim().to_string();
+        validate_resolvable_relative_path(&normalized_path, field)?;
+        if !seen.insert(normalized_path.clone()) {
+            continue;
+        }
+
+        let file_path = static_root.join(&normalized_path);
+        if !file_path.is_file() {
+            return Err(PluginError::InitFailed(format!(
+                "missing plugin asset file '{}'",
+                file_path.display()
+            )));
+        }
+
+        target.push(format!(
+            "{static_url_prefix}/plugins/{plugin_name}/{}",
+            normalized_path
+        ));
+    }
+
+    Ok(())
+}
+
+fn resolve_page_assets(
+    plugin_name: &str,
+    manifest: &PluginManifest,
+    bundle_names: &[String],
+    page_js: &[String],
+    page_css: &[String],
+    static_root: &Path,
+    static_url_prefix: &str,
+) -> Result<PageResolvedAssets, PluginError> {
+    let mut resolved = PageResolvedAssets::default();
+    let mut seen_js = HashSet::new();
+    let mut seen_css = HashSet::new();
+
+    for bundle_name in bundle_names {
+        let bundle = manifest
+            .admin
+            .as_ref()
+            .and_then(|admin| admin.assets.as_ref())
+            .and_then(|assets| assets.bundles.get(bundle_name))
+            .ok_or_else(|| {
+                PluginError::InitFailed(format!("unknown page asset bundle: {bundle_name}"))
+            })?;
+
+        push_resolved_assets(
+            plugin_name,
+            static_url_prefix,
+            static_root,
+            &bundle.js,
+            "js",
+            &mut resolved.js,
+            &mut seen_js,
+        )?;
+        push_resolved_assets(
+            plugin_name,
+            static_url_prefix,
+            static_root,
+            &bundle.css,
+            "css",
+            &mut resolved.css,
+            &mut seen_css,
+        )?;
+    }
+
+    push_resolved_assets(
+        plugin_name,
+        static_url_prefix,
+        static_root,
+        page_js,
+        "js",
+        &mut resolved.js,
+        &mut seen_js,
+    )?;
+    push_resolved_assets(
+        plugin_name,
+        static_url_prefix,
+        static_root,
+        page_css,
+        "css",
+        &mut resolved.css,
+        &mut seen_css,
+    )?;
+
+    Ok(resolved)
 }
 
 #[async_trait]
@@ -181,14 +411,35 @@ impl Plugin for LuaPlugin {
 
         // Read pending pages, register with PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_pages") {
+            let static_prefix = {
+                let cfg = ctx.config.get().await;
+                normalize_static_url_prefix(&cfg.web.static_url_prefix)
+            };
+            let plugin_static_root = self.web_static_dir();
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
                     let path: String = entry.get("path").unwrap_or_default();
                     let title: String = entry.get("title").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
+                    let (bundle_names, page_js, page_css) = parse_page_assets_entry(&entry)?;
+                    let assets = resolve_page_assets(
+                        plugin_name,
+                        &self.manifest,
+                        &bundle_names,
+                        &page_js,
+                        &page_css,
+                        &plugin_static_root,
+                        &static_prefix,
+                    )?;
                     ctx.plugins
-                        .register_admin_handler(&path, plugin_name, &title, &handler_key)
+                        .register_admin_handler_with_assets(
+                            &path,
+                            plugin_name,
+                            &title,
+                            &handler_key,
+                            assets,
+                        )
                         .await;
                     tracing::debug!(
                         "plugin {} registered page {} ({}) (handler: {})",
@@ -220,6 +471,7 @@ mod tests {
     use super::*;
     use crate::auth::jwt::JwtService;
     use crate::config::ConfigStore;
+    use crate::plugin::PluginManifest;
     use crate::storage::sqlite::SqliteStorage;
     use crate::web::template_service::TemplateService;
     use std::ops::Deref;
@@ -250,6 +502,25 @@ mod tests {
             ctx: SushiContext::new(config, db, jwt, templates),
             _templates_dir: templates_dir,
         }
+    }
+
+    fn resolve_page_assets_for_test(
+        plugin_name: &str,
+        manifest: &PluginManifest,
+        bundle_names: &[String],
+        page_js: &[String],
+        page_css: &[String],
+        static_root: &Path,
+    ) -> Result<PageResolvedAssets, PluginError> {
+        resolve_page_assets(
+            plugin_name,
+            manifest,
+            bundle_names,
+            page_js,
+            page_css,
+            static_root,
+            "/static",
+        )
     }
 
     fn create_plugin_dir(parent: &Path, name: &str) -> PathBuf {
@@ -313,6 +584,26 @@ end)
         assert!(static_source.contains("kvPage"));
         assert!(!static_source.contains("http://"));
         assert!(!static_source.contains("https://"));
+    }
+
+    #[test]
+    fn kv_store_plugin_declares_admin_asset_bundles() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/plugin.toml");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("[admin.assets.bundles.workspace]"));
+        assert!(source.contains("js = [\"kv.js\"]"));
+    }
+
+    #[test]
+    fn kv_store_registration_uses_page_assets_option() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/kv-store/init.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("assets = {"));
+        assert!(source.contains("bundles = { \"workspace\" }"));
     }
 
     #[test]
@@ -387,9 +678,9 @@ end)
         assert!(source.contains(
             "sushi.api.route(\"DELETE\", \"/api/kv/*\", kv.interfaces.api.delete_dispatch)"
         ));
-        assert!(source.contains(
-            "sushi.web.page(\"/admin/kv\", \"plugins/kv-store/kv.html\", { title = \"KV Store\" })"
-        ));
+        assert!(source.contains("sushi.web.page(\"/admin/kv\", \"plugins/kv-store/kv.html\", {"));
+        assert!(source.contains("assets = { bundles = { \"workspace\" } }"));
+        assert!(source.contains("title = \"KV Store\""));
         assert!(source.contains(
             "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", kv.interfaces.cli.kv_set)"
         ));
@@ -475,5 +766,87 @@ end
 
         let result = LuaPlugin::scan_dir(tmp.path()).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn page_assets_resolve_bundle_then_page_assets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin_dir = tmp.path().join("asset_plugin");
+        std::fs::create_dir_all(plugin_dir.join("web/static/pages")).unwrap();
+        std::fs::write(plugin_dir.join("web/static/kv.js"), "console.log('kv')").unwrap();
+        std::fs::write(
+            plugin_dir.join("web/static/pages/extra.js"),
+            "console.log('extra')",
+        )
+        .unwrap();
+
+        let manifest: PluginManifest = toml::from_str(
+            r#"
+[plugin]
+name = "asset_plugin"
+version = "0.1.0"
+entry = "init.lua"
+
+[permissions]
+admin = true
+
+[admin.assets.bundles.workspace]
+js = ["kv.js"]
+"#,
+        )
+        .unwrap();
+
+        let resolved = resolve_page_assets_for_test(
+            "asset_plugin",
+            &manifest,
+            &["workspace".to_string()],
+            &["pages/extra.js".to_string()],
+            &[],
+            &plugin_dir.join("web/static"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolved.js,
+            vec![
+                "/static/plugins/asset_plugin/kv.js".to_string(),
+                "/static/plugins/asset_plugin/pages/extra.js".to_string()
+            ]
+        );
+        assert!(resolved.css.is_empty());
+    }
+
+    #[tokio::test]
+    async fn page_assets_fail_when_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plugin_dir = tmp.path().join("asset_plugin");
+        std::fs::create_dir_all(plugin_dir.join("web/static")).unwrap();
+
+        let manifest: PluginManifest = toml::from_str(
+            r#"
+[plugin]
+name = "asset_plugin"
+version = "0.1.0"
+entry = "init.lua"
+
+[permissions]
+admin = true
+
+[admin.assets.bundles.workspace]
+js = ["missing.js"]
+"#,
+        )
+        .unwrap();
+
+        let err = resolve_page_assets_for_test(
+            "asset_plugin",
+            &manifest,
+            &["workspace".to_string()],
+            &[],
+            &[],
+            &plugin_dir.join("web/static"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("missing.js"));
     }
 }

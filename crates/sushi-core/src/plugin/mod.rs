@@ -2,6 +2,7 @@ pub mod manager;
 
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::context::SushiContext;
@@ -34,6 +35,28 @@ pub struct PluginManifest {
     pub plugin: PluginMeta,
     #[serde(default)]
     pub permissions: Permissions,
+    #[serde(default)]
+    pub admin: Option<PluginAdminConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginAdminConfig {
+    #[serde(default)]
+    pub assets: Option<PluginAdminAssetsConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginAdminAssetsConfig {
+    #[serde(default)]
+    pub bundles: BTreeMap<String, PluginAssetBundle>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginAssetBundle {
+    #[serde(default)]
+    pub js: Vec<String>,
+    #[serde(default)]
+    pub css: Vec<String>,
 }
 
 impl Default for PluginManifest {
@@ -46,6 +69,7 @@ impl Default for PluginManifest {
                 entry: "init.lua".to_string(),
             },
             permissions: Permissions::default(),
+            admin: None,
         }
     }
 }
@@ -214,6 +238,7 @@ database = "write"
         let manifest = PluginManifest::default();
         assert_eq!(manifest.plugin.entry, "init.lua");
         assert_eq!(manifest.permissions.database, DatabasePermission::None);
+        assert!(manifest.admin.is_none());
     }
 
     #[test]
@@ -242,5 +267,40 @@ database = false
 "#;
         let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
         assert_eq!(manifest.permissions.database, DatabasePermission::None);
+    }
+
+    #[test]
+    fn test_parse_plugin_manifest_admin_asset_bundles() {
+        let toml_str = r#"
+[plugin]
+name = "admin_assets"
+version = "0.1.0"
+entry = "init.lua"
+
+[permissions]
+admin = true
+
+[admin.assets.bundles.workspace]
+js = ["pages/workspace.js", "vendor/charts.js"]
+css = ["pages/workspace.css"]
+"#;
+
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.plugin.name, "admin_assets");
+        assert!(manifest.permissions.admin);
+        let admin = manifest.admin.expect("expected admin config");
+        let assets = admin.assets.expect("expected admin assets config");
+        let workspace = assets
+            .bundles
+            .get("workspace")
+            .expect("expected workspace bundle");
+        assert_eq!(
+            workspace.js,
+            vec![
+                "pages/workspace.js".to_string(),
+                "vendor/charts.js".to_string()
+            ]
+        );
+        assert_eq!(workspace.css, vec!["pages/workspace.css".to_string()]);
     }
 }

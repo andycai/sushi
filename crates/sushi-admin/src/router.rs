@@ -14,6 +14,7 @@ use std::sync::Arc;
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::context::SushiContext;
+use sushi_core::plugin::manager::PageResolvedAssets;
 use sushi_core::storage::Storage;
 use tower_http::services::ServeDir;
 
@@ -73,6 +74,10 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route(
             "/admin/workspace/{*module}",
             get(workspace::workspace_partial),
+        )
+        .route(
+            "/admin/api/workspace/assets",
+            get(workspace::workspace_assets_api),
         )
         .route("/admin/plugins", get(plugins::plugins_page))
         .route(
@@ -155,6 +160,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin",
         "/admin/",
         "/admin/workspace/{*module}",
+        "/admin/api/workspace/assets",
         "/admin/plugins",
         "/admin/plugins/{plugin}",
         "/admin/system",
@@ -206,7 +212,11 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             &page_path,
             get(move || async move {
                 match pm.call_admin_handler(&path).await {
-                    Some(Ok(html)) => axum::response::Html(html).into_response(),
+                    Some(Ok(html)) => {
+                        let assets = pm.admin_page_assets(&path).await.unwrap_or_default();
+                        let html_with_assets = append_assets_to_html_response(&html, &assets);
+                        axum::response::Html(html_with_assets).into_response()
+                    }
                     Some(Err(e)) => {
                         let message = format!("plugin runtime error on admin page {path}: {e}");
                         tracing::error!("{message}");
@@ -348,6 +358,7 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
         ("GET", "/admin/partials/plugins/table"),
         ("GET", "/admin/api/plugins"),
         ("GET", "/admin/api/plugins/{plugin}/pages"),
+        ("GET", "/admin/api/workspace/assets"),
         ("GET", "/admin/menus"),
         ("GET", "/admin/partials/menus/table"),
         ("GET", "/admin/api/menu"),
@@ -395,6 +406,7 @@ fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
             }
             _ if admin_path_matches(path, "/admin/plugins/{plugin}") => "plugins.view",
             _ if admin_path_matches(path, "/admin/api/plugins/{plugin}/pages") => "plugins.view",
+            "/admin/api/workspace/assets" => "plugins.view",
             "/admin/menus" | "/admin/partials/menus/table" | "/admin/api/menu" => "menus.view",
             "/admin/users" | "/admin/partials/users/table" => "users.view",
             "/admin/roles" | "/admin/partials/roles/table" => "roles.view",
@@ -456,6 +468,42 @@ fn is_plugin_workspace_root_path(path: &str) -> bool {
         .filter(|segment| !segment.is_empty())
         .collect::<Vec<_>>();
     segments.len() == 3 && segments[0] == "admin" && segments[1] == "plugins"
+}
+
+fn append_assets_to_html_response(html: &str, assets: &PageResolvedAssets) -> String {
+    if assets.js.is_empty() && assets.css.is_empty() {
+        return html.to_string();
+    }
+
+    let mut tags = String::new();
+    for css in &assets.css {
+        tags.push_str(&format!(
+            "<link rel=\"stylesheet\" href=\"{}\" data-admin-asset-css=\"{}\">",
+            html_escape_attr(css),
+            html_escape_attr(css)
+        ));
+    }
+    for js in &assets.js {
+        tags.push_str(&format!(
+            "<script src=\"{}\" data-admin-asset-js=\"{}\" data-admin-asset-loaded=\"true\"></script>",
+            html_escape_attr(js),
+            html_escape_attr(js)
+        ));
+    }
+
+    if html.contains("</body>") {
+        return html.replacen("</body>", &format!("{tags}</body>"), 1);
+    }
+
+    format!("{html}{tags}")
+}
+
+fn html_escape_attr(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn matches_static_prefix(path: &str, prefix: &str) -> bool {

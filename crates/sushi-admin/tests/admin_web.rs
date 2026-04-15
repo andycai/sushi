@@ -11,6 +11,7 @@ use sushi_admin::router::build_admin_router;
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
+use sushi_core::plugin::manager::PageResolvedAssets;
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::web::template_service::TemplateService;
 use tower::ServiceExt;
@@ -231,6 +232,24 @@ fn assert_no_external_assets_in_html(source: &str, html: &str) {
     }
 }
 
+fn directory_has_files(dir: &Path) -> bool {
+    if !dir.exists() {
+        return false;
+    }
+    for entry in dir.read_dir().expect("failed to read directory") {
+        let entry = entry.expect("failed to read directory entry");
+        let path = entry.path();
+        if path.is_dir() {
+            if directory_has_files(&path) {
+                return true;
+            }
+        } else {
+            return true;
+        }
+    }
+    false
+}
+
 async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
     let templates_dir = templates_root();
     let static_dir = static_root();
@@ -316,6 +335,57 @@ async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Pat
     build_admin_router(&ctx).await
 }
 
+async fn build_app_with_plugin_page_assets(
+    page_path: &str,
+    assets: PageResolvedAssets,
+) -> axum::Router {
+    let templates_dir = templates_root();
+    let static_dir = static_root();
+
+    let mut config = SushiConfig::default();
+    config.web.templates_dir = templates_dir.to_string_lossy().to_string();
+    config.web.static_dir = static_dir.to_string_lossy().to_string();
+
+    let config = ConfigStore::new(config);
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .run_migrations(KV_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 004_menu");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+    let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
+
+    let ctx = SushiContext::new(config, storage, jwt, templates);
+    ctx.plugins
+        .register_admin_handler_with_assets(
+            page_path,
+            "kv-store",
+            "KV Store",
+            "missing-handler",
+            assets,
+        )
+        .await;
+    build_admin_router(&ctx).await
+}
+
 async fn build_app_with_legacy_menu_table() -> axum::Router {
     let templates_dir = templates_root();
     let static_dir = static_root();
@@ -353,6 +423,77 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     build_admin_router(&ctx).await
+}
+
+#[test]
+fn base_template_has_no_plugin_specific_module_mappings() {
+    let base = templates_root().join("base.html");
+    let html = fs::read_to_string(&base).expect("failed to read base template");
+
+    assert!(!html.contains("/plugins/kv-store/kv.js"));
+    assert!(!html.contains("kv:"));
+}
+
+#[test]
+fn legacy_global_plugin_asset_dirs_have_no_files() {
+    let root = workspace_root();
+    let legacy_template_dir = root.join("web/templates/plugins");
+    let legacy_static_dir = root.join("web/static/plugins");
+
+    assert!(
+        !directory_has_files(&legacy_template_dir),
+        "legacy template plugin directory must be empty"
+    );
+    assert!(
+        !directory_has_files(&legacy_static_dir),
+        "legacy static plugin directory must be empty"
+    );
+}
+
+#[tokio::test]
+async fn workspace_assets_api_returns_plugin_assets_for_page_path() {
+    let app = build_app_with_plugin_page_assets(
+        "/admin/kv",
+        PageResolvedAssets {
+            js: vec!["/static/plugins/kv-store/kv.js".to_string()],
+            css: vec!["/static/plugins/kv-store/kv.css".to_string()],
+        },
+    )
+    .await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/workspace/assets?path=/admin/kv")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", admin_bearer_token()),
+                )
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    assert_eq!(
+        payload
+            .get("js")
+            .and_then(|value| value.as_array())
+            .map(|arr| arr.len()),
+        Some(1)
+    );
+    assert_eq!(
+        payload
+            .get("css")
+            .and_then(|value| value.as_array())
+            .map(|arr| arr.len()),
+        Some(1)
+    );
 }
 
 fn admin_bearer_token() -> String {

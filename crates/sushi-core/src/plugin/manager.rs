@@ -29,11 +29,18 @@ pub struct PluginAdminPageInfo {
     pub title: String,
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize, PartialEq, Eq)]
+pub struct PageResolvedAssets {
+    pub js: Vec<String>,
+    pub css: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 struct AdminHandlerBinding {
     plugin_name: String,
     handler_key: String,
     title: String,
+    assets: PageResolvedAssets,
 }
 
 /// Manages loaded Lua plugin VMs and dispatches handler calls.
@@ -153,12 +160,32 @@ impl PluginManager {
         title: &str,
         handler_key: &str,
     ) {
+        self.register_admin_handler_with_assets(
+            page_path,
+            plugin_name,
+            title,
+            handler_key,
+            PageResolvedAssets::default(),
+        )
+        .await;
+    }
+
+    /// Register an admin page handler and resolved page assets.
+    pub async fn register_admin_handler_with_assets(
+        &self,
+        page_path: &str,
+        plugin_name: &str,
+        title: &str,
+        handler_key: &str,
+        assets: PageResolvedAssets,
+    ) {
         self.admin_handlers.write().await.insert(
             page_path.to_string(),
             AdminHandlerBinding {
                 plugin_name: plugin_name.to_string(),
                 handler_key: handler_key.to_string(),
                 title: title.to_string(),
+                assets,
             },
         );
     }
@@ -280,6 +307,15 @@ impl PluginManager {
         pages
     }
 
+    /// Get resolved JS/CSS assets for a registered admin page.
+    pub async fn admin_page_assets(&self, page_path: &str) -> Option<PageResolvedAssets> {
+        self.admin_handlers
+            .read()
+            .await
+            .get(page_path)
+            .map(|binding| binding.assets.clone())
+    }
+
     /// Register plugin-scoped static assets root (`plugins/<name>/web/static`).
     pub async fn register_plugin_static_root(&self, plugin_name: &str, static_root: PathBuf) {
         self.plugin_static_roots
@@ -399,6 +435,7 @@ mod tests {
                 admin: true,
                 database: DatabasePermission::Write,
             },
+            admin: None,
         };
 
         manager.register_plugin_manifest(&manifest).await;
@@ -421,6 +458,7 @@ mod tests {
                 entry: "init.lua".to_string(),
             },
             permissions: Permissions::default(),
+            admin: None,
         };
         manager.register_plugin_manifest(&manifest).await;
 
@@ -455,6 +493,37 @@ mod tests {
         assert_eq!(pages[0].plugin, "kv-store");
         assert_eq!(pages[0].title, "KV Store");
         assert_eq!(pages[1].title, "KV Store Workspace");
+    }
+
+    #[tokio::test]
+    async fn admin_page_assets_are_stored_and_returned() {
+        let manager = PluginManager::new();
+        manager
+            .register_admin_handler_with_assets(
+                "/admin/plugins/kv-store",
+                "kv-store",
+                "KV Store Workspace",
+                "handler::workspace",
+                PageResolvedAssets {
+                    js: vec!["/static/plugins/kv-store/kv.js".to_string()],
+                    css: vec!["/static/plugins/kv-store/kv.css".to_string()],
+                },
+            )
+            .await;
+
+        let assets = manager
+            .admin_page_assets("/admin/plugins/kv-store")
+            .await
+            .expect("expected assets for registered page");
+
+        assert_eq!(
+            assets.js,
+            vec!["/static/plugins/kv-store/kv.js".to_string()]
+        );
+        assert_eq!(
+            assets.css,
+            vec!["/static/plugins/kv-store/kv.css".to_string()]
+        );
     }
 
     #[tokio::test]

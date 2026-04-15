@@ -1,8 +1,11 @@
 (() => {
   const state = {
     moduleScripts: {},
-    loaded: new Set(),
-    loading: new Map(),
+    loadedModules: new Set(),
+    loadingModules: new Map(),
+    loadedAssets: new Set(),
+    loadingAssets: new Map(),
+    pathAssetCache: new Map(),
   };
 
   function normalizeModule(raw) {
@@ -60,7 +63,7 @@
     nodes.forEach((node) => {
       const key = normalizeModule(node.dataset.adminModule || '');
       if (key) {
-        state.loaded.add(key);
+        state.loadedModules.add(key);
       }
     });
   }
@@ -81,7 +84,7 @@
   function markLoaded(moduleName) {
     const key = normalizeModule(moduleName);
     if (key) {
-      state.loaded.add(key);
+      state.loadedModules.add(key);
     }
   }
 
@@ -91,7 +94,7 @@
       return Promise.resolve(false);
     }
 
-    if (state.loaded.has(key)) {
+    if (state.loadedModules.has(key)) {
       return Promise.resolve(true);
     }
 
@@ -100,21 +103,21 @@
       return Promise.resolve(false);
     }
 
-    if (state.loading.has(key)) {
-      return state.loading.get(key);
+    if (state.loadingModules.has(key)) {
+      return state.loadingModules.get(key);
     }
 
     const existing = document.querySelector(`script[data-admin-module="${key}"]`);
     if (existing) {
       if (existing.dataset.adminModuleLoaded === 'true') {
-        state.loaded.add(key);
+        state.loadedModules.add(key);
         return Promise.resolve(true);
       }
 
       const reusedPromise = new Promise((resolve, reject) => {
         const onLoad = () => {
           existing.dataset.adminModuleLoaded = 'true';
-          state.loaded.add(key);
+          state.loadedModules.add(key);
           resolve(true);
         };
         const onError = () => {
@@ -122,9 +125,9 @@
         };
         existing.addEventListener('load', onLoad, { once: true });
         existing.addEventListener('error', onError, { once: true });
-      }).finally(() => state.loading.delete(key));
+      }).finally(() => state.loadingModules.delete(key));
 
-      state.loading.set(key, reusedPromise);
+      state.loadingModules.set(key, reusedPromise);
       return reusedPromise;
     }
 
@@ -138,7 +141,7 @@
         'load',
         () => {
           script.dataset.adminModuleLoaded = 'true';
-          state.loaded.add(key);
+          state.loadedModules.add(key);
           resolve(true);
         },
         { once: true },
@@ -148,15 +151,178 @@
         () => reject(new Error(`failed to load module script: ${key}`)),
         { once: true },
       );
-    }).finally(() => state.loading.delete(key));
+    }).finally(() => state.loadingModules.delete(key));
 
-    state.loading.set(key, promise);
+    state.loadingModules.set(key, promise);
     document.body.appendChild(script);
     return promise;
   }
 
+  function sanitizeAssetList(value) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+
+  function assetKey(kind, assetUrl) {
+    return `${kind}:${assetUrl}`;
+  }
+
+  function fetchAssetsForPath(path) {
+    const normalizedPath = normalizePath(path);
+    if (!normalizedPath) {
+      return Promise.resolve({ js: [], css: [] });
+    }
+
+    if (state.pathAssetCache.has(normalizedPath)) {
+      return Promise.resolve(state.pathAssetCache.get(normalizedPath));
+    }
+
+    return fetch(
+      `/admin/api/workspace/assets?path=${encodeURIComponent(normalizedPath)}`,
+      {
+        headers: {
+          Accept: 'application/json',
+        },
+      },
+    )
+      .then((resp) => {
+        if (!resp.ok) {
+          return { js: [], css: [] };
+        }
+        return resp.json().catch(() => ({ js: [], css: [] }));
+      })
+      .then((payload) => {
+        const normalized = {
+          js: sanitizeAssetList(payload && payload.js),
+          css: sanitizeAssetList(payload && payload.css),
+        };
+        state.pathAssetCache.set(normalizedPath, normalized);
+        return normalized;
+      })
+      .catch(() => ({ js: [], css: [] }));
+  }
+
+  function loadCss(assetUrl) {
+    const key = assetKey('css', assetUrl);
+    if (state.loadedAssets.has(key)) {
+      return Promise.resolve(true);
+    }
+    if (state.loadingAssets.has(key)) {
+      return state.loadingAssets.get(key);
+    }
+
+    const existing = document.querySelector(`link[data-admin-asset-css="${assetUrl}"]`);
+    if (existing) {
+      state.loadedAssets.add(key);
+      return Promise.resolve(true);
+    }
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = assetUrl;
+    link.dataset.adminAssetCss = assetUrl;
+
+    const promise = new Promise((resolve, reject) => {
+      link.addEventListener(
+        'load',
+        () => {
+          state.loadedAssets.add(key);
+          resolve(true);
+        },
+        { once: true },
+      );
+      link.addEventListener(
+        'error',
+        () => reject(new Error(`failed to load css asset: ${assetUrl}`)),
+        { once: true },
+      );
+    }).finally(() => state.loadingAssets.delete(key));
+
+    state.loadingAssets.set(key, promise);
+    document.head.appendChild(link);
+    return promise;
+  }
+
+  function loadJs(assetUrl) {
+    const key = assetKey('js', assetUrl);
+    if (state.loadedAssets.has(key)) {
+      return Promise.resolve(true);
+    }
+    if (state.loadingAssets.has(key)) {
+      return state.loadingAssets.get(key);
+    }
+
+    const existing = document.querySelector(`script[data-admin-asset-js="${assetUrl}"]`);
+    if (existing) {
+      if (existing.dataset.adminAssetLoaded === 'true') {
+        state.loadedAssets.add(key);
+        return Promise.resolve(true);
+      }
+
+      const reusedPromise = new Promise((resolve, reject) => {
+        const onLoad = () => {
+          existing.dataset.adminAssetLoaded = 'true';
+          state.loadedAssets.add(key);
+          resolve(true);
+        };
+        const onError = () => reject(new Error(`failed to load js asset: ${assetUrl}`));
+        existing.addEventListener('load', onLoad, { once: true });
+        existing.addEventListener('error', onError, { once: true });
+      }).finally(() => state.loadingAssets.delete(key));
+
+      state.loadingAssets.set(key, reusedPromise);
+      return reusedPromise;
+    }
+
+    const script = document.createElement('script');
+    script.src = assetUrl;
+    script.async = false;
+    script.dataset.adminAssetJs = assetUrl;
+
+    const promise = new Promise((resolve, reject) => {
+      script.addEventListener(
+        'load',
+        () => {
+          script.dataset.adminAssetLoaded = 'true';
+          state.loadedAssets.add(key);
+          resolve(true);
+        },
+        { once: true },
+      );
+      script.addEventListener(
+        'error',
+        () => reject(new Error(`failed to load js asset: ${assetUrl}`)),
+        { once: true },
+      );
+    }).finally(() => state.loadingAssets.delete(key));
+
+    state.loadingAssets.set(key, promise);
+    document.body.appendChild(script);
+    return promise;
+  }
+
+  async function loadAssetsForPath(path) {
+    const assets = await fetchAssetsForPath(path);
+
+    for (const cssUrl of assets.css) {
+      await loadCss(cssUrl);
+    }
+
+    for (const jsUrl of assets.js) {
+      await loadJs(jsUrl);
+    }
+
+    return assets;
+  }
+
   function loadForPath(path) {
-    return loadModule(moduleFromPath(path));
+    return Promise.resolve()
+      .then(() => loadModule(moduleFromPath(path)))
+      .then(() => loadAssetsForPath(path));
   }
 
   registerFromDom();
@@ -165,6 +331,7 @@
     registerModules,
     markLoaded,
     loadModule,
+    loadAssetsForPath,
     loadForPath,
     moduleFromPath,
   };

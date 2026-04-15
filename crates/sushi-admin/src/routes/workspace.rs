@@ -1,8 +1,10 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use sushi_core::{auth::rbac::RbacRepository, context::SushiContext, storage::Storage};
 
@@ -48,6 +50,45 @@ fn module_to_admin_path(module: &str) -> Option<String> {
         return Some("/admin/".to_string());
     }
     Some(format!("/admin/{module}"))
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkspaceAssetsResponse {
+    pub js: Vec<String>,
+    pub css: Vec<String>,
+}
+
+pub async fn workspace_assets_api(
+    Query(query): Query<HashMap<String, String>>,
+    State(ctx): State<SushiContext>,
+) -> impl IntoResponse {
+    let Some(path) = query
+        .get("path")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "error": "missing path query parameter",
+            })),
+        )
+            .into_response();
+    };
+
+    let assets = ctx
+        .plugins
+        .admin_page_assets(path)
+        .await
+        .unwrap_or_default();
+    (
+        StatusCode::OK,
+        axum::Json(WorkspaceAssetsResponse {
+            js: assets.js,
+            css: assets.css,
+        }),
+    )
+        .into_response()
 }
 
 pub async fn workspace_partial(
