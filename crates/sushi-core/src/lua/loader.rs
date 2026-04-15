@@ -1,5 +1,6 @@
 use crate::context::SushiContext;
 use crate::lua::bindings::inject_sushi_api;
+use crate::lua::module_loader::install_plugin_require;
 use crate::lua::vm::create_sandboxed_vm;
 use crate::plugin::manager::PageResolvedAssets;
 use crate::plugin::{Permissions, Plugin, PluginError, PluginKind, PluginManifest};
@@ -401,6 +402,9 @@ impl Plugin for LuaPlugin {
         inject_sushi_api(lua, ctx, &self.effective_permissions)
             .await
             .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
+
+        install_plugin_require(lua, &self.plugin_dir)
+            .map_err(|e| PluginError::LuaError(format!("install plugin module loader: {e}")))?;
 
         // Load and execute the entry script
         let entry_path = self.plugin_dir.join(&self.manifest.plugin.entry);
