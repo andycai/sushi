@@ -100,6 +100,35 @@ fn base_template_uses_local_assets_only() {
 }
 
 #[test]
+fn base_template_uses_svg_favicon_only() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root missing");
+    let templates_dir = workspace_root.join("web").join("templates");
+
+    let svc = TemplateService::new(&templates_dir).unwrap();
+    let html = svc.render("base.html", serde_json::json!({})).unwrap();
+
+    assert!(
+        html.contains("rel=\"icon\""),
+        "base template should include favicon rel"
+    );
+    assert!(
+        html.contains("image/svg+xml"),
+        "base template should set svg favicon mime type"
+    );
+    assert!(
+        html.contains("favicon.svg"),
+        "base template should include svg favicon path"
+    );
+    assert!(
+        !html.contains("favicon.png"),
+        "base template should not reference favicon.png"
+    );
+}
+
+#[test]
 fn render_plugin_template_from_tiered_plugin_template_root() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
