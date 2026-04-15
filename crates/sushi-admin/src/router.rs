@@ -6,7 +6,7 @@ use axum::{
     extract::State,
     middleware::Next,
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, get_service, post},
     Router,
 };
 use std::collections::HashSet;
@@ -16,7 +16,7 @@ use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::PageResolvedAssets;
 use sushi_core::storage::Storage;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 /// Admin auth middleware state
 #[derive(Clone)]
@@ -57,11 +57,24 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         static_router = static_router.nest_service(&mount_path, ServeDir::new(plugin_static_root));
     }
     let static_router: Router<SushiContext> = static_router
-        .nest_service(&static_url_prefix, ServeDir::new(static_dir))
+        .nest_service(&static_url_prefix, ServeDir::new(&static_dir))
         .with_state(());
+
+    // Favicon routes - serve at root level for browser compatibility
+    // These must be added before auth middleware is applied
+    let favicon_router = Router::new()
+        .route(
+            "/favicon.ico",
+            get_service(ServeFile::new(format!("{static_dir}/favicon.svg"))),
+        )
+        .route(
+            "/favicon.svg",
+            get_service(ServeFile::new(format!("{static_dir}/favicon.svg"))),
+        );
 
     let mut router: Router<SushiContext> = Router::new()
         .merge(static_router)
+        .merge(favicon_router)
         .route(
             "/admin-login",
             get(login::login_page).post(login::login_submit),
@@ -263,6 +276,11 @@ async fn admin_auth_middleware(
 
     // Allow /admin-login (top-level) without auth — handled by login route
     if path == "/admin-login" {
+        return next.run(req).await;
+    }
+
+    // Allow favicon/favicon.ico without auth
+    if path == "/favicon.ico" || path == "/favicon.svg" || path == "/favicon.png" {
         return next.run(req).await;
     }
 
