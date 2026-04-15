@@ -2114,9 +2114,11 @@ async fn templates_and_ui_scripts_avoid_native_confirm_apis() {
 
 #[tokio::test]
 async fn kv_rows_template_uses_dataset_for_alpine_edit_action() {
-    let path = templates_root()
+    let path = workspace_root()
         .join("plugins")
         .join("kv-store")
+        .join("web")
+        .join("templates")
         .join("partials")
         .join("rows.html");
     let html = fs::read_to_string(&path)

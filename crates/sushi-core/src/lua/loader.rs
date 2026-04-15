@@ -294,7 +294,7 @@ end)
         assert!(plugin_source.contains("plugins/kv-store/kv.html"));
         assert!(plugin_source.contains("sushi.web.render(\"plugins/kv-store/partials/flash.html\""));
 
-        let template_path = repo_root.join("web/templates/plugins/kv-store/kv.html");
+        let template_path = repo_root.join("plugins/kv-store/web/templates/kv.html");
         assert!(template_path.exists());
         let template_source = std::fs::read_to_string(&template_path).unwrap();
         assert!(template_source.contains("{% extends \"base.html\" %}"));
@@ -302,12 +302,12 @@ end)
         assert!(!template_source.contains("https://"));
 
         let flash_template_path =
-            repo_root.join("web/templates/plugins/kv-store/partials/flash.html");
+            repo_root.join("plugins/kv-store/web/templates/partials/flash.html");
         assert!(flash_template_path.exists());
         let flash_template_source = std::fs::read_to_string(&flash_template_path).unwrap();
         assert!(flash_template_source.contains("class=\"ui-flash {{ tone }}\""));
 
-        let static_path = repo_root.join("web/static/plugins/kv-store/kv.js");
+        let static_path = repo_root.join("plugins/kv-store/web/static/kv.js");
         assert!(static_path.exists());
         let static_source = std::fs::read_to_string(&static_path).unwrap();
         assert!(static_source.contains("kvPage"));
