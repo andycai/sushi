@@ -30,13 +30,39 @@ pub enum PluginError {
 }
 
 /// Plugin manifest parsed from plugin.toml.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PluginManifest {
     pub plugin: PluginMeta,
-    #[serde(default)]
     pub permissions: Permissions,
-    #[serde(default)]
     pub admin: Option<PluginAdminConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginKind {
+    Official,
+    ThirdParty,
+}
+
+impl PluginKind {
+    pub fn tier_name(self) -> &'static str {
+        match self {
+            Self::Official => "official",
+            Self::ThirdParty => "third_party",
+        }
+    }
+
+    pub fn effective_permissions(self, declared: &Permissions) -> Permissions {
+        match self {
+            Self::Official => Permissions {
+                routes: true,
+                commands: true,
+                admin: true,
+                database: DatabasePermission::Admin,
+            },
+            Self::ThirdParty => declared.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -82,6 +108,56 @@ pub struct PluginMeta {
     pub description: String,
     #[serde(default = "default_entry")]
     pub entry: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PluginManifestRaw {
+    plugin: PluginMetaRaw,
+    #[serde(default)]
+    permissions: Permissions,
+    #[serde(default)]
+    admin: Option<PluginAdminConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PluginMetaRaw {
+    name: String,
+    version: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default = "default_entry")]
+    entry: String,
+    kind: PluginKind,
+}
+
+impl PluginManifest {
+    fn from_raw(raw: PluginManifestRaw) -> (Self, PluginKind) {
+        (
+            Self {
+                plugin: PluginMeta {
+                    name: raw.plugin.name,
+                    version: raw.plugin.version,
+                    description: raw.plugin.description,
+                    entry: raw.plugin.entry,
+                },
+                permissions: raw.permissions,
+                admin: raw.admin,
+            },
+            raw.plugin.kind,
+        )
+    }
+
+    pub fn parse_with_kind(input: &str) -> Result<(Self, PluginKind), toml::de::Error> {
+        let raw: PluginManifestRaw = toml::from_str(input)?;
+        Ok(Self::from_raw(raw))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PluginManifest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = PluginManifestRaw::deserialize(deserializer)?;
+        Ok(Self::from_raw(raw).0)
+    }
 }
 
 fn default_entry() -> String {
@@ -208,6 +284,7 @@ mod tests {
 [plugin]
 name = "test_plugin"
 version = "0.1.0"
+kind = "official"
 description = "A test plugin"
 entry = "init.lua"
 
@@ -247,6 +324,7 @@ database = "write"
 [plugin]
 name = "test"
 version = "0.1.0"
+kind = "third_party"
 
 [permissions]
 database = true
@@ -261,6 +339,7 @@ database = true
 [plugin]
 name = "test"
 version = "0.1.0"
+kind = "third_party"
 
 [permissions]
 database = false
@@ -275,6 +354,7 @@ database = false
 [plugin]
 name = "admin_assets"
 version = "0.1.0"
+kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -302,5 +382,55 @@ css = ["pages/workspace.css"]
             ]
         );
         assert_eq!(workspace.css, vec!["pages/workspace.css".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_plugin_manifest_kind() {
+        let toml_str = r#"
+[plugin]
+name = "official_plugin"
+version = "0.1.0"
+kind = "official"
+"#;
+
+        let (manifest, kind) = PluginManifest::parse_with_kind(toml_str).unwrap();
+        assert_eq!(manifest.plugin.name, "official_plugin");
+        assert_eq!(kind, PluginKind::Official);
+    }
+
+    #[test]
+    fn test_parse_plugin_manifest_requires_kind() {
+        let toml_str = r#"
+[plugin]
+name = "missing_kind"
+version = "0.1.0"
+"#;
+
+        let result = PluginManifest::parse_with_kind(toml_str);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_plugin_kind_effective_permissions() {
+        let declared = Permissions {
+            routes: false,
+            commands: false,
+            admin: false,
+            database: DatabasePermission::ReadOnly,
+        };
+
+        let official = PluginKind::Official.effective_permissions(&declared);
+        assert_eq!(
+            official,
+            Permissions {
+                routes: true,
+                commands: true,
+                admin: true,
+                database: DatabasePermission::Admin,
+            }
+        );
+
+        let third_party = PluginKind::ThirdParty.effective_permissions(&declared);
+        assert_eq!(third_party, declared);
     }
 }

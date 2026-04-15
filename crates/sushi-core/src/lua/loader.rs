@@ -2,7 +2,7 @@ use crate::context::SushiContext;
 use crate::lua::bindings::inject_sushi_api;
 use crate::lua::vm::create_sandboxed_vm;
 use crate::plugin::manager::PageResolvedAssets;
-use crate::plugin::{Plugin, PluginError, PluginManifest};
+use crate::plugin::{Permissions, Plugin, PluginError, PluginKind, PluginManifest};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -10,14 +10,18 @@ use std::path::{Path, PathBuf};
 /// A Lua-based plugin loaded from the filesystem.
 pub struct LuaPlugin {
     manifest: PluginManifest,
+    kind: PluginKind,
+    effective_permissions: Permissions,
     lua: Option<mlua::Lua>,
     plugin_dir: PathBuf,
+    plugin_path_id: String,
 }
 
 impl LuaPlugin {
-    /// Scan a directory for plugins. Returns one LuaPlugin per subdirectory with a plugin.toml.
+    /// Scan a directory for plugins in tiered official/third_party layout.
     pub async fn scan_dir(dir: &Path) -> Result<Vec<Self>, PluginError> {
         let mut plugins = Vec::new();
+        let mut legacy_dirs = Vec::new();
         let mut entries = tokio::fs::read_dir(dir)
             .await
             .map_err(PluginError::IoError)?;
@@ -28,30 +32,89 @@ impl LuaPlugin {
                 continue;
             }
 
-            let manifest_path = path.join("plugin.toml");
-            if !manifest_path.exists() {
+            let category_name = entry.file_name().to_string_lossy().to_string();
+            if category_name != "official" && category_name != "third_party" {
+                if path.join("plugin.toml").is_file() {
+                    legacy_dirs.push(path.display().to_string());
+                }
                 continue;
             }
 
-            let manifest_content =
-                tokio::fs::read_to_string(&manifest_path)
-                    .await
+            let expected_kind = if category_name == "official" {
+                PluginKind::Official
+            } else {
+                PluginKind::ThirdParty
+            };
+
+            let mut plugin_entries = tokio::fs::read_dir(&path)
+                .await
+                .map_err(PluginError::IoError)?;
+            while let Some(plugin_entry) = plugin_entries
+                .next_entry()
+                .await
+                .map_err(PluginError::IoError)?
+            {
+                let plugin_path = plugin_entry.path();
+                if !plugin_path.is_dir() {
+                    continue;
+                }
+
+                let manifest_path = plugin_path.join("plugin.toml");
+                if !manifest_path.exists() {
+                    continue;
+                }
+
+                let manifest_content =
+                    tokio::fs::read_to_string(&manifest_path)
+                        .await
+                        .map_err(|e| {
+                            PluginError::ManifestError(format!(
+                                "read {}: {e}",
+                                manifest_path.display()
+                            ))
+                        })?;
+                let (manifest, manifest_kind) = PluginManifest::parse_with_kind(&manifest_content)
                     .map_err(|e| {
-                        PluginError::ManifestError(format!("read {}: {e}", manifest_path.display()))
+                        PluginError::ManifestError(format!(
+                            "parse {}: {e}",
+                            manifest_path.display()
+                        ))
                     })?;
-            let manifest: PluginManifest = toml::from_str(&manifest_content).map_err(|e| {
-                PluginError::ManifestError(format!("parse {}: {e}", manifest_path.display()))
-            })?;
 
-            let lua = create_sandboxed_vm().map_err(|e| {
-                PluginError::LuaError(format!("create VM for {}: {e}", manifest.plugin.name))
-            })?;
+                if manifest_kind != expected_kind {
+                    return Err(PluginError::ManifestError(format!(
+                        "plugin '{}' kind '{}' does not match '{}' directory",
+                        manifest.plugin.name,
+                        manifest_kind.tier_name(),
+                        expected_kind.tier_name()
+                    )));
+                }
 
-            plugins.push(Self {
-                manifest,
-                lua: Some(lua),
-                plugin_dir: path,
-            });
+                let effective_permissions =
+                    manifest_kind.effective_permissions(&manifest.permissions);
+                let plugin_dir_name = plugin_entry.file_name().to_string_lossy().to_string();
+                let plugin_path_id = format!("{}/{}", expected_kind.tier_name(), plugin_dir_name);
+
+                let lua = create_sandboxed_vm().map_err(|e| {
+                    PluginError::LuaError(format!("create VM for {}: {e}", manifest.plugin.name))
+                })?;
+
+                plugins.push(Self {
+                    manifest,
+                    kind: manifest_kind,
+                    effective_permissions,
+                    lua: Some(lua),
+                    plugin_dir: plugin_path,
+                    plugin_path_id,
+                });
+            }
+        }
+
+        if !legacy_dirs.is_empty() {
+            return Err(PluginError::ManifestError(format!(
+                "legacy flat plugin directories are not supported; move these into plugins/official or plugins/third_party: {}",
+                legacy_dirs.join(", ")
+            )));
         }
 
         Ok(plugins)
@@ -59,6 +122,18 @@ impl LuaPlugin {
 
     pub fn manifest(&self) -> &PluginManifest {
         &self.manifest
+    }
+
+    pub fn kind(&self) -> PluginKind {
+        self.kind
+    }
+
+    pub fn path_id(&self) -> &str {
+        &self.plugin_path_id
+    }
+
+    pub fn effective_permissions(&self) -> &Permissions {
+        &self.effective_permissions
     }
 
     pub fn web_templates_dir(&self) -> PathBuf {
@@ -323,7 +398,7 @@ impl Plugin for LuaPlugin {
         })?;
 
         // Inject sushi.* API into the Lua VM
-        inject_sushi_api(lua, ctx, &self.manifest.permissions)
+        inject_sushi_api(lua, ctx, &self.effective_permissions)
             .await
             .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
 
@@ -523,8 +598,8 @@ mod tests {
         )
     }
 
-    fn create_plugin_dir(parent: &Path, name: &str) -> PathBuf {
-        let dir = parent.join(name);
+    fn create_plugin_dir(parent: &Path, category: &str, name: &str, kind: &str) -> PathBuf {
+        let dir = parent.join(category).join(name);
         std::fs::create_dir_all(&dir).unwrap();
 
         let manifest_content = format!(
@@ -532,6 +607,7 @@ mod tests {
 [plugin]
 name = "{name}"
 version = "0.1.0"
+kind = "{kind}"
 entry = "init.lua"
 
 [permissions]
@@ -691,18 +767,20 @@ end)
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
-        create_plugin_dir(tmp.path(), "my_plugin");
+        create_plugin_dir(tmp.path(), "official", "my_plugin", "official");
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].name(), "my_plugin");
         assert_eq!(plugins[0].version(), "0.1.0");
+        assert_eq!(plugins[0].path_id(), "official/my_plugin");
+        assert_eq!(plugins[0].kind(), PluginKind::Official);
     }
 
     #[tokio::test]
     async fn test_scan_dir_skips_dirs_without_manifest() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("no_manifest");
+        let dir = tmp.path().join("official").join("no_manifest");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("init.lua"), "print('hello')").unwrap();
 
@@ -711,9 +789,83 @@ end)
     }
 
     #[tokio::test]
+    async fn test_scan_dir_tiered_discovery_success() {
+        let tmp = TempDir::new().unwrap();
+        create_plugin_dir(tmp.path(), "official", "kv_store", "official");
+        create_plugin_dir(tmp.path(), "third_party", "notes", "third_party");
+
+        let mut plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        plugins.sort_by(|left, right| left.path_id().cmp(right.path_id()));
+
+        assert_eq!(plugins.len(), 2);
+        assert_eq!(plugins[0].path_id(), "official/kv_store");
+        assert_eq!(plugins[0].kind(), PluginKind::Official);
+        assert_eq!(
+            plugins[0].effective_permissions().database,
+            crate::plugin::DatabasePermission::Admin
+        );
+        assert_eq!(plugins[1].path_id(), "third_party/notes");
+        assert_eq!(plugins[1].kind(), PluginKind::ThirdParty);
+        assert_eq!(
+            plugins[1].effective_permissions().database,
+            crate::plugin::DatabasePermission::None
+        );
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_rejects_legacy_flat_plugin_directory() {
+        let tmp = TempDir::new().unwrap();
+        create_plugin_dir(tmp.path(), "official", "modern", "official");
+
+        let legacy = tmp.path().join("legacy_flat");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(
+            legacy.join("plugin.toml"),
+            r#"
+[plugin]
+name = "legacy_flat"
+version = "0.1.0"
+kind = "third_party"
+"#,
+        )
+        .unwrap();
+
+        let result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("legacy flat plugin directories"));
+        assert!(err.contains("legacy_flat"));
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_rejects_kind_category_mismatch() {
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("official").join("mismatch");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "mismatch"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+"#,
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), "sushi.log.info('hi')").unwrap();
+
+        let result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("does not match"));
+        assert!(err.contains("official"));
+    }
+
+    #[tokio::test]
     async fn test_lua_plugin_init_executes_entry_script() {
         let tmp = TempDir::new().unwrap();
-        create_plugin_dir(tmp.path(), "test_plugin");
+        create_plugin_dir(tmp.path(), "third_party", "test_plugin", "third_party");
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         let ctx = test_context().await;
@@ -725,7 +877,7 @@ end)
     #[tokio::test]
     async fn test_lua_plugin_init_calls_sushi_init() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("init_fn_plugin");
+        let dir = tmp.path().join("third_party").join("init_fn_plugin");
         std::fs::create_dir_all(&dir).unwrap();
 
         std::fs::write(
@@ -734,6 +886,7 @@ end)
 [plugin]
 name = "init_fn_plugin"
 version = "0.1.0"
+kind = "third_party"
 entry = "init.lua"
 "#,
         )
@@ -758,7 +911,7 @@ end
     #[tokio::test]
     async fn test_lua_plugin_init_bad_manifest() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().join("bad_plugin");
+        let dir = tmp.path().join("official").join("bad_plugin");
         std::fs::create_dir_all(&dir).unwrap();
 
         // Invalid TOML
@@ -785,6 +938,7 @@ end
 [plugin]
 name = "asset_plugin"
 version = "0.1.0"
+kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -827,6 +981,7 @@ js = ["kv.js"]
 [plugin]
 name = "asset_plugin"
 version = "0.1.0"
+kind = "third_party"
 entry = "init.lua"
 
 [permissions]
