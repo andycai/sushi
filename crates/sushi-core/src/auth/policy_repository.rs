@@ -75,13 +75,25 @@ impl PolicyRepository {
         policy_key: &str,
         plugin_name: &str,
     ) -> Result<(), String> {
+        let normalized_surface = normalize_non_empty(surface, "surface")?.to_ascii_lowercase();
+        let normalized_method = normalize_non_empty(method, "method")?.to_ascii_uppercase();
+        let normalized_path_pattern = normalize_non_empty(path_pattern, "path_pattern")?;
+        let normalized_owner_id = normalize_non_empty(plugin_name, "owner_id")?;
+        self.delete_http_binding_identity(
+            &normalized_surface,
+            &normalized_method,
+            &normalized_path_pattern,
+            "plugin",
+            &normalized_owner_id,
+        )
+        .await?;
         self.upsert_http_binding(
-            surface,
-            method,
-            path_pattern,
+            &normalized_surface,
+            &normalized_method,
+            &normalized_path_pattern,
             policy_key,
             "plugin",
-            plugin_name,
+            &normalized_owner_id,
             false,
         )
         .await
@@ -93,12 +105,21 @@ impl PolicyRepository {
         policy_key: &str,
         plugin_name: &str,
     ) -> Result<(), String> {
+        let normalized_command_name = normalize_non_empty(command_name, "command_name")?;
+        let normalized_owner_id = normalize_non_empty(plugin_name, "owner_id")?;
+        self.delete_cli_binding_identity(
+            "cli",
+            &normalized_command_name,
+            "plugin",
+            &normalized_owner_id,
+        )
+        .await?;
         self.upsert_cli_binding(
             "cli",
-            command_name,
+            &normalized_command_name,
             policy_key,
             "plugin",
-            plugin_name,
+            &normalized_owner_id,
             false,
         )
         .await
@@ -328,6 +349,65 @@ impl PolicyRepository {
             .map_err(|err| err.to_string())?;
         Ok(parsed)
     }
+
+    async fn delete_http_binding_identity(
+        &self,
+        surface: &str,
+        method: &str,
+        path_pattern: &str,
+        owner_type: &str,
+        owner_id: &str,
+    ) -> Result<(), String> {
+        self.storage
+            .execute(
+                r#"
+                DELETE FROM policy_bindings
+                WHERE surface = ?1
+                  AND target_type = 'http_route'
+                  AND method = ?2
+                  AND (path_pattern = ?3 OR target_ref = ?3)
+                  AND owner_type = ?4
+                  AND owner_id = ?5
+                "#,
+                vec![
+                    Value::String(surface.to_string()),
+                    Value::String(method.to_string()),
+                    Value::String(path_pattern.to_string()),
+                    Value::String(owner_type.to_string()),
+                    Value::String(owner_id.to_string()),
+                ],
+            )
+            .await
+            .map_err(|err| err.to_string())
+    }
+
+    async fn delete_cli_binding_identity(
+        &self,
+        surface: &str,
+        command_name: &str,
+        owner_type: &str,
+        owner_id: &str,
+    ) -> Result<(), String> {
+        self.storage
+            .execute(
+                r#"
+                DELETE FROM policy_bindings
+                WHERE surface = ?1
+                  AND target_type = 'cli_command'
+                  AND (command_name = ?2 OR target_ref = ?2)
+                  AND owner_type = ?3
+                  AND owner_id = ?4
+                "#,
+                vec![
+                    Value::String(surface.to_string()),
+                    Value::String(command_name.to_string()),
+                    Value::String(owner_type.to_string()),
+                    Value::String(owner_id.to_string()),
+                ],
+            )
+            .await
+            .map_err(|err| err.to_string())
+    }
 }
 
 fn row_to_policy_key(
@@ -385,6 +465,7 @@ mod tests {
     use super::PolicyRepository;
     use crate::storage::sqlite::SqliteStorage;
     use crate::storage::Storage;
+    use serde_json::Value;
     use std::sync::Arc;
 
     async fn repo_with_schema() -> PolicyRepository {
@@ -410,6 +491,25 @@ mod tests {
 
         let storage: Arc<dyn Storage> = sqlite;
         PolicyRepository::new(storage)
+    }
+
+    async fn grant_role_policy(repo: &PolicyRepository, role_slug: &str, policy_key: &str) {
+        repo.storage
+            .execute(
+                r#"
+                INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
+                SELECT r.id, pk.id
+                FROM roles r
+                JOIN policy_keys pk ON pk.key = ?2
+                WHERE r.slug = ?1
+                "#,
+                vec![
+                    Value::String(role_slug.to_string()),
+                    Value::String(policy_key.to_string()),
+                ],
+            )
+            .await
+            .expect("role policy grant should insert");
     }
 
     #[tokio::test]
@@ -487,5 +587,96 @@ mod tests {
 
         assert!(snapshot.has_command_binding("cli", "plugin:list"));
         assert!(snapshot.command_allowed("admin", "cli", "plugin:list"));
+    }
+
+    #[tokio::test]
+    async fn plugin_http_binding_policy_update_replaces_old_identity_binding() {
+        let repo = repo_with_schema().await;
+        repo.upsert_plugin_http_binding("api", "GET", "/api/notes", "api.notes.read", "notes")
+            .await
+            .expect("initial plugin binding should insert");
+        grant_role_policy(&repo, "editor", "api.notes.read").await;
+
+        let initial = repo.compile_snapshot().await.expect("snapshot should load");
+        assert!(initial.http_allowed("editor", "api", "GET", "/api/notes"));
+
+        repo.upsert_plugin_http_binding("api", "GET", "/api/notes", "api.notes.write", "notes")
+            .await
+            .expect("updated plugin binding should replace old policy");
+
+        let snapshot = repo.compile_snapshot().await.expect("snapshot should load");
+        assert!(!snapshot.http_allowed("editor", "api", "GET", "/api/notes"));
+
+        let rows = repo
+            .storage
+            .query(
+                r#"
+                SELECT pk.key AS policy_key
+                FROM policy_bindings pb
+                JOIN policy_keys pk ON pk.id = pb.policy_key_id
+                WHERE pb.owner_type = 'plugin'
+                  AND pb.owner_id = 'notes'
+                  AND pb.surface = 'api'
+                  AND pb.target_type = 'http_route'
+                  AND pb.method = 'GET'
+                  AND pb.path_pattern = '/api/notes'
+                "#,
+                vec![],
+            )
+            .await
+            .expect("binding rows should load");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0]
+                .get("policy_key")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            "api.notes.write"
+        );
+    }
+
+    #[tokio::test]
+    async fn plugin_cli_binding_policy_update_replaces_old_identity_binding() {
+        let repo = repo_with_schema().await;
+        repo.upsert_plugin_cli_binding("notes-run", "cli.notes.read", "notes")
+            .await
+            .expect("initial plugin command binding should insert");
+        grant_role_policy(&repo, "editor", "cli.notes.read").await;
+
+        let initial = repo.compile_snapshot().await.expect("snapshot should load");
+        assert!(initial.command_allowed("editor", "cli", "notes-run"));
+
+        repo.upsert_plugin_cli_binding("notes-run", "cli.notes.write", "notes")
+            .await
+            .expect("updated plugin command binding should replace old policy");
+
+        let snapshot = repo.compile_snapshot().await.expect("snapshot should load");
+        assert!(!snapshot.command_allowed("editor", "cli", "notes-run"));
+
+        let rows = repo
+            .storage
+            .query(
+                r#"
+                SELECT pk.key AS policy_key
+                FROM policy_bindings pb
+                JOIN policy_keys pk ON pk.id = pb.policy_key_id
+                WHERE pb.owner_type = 'plugin'
+                  AND pb.owner_id = 'notes'
+                  AND pb.surface = 'cli'
+                  AND pb.target_type = 'cli_command'
+                  AND pb.command_name = 'notes-run'
+                "#,
+                vec![],
+            )
+            .await
+            .expect("binding rows should load");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0]
+                .get("policy_key")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            "cli.notes.write"
+        );
     }
 }
