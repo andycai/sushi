@@ -426,7 +426,7 @@ fn db_permission_name(permission: &DatabasePermission) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::{Permissions, PluginMeta};
+    use crate::plugin::{Permissions, PluginMeta, PluginPoliciesConfig};
 
     #[tokio::test]
     async fn register_manifest_is_visible_in_plugin_list() {
@@ -444,6 +444,7 @@ mod tests {
                 admin: true,
                 database: DatabasePermission::Write,
             },
+            policies: PluginPoliciesConfig::default(),
             admin: None,
         };
 
@@ -467,6 +468,7 @@ mod tests {
                 entry: "init.lua".to_string(),
             },
             permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
             admin: None,
         };
         manager.register_plugin_manifest(&manifest).await;
@@ -562,6 +564,7 @@ mod tests {
                 entry: "init.lua".to_string(),
             },
             permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
             admin: None,
         };
 

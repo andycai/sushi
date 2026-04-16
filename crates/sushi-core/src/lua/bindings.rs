@@ -181,6 +181,19 @@ fn parse_page_assets(lua: &Lua, assets: mlua::Table) -> Result<mlua::Table, mlua
     Ok(parsed)
 }
 
+fn parse_optional_policy(
+    opts: &mlua::Table,
+    api_name: &str,
+) -> Result<Option<String>, mlua::Error> {
+    match opts.get::<mlua::Value>("policy")? {
+        mlua::Value::Nil => Ok(None),
+        mlua::Value::String(value) => Ok(Some(value.to_str()?.to_string())),
+        _ => Err(mlua::Error::RuntimeError(format!(
+            "{api_name} opts.policy must be a string"
+        ))),
+    }
+}
+
 /// Inject the `sushi` global table into the Lua VM.
 /// Only namespaces permitted by the plugin's permissions are injected.
 pub async fn inject_sushi_api(
@@ -253,17 +266,24 @@ pub async fn inject_sushi_api(
         api_table.set(
             "route",
             lua.create_function(
-                move |lua, (method, path, handler): (String, String, mlua::Function)| {
+                move |lua, (method, path, handler, opts): (String, String, mlua::Function, Option<mlua::Table>)| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
+                    let policy = match opts {
+                        Some(table) => parse_optional_policy(&table, "sushi.api.route")?,
+                        None => None,
+                    };
 
                     let pending: mlua::Table = sushi.get("__pending_routes")?;
                     let entry = lua.create_table()?;
                     entry.set("method", method)?;
                     entry.set("path", path)?;
                     entry.set("handler_key", handler_key)?;
+                    if let Some(policy) = policy {
+                        entry.set("policy", policy)?;
+                    }
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
                     Ok(())
@@ -282,17 +302,24 @@ pub async fn inject_sushi_api(
         cli_table.set(
             "command",
             lua.create_function(
-                move |lua, (name, desc, handler): (String, String, mlua::Function)| {
+                move |lua, (name, desc, handler, opts): (String, String, mlua::Function, Option<mlua::Table>)| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
+                    let policy = match opts {
+                        Some(table) => parse_optional_policy(&table, "sushi.cli.command")?,
+                        None => None,
+                    };
 
                     let pending: mlua::Table = sushi.get("__pending_commands")?;
                     let entry = lua.create_table()?;
                     entry.set("name", name)?;
                     entry.set("description", desc)?;
                     entry.set("handler_key", handler_key)?;
+                    if let Some(policy) = policy {
+                        entry.set("policy", policy)?;
+                    }
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
                     Ok(())
@@ -311,17 +338,24 @@ pub async fn inject_sushi_api(
         admin_table.set(
             "page",
             lua.create_function(
-                move |lua, (path, title, handler): (String, String, mlua::Function)| {
+                move |lua, (path, title, handler, opts): (String, String, mlua::Function, Option<mlua::Table>)| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
+                    let policy = match opts {
+                        Some(table) => parse_optional_policy(&table, "sushi.admin.page")?,
+                        None => None,
+                    };
 
                     let pending: mlua::Table = sushi.get("__pending_pages")?;
                     let entry = lua.create_table()?;
                     entry.set("path", path)?;
                     entry.set("title", title)?;
                     entry.set("handler_key", handler_key)?;
+                    if let Some(policy) = policy {
+                        entry.set("policy", policy)?;
+                    }
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
                     Ok(())
@@ -365,7 +399,7 @@ pub async fn inject_sushi_api(
                         ));
                     }
 
-                    let (title, context_table, assets_table) = match opts {
+                    let (title, context_table, assets_table, policy) = match opts {
                         Some(table) => {
                             let title = match table.get::<mlua::Value>("title")? {
                                 mlua::Value::Nil => template_name.clone(),
@@ -394,9 +428,10 @@ pub async fn inject_sushi_api(
                                     ))
                                 }
                             };
-                            (title, context, assets)
+                            let policy = parse_optional_policy(&table, "sushi.web.page")?;
+                            (title, context, assets, policy)
                         }
-                        None => (template_name.clone(), None, None),
+                        None => (template_name.clone(), None, None, None),
                     };
 
                     let json_ctx = build_web_context(lua, context_table, &page_prefix)?;
@@ -428,6 +463,9 @@ pub async fn inject_sushi_api(
                     entry.set("handler_key", handler_key)?;
                     if let Some(assets) = assets_table {
                         entry.set("assets", assets)?;
+                    }
+                    if let Some(policy) = policy {
+                        entry.set("policy", policy)?;
                     }
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
@@ -1190,6 +1228,7 @@ mod tests {
         let handler_key: String = first.get("handler_key").unwrap();
         assert_eq!(method, "GET");
         assert_eq!(path, "/api/test");
+        assert!(!first.contains_key("policy").unwrap());
         assert!(handler_key.starts_with("h_"));
 
         // Verify handler function is stored in sushi.__handlers
@@ -1200,5 +1239,72 @@ mod tests {
             .get("__handlers")
             .unwrap();
         let _handler: mlua::Function = handlers.get(&*handler_key).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_registration_entries_include_policy_when_opts_provided() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let permissions = Permissions {
+            routes: true,
+            commands: true,
+            admin: true,
+            database: DatabasePermission::None,
+        };
+
+        let templates_root = ctx._templates_dir.path().join("admin");
+        std::fs::create_dir_all(&templates_root).unwrap();
+        std::fs::write(templates_root.join("policy.html"), "Policy page").unwrap();
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        lua.load(
+            r#"sushi.api.route("GET", "/api/policy", function() return "ok" end, { policy = "api.policy.read" })"#,
+        )
+        .exec()
+        .unwrap();
+        lua.load(
+            r#"sushi.cli.command("policy-check", "check policy", function() return true end, { policy = "cli.policy.run" })"#,
+        )
+        .exec()
+        .unwrap();
+        lua.load(
+            r#"sushi.web.page("/admin/policy-web", "admin/policy.html", { policy = "admin.page.web.read" })"#,
+        )
+        .exec()
+        .unwrap();
+        lua.load(
+            r#"sushi.admin.page("/admin/policy-admin", "Policy Admin", function() return "ok" end, { policy = "admin.page.direct.read" })"#,
+        )
+        .exec()
+        .unwrap();
+
+        let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+
+        let route_pending: mlua::Table = sushi.get("__pending_routes").unwrap();
+        let route_entry: mlua::Table = route_pending.get(1).unwrap();
+        assert_eq!(
+            route_entry.get::<String>("policy").unwrap(),
+            "api.policy.read"
+        );
+
+        let command_pending: mlua::Table = sushi.get("__pending_commands").unwrap();
+        let command_entry: mlua::Table = command_pending.get(1).unwrap();
+        assert_eq!(
+            command_entry.get::<String>("policy").unwrap(),
+            "cli.policy.run"
+        );
+
+        let page_pending: mlua::Table = sushi.get("__pending_pages").unwrap();
+        let web_page_entry: mlua::Table = page_pending.get(1).unwrap();
+        let admin_page_entry: mlua::Table = page_pending.get(2).unwrap();
+        assert_eq!(
+            web_page_entry.get::<String>("policy").unwrap(),
+            "admin.page.web.read"
+        );
+        assert_eq!(
+            admin_page_entry.get::<String>("policy").unwrap(),
+            "admin.page.direct.read"
+        );
     }
 }

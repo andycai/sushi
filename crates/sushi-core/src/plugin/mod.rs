@@ -34,6 +34,7 @@ pub enum PluginError {
 pub struct PluginManifest {
     pub plugin: PluginMeta,
     pub permissions: Permissions,
+    pub policies: PluginPoliciesConfig,
     pub admin: Option<PluginAdminConfig>,
 }
 
@@ -72,6 +73,12 @@ pub struct PluginAdminConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginPoliciesConfig {
+    #[serde(default)]
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 pub struct PluginAdminAssetsConfig {
     #[serde(default)]
     pub bundles: BTreeMap<String, PluginAssetBundle>,
@@ -95,6 +102,7 @@ impl Default for PluginManifest {
                 entry: "init.lua".to_string(),
             },
             permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
             admin: None,
         }
     }
@@ -115,6 +123,8 @@ struct PluginManifestRaw {
     plugin: PluginMetaRaw,
     #[serde(default)]
     permissions: Permissions,
+    #[serde(default)]
+    policies: PluginPoliciesConfig,
     #[serde(default)]
     admin: Option<PluginAdminConfig>,
 }
@@ -141,6 +151,7 @@ impl PluginManifest {
                     entry: raw.plugin.entry,
                 },
                 permissions: raw.permissions,
+                policies: raw.policies,
                 admin: raw.admin,
             },
             raw.plugin.kind,
@@ -315,6 +326,7 @@ database = "write"
         let manifest = PluginManifest::default();
         assert_eq!(manifest.plugin.entry, "init.lua");
         assert_eq!(manifest.permissions.database, DatabasePermission::None);
+        assert!(manifest.policies.scopes.is_empty());
         assert!(manifest.admin.is_none());
     }
 
@@ -382,6 +394,25 @@ css = ["pages/workspace.css"]
             ]
         );
         assert_eq!(workspace.css, vec!["pages/workspace.css".to_string()]);
+    }
+
+    #[test]
+    fn parse_plugin_policy_scopes_from_manifest() {
+        let toml_str = r#"
+[plugin]
+name = "policy_scopes"
+version = "0.1.0"
+kind = "third_party"
+
+[policies]
+scopes = ["admin.users", "api.reports"]
+"#;
+
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            manifest.policies.scopes,
+            vec!["admin.users".to_string(), "api.reports".to_string()]
+        );
     }
 
     #[test]
