@@ -849,8 +849,8 @@ async fn workspace_assets_api_returns_plugin_assets_for_page_path() {
 }
 
 #[tokio::test]
-async fn viewer_cannot_fetch_workspace_assets_for_users_path_without_admin_users_read() {
-    let (app, ctx) = build_app_with_context(None).await;
+async fn role_permission_updates_refresh_authorizer_for_workspace_asset_checks() {
+    let (app, _ctx) = build_app_with_context(None).await;
     let admin = admin_bearer_token();
 
     let create_role_response = app
@@ -932,7 +932,6 @@ async fn viewer_cannot_fetch_workspace_assets_for_users_path_without_admin_users
         .await
         .expect("request failed");
     assert_eq!(assign_response.status(), StatusCode::OK);
-    refresh_admin_authorizer(&ctx).await;
 
     let plugins_viewer = bearer_token_for_role("plugins_viewer");
     let allowed_target_response = app

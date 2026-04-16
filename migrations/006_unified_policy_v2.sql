@@ -90,6 +90,7 @@ INSERT OR IGNORE INTO policy_keys (key, surface, resource, action, name, descrip
     ('admin.menus.manage', 'admin', 'menus', 'manage', 'Manage Admin Menus', 'Create, update, and delete admin navigation menu entries.', 1),
     ('api.users.read', 'api', 'users', 'read', 'Read API Users', 'List users through API routes.', 1),
     ('api.users.manage', 'api', 'users', 'manage', 'Manage API Users', 'Create or delete users through API routes.', 1),
+    ('api.auth.me', 'api', 'auth', 'me', 'Read Auth Profile', 'Read the authenticated user profile from /api/auth/me.', 1),
     ('cli.plugins.read', 'cli', 'plugins', 'read', 'Read Plugin List', 'List discovered plugins from the CLI.', 1);
 
 INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
@@ -120,6 +121,7 @@ JOIN policy_keys ON policy_keys.key IN (
     'admin.menus.view',
     'api.users.read',
     'api.users.manage',
+    'api.auth.me',
     'cli.plugins.read'
 )
 WHERE roles.slug = 'editor';
@@ -129,7 +131,8 @@ SELECT roles.id, policy_keys.id
 FROM roles
 JOIN policy_keys ON policy_keys.key IN (
     'admin.dashboard.view',
-    'admin.logs.view'
+    'admin.logs.view',
+    'api.auth.me'
 )
 WHERE roles.slug = 'viewer';
 
@@ -195,6 +198,7 @@ WITH seeded_bindings (
     ('api', 'http_route', '/api/users', 'GET', '/api/users', NULL, 'api.users.read', 'system', 'builtin', 1),
     ('api', 'http_route', '/api/users', 'POST', '/api/users', NULL, 'api.users.manage', 'system', 'builtin', 1),
     ('api', 'http_route', '/api/users/{id}', 'DELETE', '/api/users/{id}', NULL, 'api.users.manage', 'system', 'builtin', 1),
+    ('api', 'http_route', '/api/auth/me', 'GET', '/api/auth/me', NULL, 'api.auth.me', 'system', 'builtin', 1),
     ('cli', 'cli_command', 'plugin:list', NULL, NULL, 'plugin:list', 'cli.plugins.read', 'system', 'builtin', 1)
 )
 INSERT OR IGNORE INTO policy_bindings (

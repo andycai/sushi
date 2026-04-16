@@ -329,6 +329,39 @@ impl RbacRepository {
                 .map_err(|err| err.to_string())?;
         }
 
+        // Keep unified grants aligned with RBAC role_permissions by rebuilding
+        // the derived admin.* policy grants for this role.
+        self.storage
+            .execute(
+                r#"
+                DELETE FROM role_policy_keys
+                WHERE role_id = ?1
+                  AND policy_key_id IN (
+                      SELECT pk.id
+                      FROM policy_keys pk
+                      JOIN permissions p ON pk.key = ('admin.' || p.slug)
+                  )
+                "#,
+                vec![Value::Number(role_id.into())],
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+
+        self.storage
+            .execute(
+                r#"
+                INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
+                SELECT ?1, pk.id
+                FROM role_permissions rp
+                JOIN permissions p ON p.id = rp.permission_id
+                JOIN policy_keys pk ON pk.key = ('admin.' || p.slug)
+                WHERE rp.role_id = ?1
+                "#,
+                vec![Value::Number(role_id.into())],
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+
         Ok(())
     }
 
@@ -644,4 +677,102 @@ fn parse_sqlite_datetime(input: &str) -> DateTime<Utc> {
         .ok()
         .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RbacRepository;
+    use crate::storage::sqlite::SqliteStorage;
+    use crate::storage::Storage;
+    use serde_json::Value;
+    use std::sync::Arc;
+
+    async fn repo_with_schema() -> (RbacRepository, Arc<dyn Storage>) {
+        let sqlite = Arc::new(
+            SqliteStorage::new_in_memory()
+                .await
+                .expect("sqlite setup should work"),
+        );
+        sqlite
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .expect("migration 001 should apply");
+        sqlite
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .expect("migration 003 should apply");
+        sqlite
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .expect("migration 006 should apply");
+
+        let storage: Arc<dyn Storage> = sqlite;
+        (RbacRepository::new(Arc::clone(&storage)), storage)
+    }
+
+    #[tokio::test]
+    async fn replace_role_permissions_syncs_role_policy_keys() {
+        let (repo, storage) = repo_with_schema().await;
+
+        let role_rows = storage
+            .query("SELECT id FROM roles WHERE slug = 'editor'", vec![])
+            .await
+            .expect("role query should succeed");
+        let role_id = role_rows
+            .first()
+            .and_then(|row| row.get("id"))
+            .and_then(Value::as_i64)
+            .expect("editor role id should exist");
+
+        let permission_rows = storage
+            .query(
+                "SELECT id FROM permissions WHERE slug = 'users.view'",
+                vec![],
+            )
+            .await
+            .expect("permission query should succeed");
+        let users_view_permission_id = permission_rows
+            .first()
+            .and_then(|row| row.get("id"))
+            .and_then(Value::as_i64)
+            .expect("users.view permission id should exist");
+
+        repo.replace_role_permissions(role_id, &[users_view_permission_id])
+            .await
+            .expect("role permissions should update");
+
+        let grant_rows = storage
+            .query(
+                r#"
+                SELECT pk.key
+                FROM role_policy_keys rpk
+                JOIN policy_keys pk ON pk.id = rpk.policy_key_id
+                JOIN roles r ON r.id = rpk.role_id
+                WHERE r.slug = 'editor'
+                ORDER BY pk.key ASC
+                "#,
+                vec![],
+            )
+            .await
+            .expect("policy grant query should succeed");
+        let policy_keys = grant_rows
+            .into_iter()
+            .filter_map(|row| row.get("key").and_then(Value::as_str).map(str::to_string))
+            .collect::<Vec<_>>();
+
+        assert!(
+            policy_keys.iter().any(|key| key == "admin.users.view"),
+            "admin.users.view should be granted after role permission update"
+        );
+        assert!(
+            !policy_keys.iter().any(|key| key == "admin.dashboard.view"),
+            "stale admin policy grants should be removed after role permission update"
+        );
+        assert!(
+            policy_keys.iter().any(|key| key == "api.users.read"),
+            "non-admin seeded grants should remain intact"
+        );
+    }
 }

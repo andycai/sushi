@@ -1,6 +1,7 @@
 use crate::auth::authorizer::{Authorizer, CompiledPolicySnapshot};
 use crate::auth::jwt::JwtService;
 use crate::auth::middleware::AuthState;
+use crate::auth::policy_repository::PolicyRepository;
 use crate::config::ConfigStore;
 use crate::db::{DbGateway, DbPermission};
 use crate::logs::LogService;
@@ -57,5 +58,14 @@ impl SushiContext {
             jwt_service: Arc::clone(&self.jwt),
             authorizer: Arc::clone(&self.authorizer),
         }
+    }
+
+    /// Rebuild the in-memory authorizer snapshot from persisted policy data.
+    pub async fn refresh_authorizer_snapshot(&self) -> Result<(), String> {
+        let storage: Arc<dyn Storage> = self.db.clone();
+        let repository = PolicyRepository::new(storage);
+        let snapshot = repository.compile_snapshot().await?;
+        self.authorizer.replace_snapshot(snapshot).await;
+        Ok(())
     }
 }

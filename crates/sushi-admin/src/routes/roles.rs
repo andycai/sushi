@@ -223,6 +223,15 @@ pub async fn role_permissions_update_partial(
 
     match repo.replace_role_permissions(id, &deduped).await {
         Ok(_) => {
+            if let Err(err) = ctx.refresh_authorizer_snapshot().await {
+                return flash_response(
+                    &ctx,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "error",
+                    &format!("Role permissions updated but policy refresh failed: {err}"),
+                )
+                .await;
+            }
             flash_response_with_trigger(
                 &ctx,
                 StatusCode::OK,

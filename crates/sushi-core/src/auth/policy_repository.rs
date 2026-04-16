@@ -99,6 +99,32 @@ impl PolicyRepository {
         .await
     }
 
+    pub async fn delete_plugin_http_binding(
+        &self,
+        surface: &str,
+        method: &str,
+        path_pattern: &str,
+        plugin_name: &str,
+    ) -> Result<(), String> {
+        let normalized_surface = normalize_non_empty(surface, "surface")?.to_ascii_lowercase();
+        let normalized_method = normalize_non_empty(method, "method")?.to_ascii_uppercase();
+        let normalized_path_pattern = normalize_non_empty(path_pattern, "path_pattern")?;
+        let normalized_owner_id = normalize_non_empty(plugin_name, "owner_id")?;
+        match self
+            .delete_http_binding_identity(
+                &normalized_surface,
+                &normalized_method,
+                &normalized_path_pattern,
+                "plugin",
+                &normalized_owner_id,
+            )
+            .await
+        {
+            Err(err) if err.contains("no such table: policy_bindings") => Ok(()),
+            other => other,
+        }
+    }
+
     pub async fn upsert_plugin_cli_binding(
         &self,
         command_name: &str,
@@ -123,6 +149,27 @@ impl PolicyRepository {
             false,
         )
         .await
+    }
+
+    pub async fn delete_plugin_cli_binding(
+        &self,
+        command_name: &str,
+        plugin_name: &str,
+    ) -> Result<(), String> {
+        let normalized_command_name = normalize_non_empty(command_name, "command_name")?;
+        let normalized_owner_id = normalize_non_empty(plugin_name, "owner_id")?;
+        match self
+            .delete_cli_binding_identity(
+                "cli",
+                &normalized_command_name,
+                "plugin",
+                &normalized_owner_id,
+            )
+            .await
+        {
+            Err(err) if err.contains("no such table: policy_bindings") => Ok(()),
+            other => other,
+        }
     }
 
     pub async fn compile_snapshot(&self) -> Result<CompiledPolicySnapshot, String> {

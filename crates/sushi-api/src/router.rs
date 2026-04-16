@@ -216,6 +216,12 @@ mod tests {
                 path_pattern: "/api/users/{id}".to_string(),
                 policy_key: "api.users.manage".to_string(),
             },
+            HttpBinding {
+                surface: "api".to_string(),
+                method: "GET".to_string(),
+                path_pattern: "/api/auth/me".to_string(),
+                policy_key: "api.auth.me".to_string(),
+            },
         ]
     }
 
@@ -436,6 +442,37 @@ mod tests {
         let body = to_bytes(response.into_body(), 1024).await.unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("Invalid credentials"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn test_build_app_allows_me_with_viewer_token() {
+        let ctx = test_context().await;
+        let app = build_app(&ctx);
+        let token = ctx
+            .jwt
+            .create_access_token(2, "viewer_user", "viewer")
+            .expect("failed to create test access token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/auth/me")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).expect("invalid me payload");
+        assert_eq!(
+            payload.get("username").and_then(Value::as_str),
+            Some("viewer_user")
+        );
+        assert_eq!(payload.get("role").and_then(Value::as_str), Some("viewer"));
     }
 
     #[tokio::test]

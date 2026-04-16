@@ -525,6 +525,15 @@ impl Plugin for LuaPlugin {
                                     "failed to persist policy binding for route {method} {path}: {err}"
                                 ))
                             })?;
+                    } else {
+                        policy_repo
+                            .delete_plugin_http_binding("api", &method, &path, plugin_name)
+                            .await
+                            .map_err(|err| {
+                                PluginError::InitFailed(format!(
+                                    "failed to clear stale policy binding for route {method} {path}: {err}"
+                                ))
+                            })?;
                     }
                     ctx.plugins
                         .register_api_handler_with_policy(
@@ -568,6 +577,15 @@ impl Plugin for LuaPlugin {
                             .map_err(|err| {
                                 PluginError::InitFailed(format!(
                                     "failed to persist policy binding for command {name}: {err}"
+                                ))
+                            })?;
+                    } else {
+                        policy_repo
+                            .delete_plugin_cli_binding(&name, plugin_name)
+                            .await
+                            .map_err(|err| {
+                                PluginError::InitFailed(format!(
+                                    "failed to clear stale policy binding for command {name}: {err}"
                                 ))
                             })?;
                     }
@@ -623,6 +641,15 @@ impl Plugin for LuaPlugin {
                             .map_err(|err| {
                                 PluginError::InitFailed(format!(
                                     "failed to persist policy binding for page {path}: {err}"
+                                ))
+                            })?;
+                    } else {
+                        policy_repo
+                            .delete_plugin_http_binding("admin", "GET", &path, plugin_name)
+                            .await
+                            .map_err(|err| {
+                                PluginError::InitFailed(format!(
+                                    "failed to clear stale policy binding for page {path}: {err}"
                                 ))
                             })?;
                     }
@@ -1275,6 +1302,127 @@ end
                 .unwrap(),
             "cli.notes.run"
         );
+    }
+
+    #[tokio::test]
+    async fn plugin_load_without_policy_clears_stale_plugin_bindings() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("third_party").join("policy_capture");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "policy_capture"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+
+[permissions]
+routes = true
+commands = true
+admin = true
+
+[policies]
+scopes = ["api.notes.*", "cli.notes.run", "admin.notes.*"]
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    sushi.api.route("GET", "/api/notes", function()
+        return "api"
+    end, { policy = "api.notes.read" })
+
+    sushi.cli.command("notes-run", "Run notes command", function()
+        return "cli"
+    end, { policy = "cli.notes.run" })
+
+    sushi.admin.page("/admin/notes", "Notes", function()
+        return "admin"
+    end, { policy = "admin.notes.read" })
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .unwrap();
+        plugins[0].init(&ctx).await.unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    sushi.api.route("GET", "/api/notes", function()
+        return "api"
+    end)
+
+    sushi.cli.command("notes-run", "Run notes command", function()
+        return "cli"
+    end)
+
+    sushi.admin.page("/admin/notes", "Notes", function()
+        return "admin"
+    end)
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        plugins[0].init(&ctx).await.unwrap();
+
+        assert_eq!(
+            ctx.plugins.api_route_policy("GET", "/api/notes").await,
+            None
+        );
+        assert_eq!(ctx.plugins.cli_command_policy("notes-run").await, None);
+        assert_eq!(ctx.plugins.admin_page_policy("/admin/notes").await, None);
+
+        let rows = ctx
+            .db
+            .query(
+                r#"
+                SELECT COUNT(*) AS count
+                FROM policy_bindings pb
+                WHERE pb.owner_type = 'plugin'
+                  AND pb.owner_id = 'policy_capture'
+                  AND (
+                      pb.target_ref = '/api/notes'
+                      OR pb.target_ref = '/admin/notes'
+                      OR pb.target_ref = 'notes-run'
+                  )
+                "#,
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        let count = rows
+            .first()
+            .and_then(|row| row.get("count"))
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        assert_eq!(count, 0, "stale plugin policy bindings should be removed");
     }
 
     #[tokio::test]
