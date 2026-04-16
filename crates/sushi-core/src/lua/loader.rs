@@ -1,12 +1,15 @@
+use crate::auth::policy_repository::PolicyRepository;
 use crate::context::SushiContext;
 use crate::lua::bindings::inject_sushi_api;
 use crate::lua::module_loader::install_plugin_require;
 use crate::lua::vm::create_sandboxed_vm;
 use crate::plugin::manager::PageResolvedAssets;
 use crate::plugin::{Permissions, Plugin, PluginError, PluginKind, PluginManifest};
+use crate::storage::Storage;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// A Lua-based plugin loaded from the filesystem.
 pub struct LuaPlugin {
@@ -487,6 +490,10 @@ impl Plugin for LuaPlugin {
 
         let plugin_name = &self.manifest.plugin.name;
         let allowed_policy_scopes = &self.manifest.policies.scopes;
+        let policy_repo = PolicyRepository::new({
+            let storage: Arc<dyn Storage> = ctx.db.clone();
+            storage
+        });
 
         // Read pending routes, register with PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
@@ -504,6 +511,20 @@ impl Plugin for LuaPlugin {
                             policy_key_value,
                             allowed_policy_scopes,
                         )?;
+                        policy_repo
+                            .upsert_plugin_http_binding(
+                                "api",
+                                &method,
+                                &path,
+                                policy_key_value,
+                                plugin_name,
+                            )
+                            .await
+                            .map_err(|err| {
+                                PluginError::InitFailed(format!(
+                                    "failed to persist policy binding for route {method} {path}: {err}"
+                                ))
+                            })?;
                     }
                     ctx.plugins
                         .register_api_handler_with_policy(
@@ -541,6 +562,14 @@ impl Plugin for LuaPlugin {
                             policy_key_value,
                             allowed_policy_scopes,
                         )?;
+                        policy_repo
+                            .upsert_plugin_cli_binding(&name, policy_key_value, plugin_name)
+                            .await
+                            .map_err(|err| {
+                                PluginError::InitFailed(format!(
+                                    "failed to persist policy binding for command {name}: {err}"
+                                ))
+                            })?;
                     }
                     ctx.plugins
                         .register_cli_handler_with_policy(
@@ -582,6 +611,20 @@ impl Plugin for LuaPlugin {
                             policy_key_value,
                             allowed_policy_scopes,
                         )?;
+                        policy_repo
+                            .upsert_plugin_http_binding(
+                                "admin",
+                                "GET",
+                                &path,
+                                policy_key_value,
+                                plugin_name,
+                            )
+                            .await
+                            .map_err(|err| {
+                                PluginError::InitFailed(format!(
+                                    "failed to persist policy binding for page {path}: {err}"
+                                ))
+                            })?;
                     }
                     let (bundle_names, page_js, page_css) = parse_page_assets_entry(&entry)?;
                     let assets = resolve_page_assets(
@@ -636,7 +679,9 @@ mod tests {
     use crate::config::ConfigStore;
     use crate::plugin::PluginManifest;
     use crate::storage::sqlite::SqliteStorage;
+    use crate::storage::Storage;
     use crate::web::template_service::TemplateService;
+    use serde_json::Value;
     use std::ops::Deref;
     use tempfile::TempDir;
 
@@ -773,19 +818,33 @@ end)
     #[test]
     fn kv_store_plugin_is_split_into_module_files() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
-        assert!(repo_root.join("plugins/official/kv-store/lua/utils/json.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/utils/form.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/utils/html.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/infra/db.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/domain/store.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/interfaces/api.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/interfaces/admin.lua").is_file());
-        assert!(repo_root.join("plugins/official/kv-store/lua/interfaces/cli.lua").is_file());
-        assert!(
-            repo_root
-                .join("plugins/official/kv-store/lua/bootstrap/register.lua")
-                .is_file()
-        );
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/utils/json.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/utils/form.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/utils/html.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/infra/db.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/domain/store.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/interfaces/api.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/interfaces/admin.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/interfaces/cli.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/kv-store/lua/bootstrap/register.lua")
+            .is_file());
     }
 
     #[test]
@@ -807,9 +866,8 @@ end)
         assert!(source.contains(
             "sushi.api.route(\"POST\", \"/admin/partials/kv/upsert\", deps.admin.upsert_partial, { policy = \"admin.kv.write\" })"
         ));
-        assert!(source.contains(
-            "sushi.web.page(\"/admin/kv\", \"plugins/official/kv-store/kv.html\", {"
-        ));
+        assert!(source
+            .contains("sushi.web.page(\"/admin/kv\", \"plugins/official/kv-store/kv.html\", {"));
         assert!(source.contains("policy = \"admin.kv.read\""));
         assert!(source.contains("assets = { bundles = { \"workspace\" } }"));
         assert!(source.contains("title = \"KV Store\""));
@@ -1056,6 +1114,20 @@ end
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         let ctx = test_context().await;
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .unwrap();
         plugins[0].init(&ctx).await.unwrap();
 
         assert_eq!(
@@ -1075,6 +1147,133 @@ end
                 .await
                 .as_deref(),
             Some("admin.notes.read")
+        );
+
+        let key_rows = ctx
+            .db
+            .query(
+                r#"
+                SELECT key
+                FROM policy_keys
+                WHERE key IN ('api.notes.read', 'cli.notes.run', 'admin.notes.read')
+                ORDER BY key ASC
+                "#,
+                vec![],
+            )
+            .await
+            .unwrap();
+        assert_eq!(key_rows.len(), 3);
+
+        let binding_rows = ctx
+            .db
+            .query(
+                r#"
+                SELECT
+                    pb.surface,
+                    pb.target_type,
+                    pb.target_ref,
+                    pb.method,
+                    pb.path_pattern,
+                    pb.command_name,
+                    pk.key AS policy_key,
+                    pb.owner_type,
+                    pb.owner_id
+                FROM policy_bindings pb
+                JOIN policy_keys pk ON pk.id = pb.policy_key_id
+                WHERE pb.owner_type = 'plugin'
+                  AND pb.owner_id = 'policy_capture'
+                ORDER BY pb.surface ASC, pb.target_type ASC, pb.target_ref ASC
+                "#,
+                vec![],
+            )
+            .await
+            .unwrap();
+        assert_eq!(binding_rows.len(), 3);
+
+        let api_route_binding = binding_rows
+            .iter()
+            .find(|row| {
+                row.get("surface")
+                    .and_then(Value::as_str)
+                    .map(|surface| surface == "api")
+                    .unwrap_or(false)
+            })
+            .expect("missing api policy binding");
+        assert_eq!(
+            api_route_binding
+                .get("target_type")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "http_route"
+        );
+        assert_eq!(
+            api_route_binding
+                .get("path_pattern")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "/api/notes"
+        );
+        assert_eq!(
+            api_route_binding
+                .get("policy_key")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "api.notes.read"
+        );
+
+        let admin_page_binding = binding_rows
+            .iter()
+            .find(|row| {
+                row.get("surface")
+                    .and_then(Value::as_str)
+                    .map(|surface| surface == "admin")
+                    .unwrap_or(false)
+            })
+            .expect("missing admin policy binding");
+        assert_eq!(
+            admin_page_binding
+                .get("target_type")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "http_route"
+        );
+        assert_eq!(
+            admin_page_binding
+                .get("path_pattern")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "/admin/notes"
+        );
+        assert_eq!(
+            admin_page_binding
+                .get("policy_key")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "admin.notes.read"
+        );
+
+        let cli_binding = binding_rows
+            .iter()
+            .find(|row| {
+                row.get("target_type")
+                    .and_then(Value::as_str)
+                    .map(|target_type| target_type == "cli_command")
+                    .unwrap_or(false)
+            })
+            .expect("missing cli policy binding");
+        assert_eq!(
+            cli_binding
+                .get("command_name")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "notes-run"
+        );
+        assert_eq!(
+            cli_binding
+                .get("policy_key")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "cli.notes.run"
         );
     }
 

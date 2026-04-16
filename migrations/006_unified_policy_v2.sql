@@ -89,7 +89,8 @@ INSERT OR IGNORE INTO policy_keys (key, surface, resource, action, name, descrip
     ('admin.menus.view', 'admin', 'menus', 'view', 'View Admin Menus', 'Read admin navigation menu entries.', 1),
     ('admin.menus.manage', 'admin', 'menus', 'manage', 'Manage Admin Menus', 'Create, update, and delete admin navigation menu entries.', 1),
     ('api.users.read', 'api', 'users', 'read', 'Read API Users', 'List users through API routes.', 1),
-    ('api.users.manage', 'api', 'users', 'manage', 'Manage API Users', 'Create or delete users through API routes.', 1);
+    ('api.users.manage', 'api', 'users', 'manage', 'Manage API Users', 'Create or delete users through API routes.', 1),
+    ('cli.plugins.read', 'cli', 'plugins', 'read', 'Read Plugin List', 'List discovered plugins from the CLI.', 1);
 
 INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
 SELECT r.id, pk.id
@@ -118,7 +119,8 @@ JOIN policy_keys ON policy_keys.key IN (
     'admin.logs.view',
     'admin.menus.view',
     'api.users.read',
-    'api.users.manage'
+    'api.users.manage',
+    'cli.plugins.read'
 )
 WHERE roles.slug = 'editor';
 
@@ -130,5 +132,95 @@ JOIN policy_keys ON policy_keys.key IN (
     'admin.logs.view'
 )
 WHERE roles.slug = 'viewer';
+
+WITH seeded_bindings (
+    surface,
+    target_type,
+    target_ref,
+    method,
+    path_pattern,
+    command_name,
+    policy_key,
+    owner_type,
+    owner_id,
+    is_system
+) AS (
+    VALUES
+    ('admin', 'http_route', '/admin/', 'GET', '/admin/', NULL, 'admin.dashboard.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/logs', 'GET', '/admin/logs', NULL, 'admin.logs.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/logs', 'GET', '/admin/api/logs', NULL, 'admin.logs.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/config', 'GET', '/admin/config', NULL, 'admin.config.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/config', 'GET', '/admin/api/config', NULL, 'admin.config.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/plugins', 'GET', '/admin/plugins', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/plugins/{plugin}', 'GET', '/admin/plugins/{plugin}', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/plugins/table', 'GET', '/admin/partials/plugins/table', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/plugins', 'GET', '/admin/api/plugins', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/plugins/{plugin}/pages', 'GET', '/admin/api/plugins/{plugin}/pages', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/workspace/assets', 'GET', '/admin/api/workspace/assets', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/menus', 'GET', '/admin/menus', NULL, 'admin.menus.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/menus/table', 'GET', '/admin/partials/menus/table', NULL, 'admin.menus.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/menu', 'GET', '/admin/api/menu', NULL, 'admin.menus.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/users', 'GET', '/admin/users', NULL, 'admin.users.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/users/table', 'GET', '/admin/partials/users/table', NULL, 'admin.users.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/roles', 'GET', '/admin/roles', NULL, 'admin.roles.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/roles/table', 'GET', '/admin/partials/roles/table', NULL, 'admin.roles.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/permissions', 'GET', '/admin/permissions', NULL, 'admin.permissions.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/permissions/table', 'GET', '/admin/partials/permissions/table', NULL, 'admin.permissions.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/roles/{id}/permissions/form', 'GET', '/admin/partials/roles/{id}/permissions/form', NULL, 'admin.roles.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/users/create', 'POST', '/admin/partials/users/create', NULL, 'admin.users.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/users/{id}', 'DELETE', '/admin/partials/users/{id}', NULL, 'admin.users.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/roles/create', 'POST', '/admin/partials/roles/create', NULL, 'admin.roles.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/roles/{id}/update', 'POST', '/admin/partials/roles/{id}/update', NULL, 'admin.roles.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/roles/{id}/permissions', 'POST', '/admin/partials/roles/{id}/permissions', NULL, 'admin.roles.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/roles/{id}', 'DELETE', '/admin/partials/roles/{id}', NULL, 'admin.roles.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/permissions/create', 'POST', '/admin/partials/permissions/create', NULL, 'admin.permissions.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/permissions/{id}/update', 'POST', '/admin/partials/permissions/{id}/update', NULL, 'admin.permissions.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/permissions/{id}', 'DELETE', '/admin/partials/permissions/{id}', NULL, 'admin.permissions.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/menus/create', 'POST', '/admin/partials/menus/create', NULL, 'admin.menus.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/menus/{id}/update', 'POST', '/admin/partials/menus/{id}/update', NULL, 'admin.menus.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/partials/menus/{id}', 'DELETE', '/admin/partials/menus/{id}', NULL, 'admin.menus.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/menu', 'POST', '/admin/api/menu', NULL, 'admin.menus.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/menu/{id}', 'PUT', '/admin/api/menu/{id}', NULL, 'admin.menus.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/api/menu/{id}', 'DELETE', '/admin/api/menu/{id}', NULL, 'admin.menus.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/dashboard', 'GET', '/admin/workspace/dashboard', NULL, 'admin.dashboard.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/users', 'GET', '/admin/workspace/users', NULL, 'admin.users.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/roles', 'GET', '/admin/workspace/roles', NULL, 'admin.roles.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/permissions', 'GET', '/admin/workspace/permissions', NULL, 'admin.permissions.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/plugins', 'GET', '/admin/workspace/plugins', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/plugins/{plugin}', 'GET', '/admin/workspace/plugins/{plugin}', NULL, 'admin.plugins.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/kv', 'GET', '/admin/workspace/kv', NULL, 'admin.kv.manage', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/config', 'GET', '/admin/workspace/config', NULL, 'admin.config.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/logs', 'GET', '/admin/workspace/logs', NULL, 'admin.logs.view', 'system', 'builtin', 1),
+    ('admin', 'http_route', '/admin/workspace/menus', 'GET', '/admin/workspace/menus', NULL, 'admin.menus.view', 'system', 'builtin', 1),
+    ('api', 'http_route', '/api/users', 'GET', '/api/users', NULL, 'api.users.read', 'system', 'builtin', 1),
+    ('api', 'http_route', '/api/users', 'POST', '/api/users', NULL, 'api.users.manage', 'system', 'builtin', 1),
+    ('api', 'http_route', '/api/users/{id}', 'DELETE', '/api/users/{id}', NULL, 'api.users.manage', 'system', 'builtin', 1),
+    ('cli', 'cli_command', 'plugin:list', NULL, NULL, 'plugin:list', 'cli.plugins.read', 'system', 'builtin', 1)
+)
+INSERT OR IGNORE INTO policy_bindings (
+    surface,
+    target_type,
+    target_ref,
+    method,
+    path_pattern,
+    command_name,
+    policy_key_id,
+    owner_type,
+    owner_id,
+    is_system
+)
+SELECT
+    seeded_bindings.surface,
+    seeded_bindings.target_type,
+    seeded_bindings.target_ref,
+    seeded_bindings.method,
+    seeded_bindings.path_pattern,
+    seeded_bindings.command_name,
+    pk.id,
+    seeded_bindings.owner_type,
+    seeded_bindings.owner_id,
+    seeded_bindings.is_system
+FROM seeded_bindings
+JOIN policy_keys pk ON pk.key = seeded_bindings.policy_key;
 
 INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (6, '006_unified_policy_v2');

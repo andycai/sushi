@@ -162,6 +162,10 @@ impl Authorizer {
 }
 
 fn path_pattern_matches(pattern: &str, path: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        return path.starts_with(prefix);
+    }
+
     let pattern_segments = split_path_segments(pattern);
     let path_segments = split_path_segments(path);
 
@@ -203,6 +207,33 @@ mod tests {
         };
 
         assert!(binding.matches("admin", "GET", "/admin/partials/users/42"));
+    }
+
+    #[test]
+    fn http_binding_matches_slash_star_wildcard_prefix() {
+        let binding = HttpBinding {
+            surface: "api".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/api/kv/*".to_string(),
+            policy_key: "api.kv.read".to_string(),
+        };
+
+        assert!(binding.matches("api", "GET", "/api/kv/key"));
+        assert!(binding.matches("api", "GET", "/api/kv/key/child"));
+        assert!(!binding.matches("api", "GET", "/api/kv"));
+    }
+
+    #[test]
+    fn http_binding_matches_trailing_star_wildcard_prefix() {
+        let binding = HttpBinding {
+            surface: "api".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/api/kv*".to_string(),
+            policy_key: "api.kv.read".to_string(),
+        };
+
+        assert!(binding.matches("api", "GET", "/api/kv"));
+        assert!(binding.matches("api", "GET", "/api/kv/nested"));
     }
 
     #[test]

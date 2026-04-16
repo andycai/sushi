@@ -1,13 +1,16 @@
 use anyhow::{Context, Result};
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use sushi_core::auth::jwt::JwtService;
+use sushi_core::auth::policy_repository::PolicyRepository;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
 use sushi_core::logs::tracing_bridge;
 use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::plugin::Plugin;
 use sushi_core::storage::sqlite::SqliteStorage;
+use sushi_core::storage::Storage;
 use sushi_core::web::template_service::TemplateService;
 
 const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
@@ -163,6 +166,8 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         }
     }
 
+    hydrate_authorizer_snapshot(&ctx).await?;
+
     Ok(ctx)
 }
 
@@ -188,4 +193,16 @@ fn resolve_dir(config_path: Option<&Path>, dir: &str, kind: &str) -> Result<Path
     } else {
         Ok(base_dir.join(candidate))
     }
+}
+
+async fn hydrate_authorizer_snapshot(ctx: &SushiContext) -> Result<()> {
+    let storage: Arc<dyn Storage> = ctx.db.clone();
+    let repository = PolicyRepository::new(storage);
+    let snapshot = repository
+        .compile_snapshot()
+        .await
+        .map_err(anyhow::Error::msg)
+        .context("failed to compile policy snapshot from database")?;
+    ctx.authorizer.replace_snapshot(snapshot).await;
+    Ok(())
 }
