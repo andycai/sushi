@@ -92,6 +92,13 @@ INSERT OR IGNORE INTO policy_keys (key, surface, resource, action, name, descrip
     ('api.users.manage', 'api', 'users', 'manage', 'Manage API Users', 'Create or delete users through API routes.', 1);
 
 INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
+SELECT r.id, pk.id
+FROM roles r
+JOIN role_permissions rp ON rp.role_id = r.id
+JOIN permissions p ON p.id = rp.permission_id
+JOIN policy_keys pk ON pk.key = ('admin.' || p.slug);
+
+INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
 SELECT roles.id, policy_keys.id
 FROM roles
 JOIN policy_keys ON 1 = 1
