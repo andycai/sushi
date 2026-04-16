@@ -7,9 +7,9 @@ function M.register(deps)
     sushi.api.route("PUT", "/api/kv/*", deps.api.dispatch, { policy = "api.kv.write" })
     sushi.api.route("DELETE", "/api/kv/*", deps.api.delete_dispatch, { policy = "api.kv.delete" })
 
-    sushi.api.route("GET", "/admin/partials/kv/table", deps.admin.table_partial, { policy = "api.kv.read" })
-    sushi.api.route("POST", "/admin/partials/kv/upsert", deps.admin.upsert_partial, { policy = "api.kv.write" })
-    sushi.api.route("POST", "/admin/partials/kv/delete", deps.admin.delete_partial, { policy = "api.kv.delete" })
+    sushi.api.route("GET", "/admin/partials/kv/table", deps.admin.table_partial, { policy = "admin.kv.read" })
+    sushi.api.route("POST", "/admin/partials/kv/upsert", deps.admin.upsert_partial, { policy = "admin.kv.write" })
+    sushi.api.route("POST", "/admin/partials/kv/delete", deps.admin.delete_partial, { policy = "admin.kv.write" })
 
     sushi.web.page("/admin/kv", "plugins/official/kv-store/kv.html", {
         title = "KV Store",

@@ -12,7 +12,7 @@ admin = true
 database = "admin"
 
 [policies]
-scopes = ["api.kv.*", "admin.kv.read", "cli.kv.*"]
+scopes = ["api.kv.*", "admin.kv.read", "admin.kv.write", "cli.kv.*"]
 
 [admin.assets.bundles.workspace]
 js = ["kv.js"]

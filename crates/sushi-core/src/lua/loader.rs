@@ -799,7 +799,13 @@ end)
             "sushi.api.route(\"GET\", \"/api/kv\", deps.api.dispatch, { policy = \"api.kv.read\" })"
         ));
         assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/api/kv\", deps.api.dispatch, { policy = \"api.kv.write\" })"
+        ));
+        assert!(source.contains(
             "sushi.api.route(\"DELETE\", \"/api/kv/*\", deps.api.delete_dispatch, { policy = \"api.kv.delete\" })"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/admin/partials/kv/upsert\", deps.admin.upsert_partial, { policy = \"admin.kv.write\" })"
         ));
         assert!(source.contains(
             "sushi.web.page(\"/admin/kv\", \"plugins/official/kv-store/kv.html\", {"
