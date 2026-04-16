@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use sushi_core::auth::authorizer::Authorizer;
 use sushi_core::context::SushiContext;
 
 const DEFAULT_CLI_ROLE: &str = "admin";
@@ -14,14 +15,26 @@ pub async fn ensure_command_authorized(
     role: &str,
     command_target: &str,
 ) -> Result<()> {
+    ensure_command_authorized_with_authorizer(&ctx.authorizer, role, command_target).await
+}
+
+async fn ensure_command_authorized_with_authorizer(
+    authorizer: &Authorizer,
+    role: &str,
+    command_target: &str,
+) -> Result<()> {
     let resolved_role = resolve_cli_role(Some(role), None);
-    match ctx
-        .authorizer
+    match authorizer
         .check_command(&resolved_role, "cli", command_target)
         .await
     {
         Ok(()) => Ok(()),
-        Err(_) if resolved_role == DEFAULT_CLI_ROLE => Ok(()),
+        Err(_)
+            if resolved_role == DEFAULT_CLI_ROLE
+                && !authorizer.has_command_binding("cli", command_target).await =>
+        {
+            Ok(())
+        }
         Err(err) => Err(anyhow!(
             "authorization denied for command '{command_target}': {err}"
         )),
@@ -38,7 +51,8 @@ fn normalize_role(input: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_cli_role;
+    use super::{ensure_command_authorized_with_authorizer, resolve_cli_role};
+    use sushi_core::auth::authorizer::{Authorizer, CompiledPolicySnapshot};
 
     #[test]
     fn resolves_role_from_flag_then_env_then_default() {
@@ -56,5 +70,35 @@ mod tests {
     #[test]
     fn normalizes_role_to_lowercase() {
         assert_eq!(resolve_cli_role(Some("  Admin "), None), "admin");
+    }
+
+    #[tokio::test]
+    async fn allows_command_when_role_has_grant() {
+        let authorizer = Authorizer::new(CompiledPolicySnapshot::from_raw(
+            vec![("cli", "plugin:list", "cli.plugin.list.read")],
+            vec![("editor", "cli.plugin.list.read")],
+        ));
+        let result =
+            ensure_command_authorized_with_authorizer(&authorizer, "editor", "plugin:list").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn denies_command_when_binding_exists_without_grant() {
+        let authorizer = Authorizer::new(CompiledPolicySnapshot::from_raw(
+            vec![("cli", "plugin:list", "cli.plugin.list.read")],
+            vec![],
+        ));
+        let result =
+            ensure_command_authorized_with_authorizer(&authorizer, "admin", "plugin:list").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn allows_admin_when_command_binding_is_missing() {
+        let authorizer = Authorizer::new(CompiledPolicySnapshot::from_raw(vec![], vec![]));
+        let result =
+            ensure_command_authorized_with_authorizer(&authorizer, "admin", "plugin:list").await;
+        assert!(result.is_ok());
     }
 }

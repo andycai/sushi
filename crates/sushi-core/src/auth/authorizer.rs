@@ -88,6 +88,11 @@ impl CompiledPolicySnapshot {
             .unwrap_or(false)
     }
 
+    pub fn has_command_binding(&self, surface: &str, command_name: &str) -> bool {
+        self.command_bindings
+            .contains_key(&(surface.to_string(), command_name.to_string()))
+    }
+
     pub fn http_allowed(&self, role: &str, surface: &str, method: &str, path: &str) -> bool {
         let Some(grants) = self.role_policy_keys.get(role) else {
             return false;
@@ -149,6 +154,11 @@ impl Authorizer {
             ))
         }
     }
+
+    pub async fn has_command_binding(&self, surface: &str, command_name: &str) -> bool {
+        let snapshot = self.snapshot.read().await;
+        snapshot.has_command_binding(surface, command_name)
+    }
 }
 
 fn path_pattern_matches(pattern: &str, path: &str) -> bool {
@@ -204,5 +214,16 @@ mod tests {
 
         assert!(snapshot.command_allowed("editor", "cli", "plugin:list"));
         assert!(!snapshot.command_allowed("editor", "cli", "plugin:delete"));
+    }
+
+    #[test]
+    fn command_binding_presence_lookup_is_exact() {
+        let snapshot = CompiledPolicySnapshot::from_raw(
+            vec![("cli", "plugin:list", "cli.plugin.list.read")],
+            vec![],
+        );
+
+        assert!(snapshot.has_command_binding("cli", "plugin:list"));
+        assert!(!snapshot.has_command_binding("cli", "plugin:delete"));
     }
 }
