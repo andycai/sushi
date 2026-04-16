@@ -69,6 +69,32 @@ pub struct PluginManager {
     plugin_static_roots: Arc<RwLock<HashMap<String, PathBuf>>>,
 }
 
+fn match_api_handler_binding(
+    map: &HashMap<(String, String), ApiHandlerBinding>,
+    method: &str,
+    path: &str,
+) -> Option<ApiHandlerBinding> {
+    let method_upper = method.to_uppercase();
+
+    if let Some(binding) = map.get(&(method_upper.clone(), path.to_string())) {
+        return Some(binding.clone());
+    }
+
+    let mut best_match = None;
+    let mut longest_prefix_len = 0;
+    for ((registered_method, registered_path), binding) in map.iter() {
+        if registered_method == &method_upper && registered_path.ends_with('*') {
+            let prefix = &registered_path[..registered_path.len() - 1];
+            if path.starts_with(prefix) && prefix.len() > longest_prefix_len {
+                longest_prefix_len = prefix.len();
+                best_match = Some(binding.clone());
+            }
+        }
+    }
+
+    best_match
+}
+
 impl PluginManager {
     pub fn new() -> Self {
         Self::default()
@@ -292,29 +318,8 @@ impl PluginManager {
         path: &str,
         body: Option<String>,
     ) -> Option<Result<String, String>> {
-        let method_upper = method.to_uppercase();
         let map = self.api_handlers.read().await;
-
-        // Try exact match first
-        let binding = if let Some(v) = map.get(&(method_upper.clone(), path.to_string())) {
-            v.clone()
-        } else {
-            // Try prefix wildcard match: find entries where path ends with *
-            let mut best_match = None;
-            let mut longest_prefix_len = 0;
-            for ((m, prefix), val) in map.iter() {
-                if m == &method_upper && prefix.ends_with('*') {
-                    let prefix_str = &prefix[..prefix.len() - 1];
-                    if path.starts_with(prefix_str) {
-                        if prefix_str.len() > longest_prefix_len {
-                            longest_prefix_len = prefix_str.len();
-                            best_match = Some(val.clone());
-                        }
-                    }
-                }
-            }
-            best_match?
-        };
+        let binding = match_api_handler_binding(&map, method, path)?;
         let plugin_name = binding.plugin_name;
         let handler_key = binding.handler_key;
         drop(map);
@@ -332,11 +337,8 @@ impl PluginManager {
 
     /// Return the optional policy key for an API route registration.
     pub async fn api_route_policy(&self, method: &str, path: &str) -> Option<String> {
-        self.api_handlers
-            .read()
-            .await
-            .get(&(method.to_uppercase(), path.to_string()))
-            .and_then(|binding| binding.policy_key.clone())
+        let map = self.api_handlers.read().await;
+        match_api_handler_binding(&map, method, path).and_then(|binding| binding.policy_key)
     }
 
     /// Call a CLI command handler with string args, returns the output.
@@ -771,6 +773,37 @@ mod tests {
                 .await
                 .as_deref(),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn api_route_policy_matches_wildcard_for_concrete_path() {
+        let manager = PluginManager::new();
+        manager
+            .register_api_handler_with_policy(
+                "GET",
+                "/api/*",
+                "notes",
+                "handler::api-root",
+                Some("api.root.read"),
+            )
+            .await;
+        manager
+            .register_api_handler_with_policy(
+                "GET",
+                "/api/notes/*",
+                "notes",
+                "handler::api-notes",
+                Some("api.notes.read"),
+            )
+            .await;
+
+        assert_eq!(
+            manager
+                .api_route_policy("GET", "/api/notes/123")
+                .await
+                .as_deref(),
+            Some("api.notes.read")
         );
     }
 }
