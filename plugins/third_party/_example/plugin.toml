@@ -9,3 +9,6 @@ routes = true
 commands = true
 admin = true
 database = false
+
+[policies]
+scopes = ["api.example.read", "cli.example.run", "admin.example.read"]

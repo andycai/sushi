@@ -11,6 +11,9 @@ commands = true
 admin = true
 database = "admin"
 
+[policies]
+scopes = ["api.kv.*", "admin.kv.read", "cli.kv.*"]
+
 [admin.assets.bundles.workspace]
 js = ["kv.js"]
 css = []

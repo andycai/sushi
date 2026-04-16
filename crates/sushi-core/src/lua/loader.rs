@@ -795,17 +795,20 @@ end)
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
         assert!(source.contains("function M.register(deps)"));
-        assert!(source.contains("sushi.api.route(\"GET\", \"/api/kv\", deps.api.dispatch)"));
         assert!(source.contains(
-            "sushi.api.route(\"DELETE\", \"/api/kv/*\", deps.api.delete_dispatch)"
+            "sushi.api.route(\"GET\", \"/api/kv\", deps.api.dispatch, { policy = \"api.kv.read\" })"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"DELETE\", \"/api/kv/*\", deps.api.delete_dispatch, { policy = \"api.kv.delete\" })"
         ));
         assert!(source.contains(
             "sushi.web.page(\"/admin/kv\", \"plugins/official/kv-store/kv.html\", {"
         ));
+        assert!(source.contains("policy = \"admin.kv.read\""));
         assert!(source.contains("assets = { bundles = { \"workspace\" } }"));
         assert!(source.contains("title = \"KV Store\""));
         assert!(source.contains(
-            "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", deps.cli.kv_set)"
+            "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", deps.cli.kv_set, { policy = \"cli.kv.set\" })"
         ));
         assert!(source.contains("return M"));
     }
