@@ -54,7 +54,7 @@ impl PolicyRepository {
             .storage
             .query(
                 r#"
-                SELECT key, surface, resource, action, name
+                SELECT key, name
                 FROM policy_keys
                 ORDER BY key ASC
                 "#,
@@ -76,10 +76,15 @@ fn row_to_policy_key(row: std::collections::HashMap<String, Value>) -> Result<St
     let name = row
         .get("name")
         .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+        .ok_or_else(|| "missing policy key name".to_string())?;
+    if name.trim().is_empty() {
+        return Err("policy key name cannot be empty".to_string());
+    }
 
-    Ok(StoredPolicyKey { key: parsed, name })
+    Ok(StoredPolicyKey {
+        key: parsed,
+        name: name.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -89,8 +94,7 @@ mod tests {
     use crate::storage::Storage;
     use std::sync::Arc;
 
-    #[tokio::test]
-    async fn upsert_and_load_policy_key_round_trip() {
+    async fn repo_with_schema() -> PolicyRepository {
         let sqlite = Arc::new(SqliteStorage::new_in_memory().await.expect("sqlite setup should work"));
         sqlite
             .run_migrations(include_str!("../../../../migrations/001_init.sql"))
@@ -106,7 +110,12 @@ mod tests {
             .expect("migration 006 should apply");
 
         let storage: Arc<dyn Storage> = sqlite;
-        let repo = PolicyRepository::new(storage);
+        PolicyRepository::new(storage)
+    }
+
+    #[tokio::test]
+    async fn upsert_and_load_policy_key_round_trip() {
+        let repo = repo_with_schema().await;
 
         repo.upsert_policy_key("Admin.Users.Read", "Read users")
             .await
@@ -137,5 +146,17 @@ mod tests {
             .expect("expected upserted key");
 
         assert_eq!(updated.name, "Read users in admin");
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_policy_name() {
+        let repo = repo_with_schema().await;
+
+        let err = repo
+            .upsert_policy_key("admin.users.read", "   ")
+            .await
+            .expect_err("blank names should be rejected");
+
+        assert_eq!(err, "policy key name cannot be empty");
     }
 }
