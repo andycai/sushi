@@ -21,6 +21,8 @@ const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sq
 const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
 const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
 const MENUS_RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/005_menus_rbac.sql");
+const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
+    include_str!("../../../migrations/006_unified_policy_v2.sql");
 const LEGACY_MENU_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -285,6 +287,10 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
         .run_migrations(MENUS_RBAC_MIGRATION_SQL)
         .await
         .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -324,6 +330,10 @@ async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Pat
         .run_migrations(MENUS_RBAC_MIGRATION_SQL)
         .await
         .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -370,6 +380,10 @@ async fn build_app_with_plugin_page_assets(
         .run_migrations(MENUS_RBAC_MIGRATION_SQL)
         .await
         .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -418,6 +432,10 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
         .run_migrations(MENUS_RBAC_MIGRATION_SQL)
         .await
         .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 

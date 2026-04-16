@@ -192,12 +192,18 @@ mod tests {
 
     const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
     const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
+    const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
+        include_str!("../../../migrations/006_unified_policy_v2.sql");
 
     async fn test_context() -> SushiContext {
         let config = ConfigStore::new(SushiConfig::default());
         let storage = SqliteStorage::new_in_memory().await.unwrap();
         storage.run_migrations(MIGRATION_SQL).await.unwrap();
         storage.run_migrations(RBAC_MIGRATION_SQL).await.unwrap();
+        storage
+            .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+            .await
+            .unwrap();
         let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
 
         let templates_root =

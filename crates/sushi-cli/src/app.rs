@@ -15,6 +15,8 @@ const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sq
 const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
 const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
 const MENUS_RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/005_menus_rbac.sql");
+const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
+    include_str!("../../../migrations/006_unified_policy_v2.sql");
 
 pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     let config = match config_path {
@@ -60,6 +62,10 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         .run_migrations(MENUS_RBAC_MIGRATION_SQL)
         .await
         .context("failed to run menus rbac migrations")?;
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .context("failed to run unified policy migrations")?;
 
     let jwt = {
         let guard = config.get().await;
