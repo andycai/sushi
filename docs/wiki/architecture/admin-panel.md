@@ -1,95 +1,93 @@
 # Admin Panel
 
-## Workspace 导航模型（HTMX + Tabs）
+## Workspace navigation model
 
-当前后台采用“左侧菜单 + 右侧 Workspace”的局部加载模型：
+The admin UI uses a left menu plus right workspace partials.
 
-- 左侧菜单点击叶子节点时，不再整页刷新，而是通过 HTMX 请求 `GET /admin/workspace/:module` 局部加载右侧内容。
-- 右侧支持多 Tab 工作区，同一路径去重（重复点击只激活已有 Tab）。
-- Dashboard（`/admin/`）固定存在且不可关闭；其他模块 Tab 可关闭。
-- 激活 Tab 时同步浏览器 URL（`history.pushState`），支持前进/后退恢复。
-- Tab 状态持久化到 `localStorage`（key: `admin.workspace.tabs.v1`），刷新后恢复。
-- HTMX 不可用时自动降级为整页跳转，保证功能可用性。
+- Leaf menu clicks load right-side content through HTMX (`GET /admin/workspace/:module`).
+- Tabs deduplicate by path (clicking the same item re-activates the existing tab).
+- Dashboard (`/admin/`) is fixed and not closable.
+- Active tabs sync browser history (`history.pushState`) and restore with back/forward.
+- Tab state persists in `localStorage` (`admin.workspace.tabs.v1`).
+- If HTMX is unavailable, links fall back to full-page navigation.
 
-### Workspace 模块映射
+### Workspace module routes
 
-| 模块 | 路由 |
-|-----|------|
-| dashboard | /admin/ |
-| users | /admin/users |
-| roles | /admin/roles |
-| permissions | /admin/permissions |
-| plugins | /admin/plugins |
-| kv | /admin/kv |
-| config | /admin/config |
-| logs | /admin/logs |
-| menus | /admin/menus |
+| Module | Route |
+| --- | --- |
+| dashboard | `/admin/` |
+| users | `/admin/users` |
+| roles | `/admin/roles` |
+| permissions | `/admin/permissions` |
+| plugins | `/admin/plugins` |
+| kv | `/admin/kv` |
+| config | `/admin/config` |
+| logs | `/admin/logs` |
+| menus | `/admin/menus` |
 
-### Workspace Partial Endpoint
+### Workspace partial endpoint
 
-| 方法 | 路径 | 功能 |
-|-----|------|------|
-| GET | /admin/workspace/:module | 返回右侧内容片段（不含 sidebar/base） |
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/admin/workspace/:module` | Returns workspace content fragment only |
 
-### RBAC 映射
+## Unified policy enforcement
 
-`/admin/workspace/:module` 复用现有读权限模型：
+Admin authorization is enforced by the unified authorizer with policy keys in `surface.resource.action` format.
+Built-in admin bindings use `surface = admin` and match by HTTP method + path pattern.
 
-- `dashboard -> dashboard.view`
-- `users -> users.view`
-- `roles -> roles.view`
-- `permissions -> permissions.view`
-- `plugins -> plugins.view`
-- `kv -> kv.manage`
-- `config -> config.view`
-- `logs -> logs.view`
-- `menus -> menus.view`
+### Built-in policy keys used by admin routes
 
-## 菜单系统
+- `admin.dashboard.view`
+- `admin.users.view`
+- `admin.users.manage`
+- `admin.roles.view`
+- `admin.roles.manage`
+- `admin.permissions.view`
+- `admin.permissions.manage`
+- `admin.plugins.view`
+- `admin.kv.manage`
+- `admin.config.view`
+- `admin.logs.view`
+- `admin.menus.view`
+- `admin.menus.manage`
 
-Admin 面板使用动态菜单系统，菜单数据存储在数据库 `menu_items` 表中。
+### Enforcement notes
 
-### 数据库结构
+- Admin middleware validates JWT access tokens and resolves role from claims.
+- `admin` role keeps full access to built-in admin routes.
+- Non-admin roles are checked through authorizer bindings and role grants.
+- `/admin/partials/*` routes keep an explicit admin-only guard.
 
-| 字段 | 类型 | 说明 |
-|-----|------|------|
-| id | INTEGER | 主键 |
-| label | TEXT | 菜单显示名称 |
-| icon | TEXT | Lucide 图标名 |
-| position | INTEGER | 排序位置 |
-| parent_id | INTEGER | NULL=一级菜单，指向父ID=二级菜单 |
-| route | TEXT | 路由路径 |
-| is_hidden | INTEGER | 0=显示, 1=隐藏 |
+## Menu system
 
-### API
+The admin menu is dynamic and stored in `menu_items`.
 
-| 方法 | 路径 | 功能 |
-|-----|------|------|
-| GET | /admin/api/menu | 获取菜单列表 |
-| POST | /admin/api/menu | 创建菜单项 |
-| PUT | /admin/api/menu/:id | 更新菜单项 |
-| DELETE | /admin/api/menu/:id | 删除菜单项 |
+### Table columns
 
-### 菜单管理页面
+| Column | Type | Meaning |
+| --- | --- | --- |
+| id | INTEGER | Primary key |
+| label | TEXT | Display label |
+| icon | TEXT | Lucide icon name |
+| position | INTEGER | Sort order |
+| parent_id | INTEGER | `NULL` for top-level, otherwise parent row id |
+| route | TEXT | Route path |
+| is_hidden | INTEGER | `0` visible, `1` hidden |
 
-路由: `/admin/menus`
+### Menu API
 
-功能:
-- 列表显示所有菜单项（树形结构）
-- 添加/编辑/删除菜单项
-- 显示/隐藏切换
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/admin/api/menu` | List menu entries |
+| POST | `/admin/api/menu` | Create menu entry |
+| PUT | `/admin/api/menu/:id` | Update menu entry |
+| DELETE | `/admin/api/menu/:id` | Delete menu entry |
 
-### 图标
+### Menu management page
 
-使用 Lucide Icons SVG 内联渲染。常用图标:
+Route: `/admin/menus`
 
-| 图标名 | 用途 |
-|-------|------|
-| layout-dashboard | Dashboard |
-| users | 用户管理 |
-| shield | 角色 |
-| key | 权限 |
-| package | 插件 |
-| settings | 配置 |
-| file-text | 日志 |
-| database | 数据库 |
+- Render menu tree.
+- Support add/edit/delete.
+- Support visible/hidden toggles.

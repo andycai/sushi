@@ -181,6 +181,7 @@ mod tests {
     use axum::extract::State;
     use axum::http::{header, Request};
     use serde_json::Value;
+    use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
     use sushi_core::auth::jwt::JwtService;
     use sushi_core::config::{ConfigStore, SushiConfig};
     use sushi_core::context::SushiContext;
@@ -194,6 +195,57 @@ mod tests {
     const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
     const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
         include_str!("../../../migrations/006_unified_policy_v2.sql");
+
+    fn api_http_bindings() -> Vec<HttpBinding> {
+        vec![
+            HttpBinding {
+                surface: "api".to_string(),
+                method: "GET".to_string(),
+                path_pattern: "/api/users".to_string(),
+                policy_key: "api.users.read".to_string(),
+            },
+            HttpBinding {
+                surface: "api".to_string(),
+                method: "POST".to_string(),
+                path_pattern: "/api/users".to_string(),
+                policy_key: "api.users.manage".to_string(),
+            },
+            HttpBinding {
+                surface: "api".to_string(),
+                method: "DELETE".to_string(),
+                path_pattern: "/api/users/{id}".to_string(),
+                policy_key: "api.users.manage".to_string(),
+            },
+        ]
+    }
+
+    async fn refresh_api_authorizer(ctx: &SushiContext) {
+        let grants_rows = ctx
+            .db
+            .query(
+                r#"
+                SELECT r.slug AS role_slug, pk.key AS policy_key
+                FROM roles r
+                JOIN role_policy_keys rpk ON rpk.role_id = r.id
+                JOIN policy_keys pk ON pk.id = rpk.policy_key_id
+                "#,
+                vec![],
+            )
+            .await
+            .expect("failed to load policy grants");
+
+        let role_grants: Vec<(String, String)> = grants_rows
+            .into_iter()
+            .filter_map(|row| {
+                let role = row.get("role_slug").and_then(Value::as_str)?;
+                let policy_key = row.get("policy_key").and_then(Value::as_str)?;
+                Some((role.to_string(), policy_key.to_string()))
+            })
+            .collect();
+
+        let snapshot = CompiledPolicySnapshot::new(api_http_bindings(), vec![], role_grants);
+        ctx.authorizer.replace_snapshot(snapshot).await;
+    }
 
     async fn test_context() -> SushiContext {
         let config = ConfigStore::new(SushiConfig::default());
@@ -211,7 +263,9 @@ mod tests {
         std::fs::create_dir_all(&templates_root).unwrap();
         let templates = TemplateService::new(&templates_root).unwrap();
 
-        SushiContext::new(config, storage, jwt, templates)
+        let ctx = SushiContext::new(config, storage, jwt, templates);
+        refresh_api_authorizer(&ctx).await;
+        ctx
     }
 
     #[tokio::test]

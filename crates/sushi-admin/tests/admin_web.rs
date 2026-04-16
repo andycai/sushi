@@ -260,277 +260,277 @@ fn admin_http_bindings() -> Vec<HttpBinding> {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/".to_string(),
-            policy_key: "dashboard.view".to_string(),
+            policy_key: "admin.dashboard.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/logs".to_string(),
-            policy_key: "logs.view".to_string(),
+            policy_key: "admin.logs.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/api/logs".to_string(),
-            policy_key: "logs.view".to_string(),
+            policy_key: "admin.logs.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/config".to_string(),
-            policy_key: "config.view".to_string(),
+            policy_key: "admin.config.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/api/config".to_string(),
-            policy_key: "config.view".to_string(),
+            policy_key: "admin.config.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/plugins".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/plugins/{plugin}".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/partials/plugins/table".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/api/plugins".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/api/plugins/{plugin}/pages".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/api/workspace/assets".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/menus".to_string(),
-            policy_key: "menus.view".to_string(),
+            policy_key: "admin.menus.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/partials/menus/table".to_string(),
-            policy_key: "menus.view".to_string(),
+            policy_key: "admin.menus.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/api/menu".to_string(),
-            policy_key: "menus.view".to_string(),
+            policy_key: "admin.menus.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/users".to_string(),
-            policy_key: "users.view".to_string(),
+            policy_key: "admin.users.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/partials/users/table".to_string(),
-            policy_key: "users.view".to_string(),
+            policy_key: "admin.users.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/roles".to_string(),
-            policy_key: "roles.view".to_string(),
+            policy_key: "admin.roles.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/partials/roles/table".to_string(),
-            policy_key: "roles.view".to_string(),
+            policy_key: "admin.roles.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/permissions".to_string(),
-            policy_key: "permissions.view".to_string(),
+            policy_key: "admin.permissions.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/partials/permissions/table".to_string(),
-            policy_key: "permissions.view".to_string(),
+            policy_key: "admin.permissions.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/partials/roles/{id}/permissions/form".to_string(),
-            policy_key: "roles.view".to_string(),
+            policy_key: "admin.roles.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/users/create".to_string(),
-            policy_key: "users.manage".to_string(),
+            policy_key: "admin.users.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "DELETE".to_string(),
             path_pattern: "/admin/partials/users/{id}".to_string(),
-            policy_key: "users.manage".to_string(),
+            policy_key: "admin.users.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/roles/create".to_string(),
-            policy_key: "roles.manage".to_string(),
+            policy_key: "admin.roles.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/roles/{id}/update".to_string(),
-            policy_key: "roles.manage".to_string(),
+            policy_key: "admin.roles.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/roles/{id}/permissions".to_string(),
-            policy_key: "roles.manage".to_string(),
+            policy_key: "admin.roles.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "DELETE".to_string(),
             path_pattern: "/admin/partials/roles/{id}".to_string(),
-            policy_key: "roles.manage".to_string(),
+            policy_key: "admin.roles.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/permissions/create".to_string(),
-            policy_key: "permissions.manage".to_string(),
+            policy_key: "admin.permissions.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/permissions/{id}/update".to_string(),
-            policy_key: "permissions.manage".to_string(),
+            policy_key: "admin.permissions.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "DELETE".to_string(),
             path_pattern: "/admin/partials/permissions/{id}".to_string(),
-            policy_key: "permissions.manage".to_string(),
+            policy_key: "admin.permissions.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/menus/create".to_string(),
-            policy_key: "menus.manage".to_string(),
+            policy_key: "admin.menus.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/partials/menus/{id}/update".to_string(),
-            policy_key: "menus.manage".to_string(),
+            policy_key: "admin.menus.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "DELETE".to_string(),
             path_pattern: "/admin/partials/menus/{id}".to_string(),
-            policy_key: "menus.manage".to_string(),
+            policy_key: "admin.menus.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "POST".to_string(),
             path_pattern: "/admin/api/menu".to_string(),
-            policy_key: "menus.manage".to_string(),
+            policy_key: "admin.menus.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "PUT".to_string(),
             path_pattern: "/admin/api/menu/{id}".to_string(),
-            policy_key: "menus.manage".to_string(),
+            policy_key: "admin.menus.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "DELETE".to_string(),
             path_pattern: "/admin/api/menu/{id}".to_string(),
-            policy_key: "menus.manage".to_string(),
+            policy_key: "admin.menus.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/dashboard".to_string(),
-            policy_key: "dashboard.view".to_string(),
+            policy_key: "admin.dashboard.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/users".to_string(),
-            policy_key: "users.view".to_string(),
+            policy_key: "admin.users.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/roles".to_string(),
-            policy_key: "roles.view".to_string(),
+            policy_key: "admin.roles.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/permissions".to_string(),
-            policy_key: "permissions.view".to_string(),
+            policy_key: "admin.permissions.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/plugins".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/plugins/{plugin}".to_string(),
-            policy_key: "plugins.view".to_string(),
+            policy_key: "admin.plugins.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/kv".to_string(),
-            policy_key: "kv.manage".to_string(),
+            policy_key: "admin.kv.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/config".to_string(),
-            policy_key: "config.view".to_string(),
+            policy_key: "admin.config.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/logs".to_string(),
-            policy_key: "logs.view".to_string(),
+            policy_key: "admin.logs.view".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
             method: "GET".to_string(),
             path_pattern: "/admin/workspace/menus".to_string(),
-            policy_key: "menus.view".to_string(),
+            policy_key: "admin.menus.view".to_string(),
         },
     ]
 }
@@ -540,7 +540,12 @@ async fn refresh_admin_authorizer(ctx: &SushiContext) {
         .db
         .query(
             r#"
-            SELECT r.slug AS role_slug, p.slug AS permission_slug
+            SELECT r.slug AS role_slug, pk.key AS policy_key
+            FROM roles r
+            JOIN role_policy_keys rpk ON rpk.role_id = r.id
+            JOIN policy_keys pk ON pk.id = rpk.policy_key_id
+            UNION
+            SELECT r.slug AS role_slug, 'admin.' || p.slug AS policy_key
             FROM roles r
             JOIN role_permissions rp ON rp.role_id = r.id
             JOIN permissions p ON p.id = rp.permission_id
@@ -554,8 +559,8 @@ async fn refresh_admin_authorizer(ctx: &SushiContext) {
         .into_iter()
         .filter_map(|row| {
             let role = row.get("role_slug").and_then(Value::as_str)?;
-            let permission = row.get("permission_slug").and_then(Value::as_str)?;
-            Some((role.to_string(), permission.to_string()))
+            let policy_key = row.get("policy_key").and_then(Value::as_str)?;
+            Some((role.to_string(), policy_key.to_string()))
         })
         .collect();
 

@@ -74,4 +74,54 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_bindings_unique_tuple
         owner_id
     );
 
+INSERT OR IGNORE INTO policy_keys (key, surface, resource, action, name, description, is_system) VALUES
+    ('admin.dashboard.view', 'admin', 'dashboard', 'view', 'View Admin Dashboard', 'Access the admin dashboard.', 1),
+    ('admin.users.view', 'admin', 'users', 'view', 'View Admin Users', 'Read users from admin surfaces.', 1),
+    ('admin.users.manage', 'admin', 'users', 'manage', 'Manage Admin Users', 'Create or delete users from admin surfaces.', 1),
+    ('admin.roles.view', 'admin', 'roles', 'view', 'View Admin Roles', 'Read role assignments from admin surfaces.', 1),
+    ('admin.roles.manage', 'admin', 'roles', 'manage', 'Manage Admin Roles', 'Edit role assignments from admin surfaces.', 1),
+    ('admin.permissions.view', 'admin', 'permissions', 'view', 'View Admin Permissions', 'Read permission catalog entries from admin surfaces.', 1),
+    ('admin.permissions.manage', 'admin', 'permissions', 'manage', 'Manage Admin Permissions', 'Create, edit, or delete permissions from admin surfaces.', 1),
+    ('admin.plugins.view', 'admin', 'plugins', 'view', 'View Admin Plugins', 'Inspect plugin metadata from admin surfaces.', 1),
+    ('admin.kv.manage', 'admin', 'kv', 'manage', 'Manage Admin KV', 'Manage key-value entries from admin surfaces.', 1),
+    ('admin.config.view', 'admin', 'config', 'view', 'View Admin Config', 'Inspect runtime config from admin surfaces.', 1),
+    ('admin.logs.view', 'admin', 'logs', 'view', 'View Admin Logs', 'Read runtime logs from admin surfaces.', 1),
+    ('admin.menus.view', 'admin', 'menus', 'view', 'View Admin Menus', 'Read admin navigation menu entries.', 1),
+    ('admin.menus.manage', 'admin', 'menus', 'manage', 'Manage Admin Menus', 'Create, update, and delete admin navigation menu entries.', 1),
+    ('api.users.read', 'api', 'users', 'read', 'Read API Users', 'List users through API routes.', 1),
+    ('api.users.manage', 'api', 'users', 'manage', 'Manage API Users', 'Create or delete users through API routes.', 1);
+
+INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
+SELECT roles.id, policy_keys.id
+FROM roles
+JOIN policy_keys ON 1 = 1
+WHERE roles.slug = 'admin';
+
+INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
+SELECT roles.id, policy_keys.id
+FROM roles
+JOIN policy_keys ON policy_keys.key IN (
+    'admin.dashboard.view',
+    'admin.users.view',
+    'admin.users.manage',
+    'admin.roles.view',
+    'admin.permissions.view',
+    'admin.plugins.view',
+    'admin.kv.manage',
+    'admin.logs.view',
+    'admin.menus.view',
+    'api.users.read',
+    'api.users.manage'
+)
+WHERE roles.slug = 'editor';
+
+INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
+SELECT roles.id, policy_keys.id
+FROM roles
+JOIN policy_keys ON policy_keys.key IN (
+    'admin.dashboard.view',
+    'admin.logs.view'
+)
+WHERE roles.slug = 'viewer';
+
 INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (6, '006_unified_policy_v2');
