@@ -380,6 +380,47 @@ fn resolve_page_assets(
     Ok(resolved)
 }
 
+fn policy_matches_scope(policy_key: &str, scope: &str) -> bool {
+    if let Some(prefix) = scope.strip_suffix('*') {
+        policy_key.starts_with(prefix)
+    } else {
+        policy_key == scope
+    }
+}
+
+fn validate_policy_scope(
+    plugin_name: &str,
+    target: &str,
+    policy_key: &str,
+    scopes: &[String],
+) -> Result<(), PluginError> {
+    if scopes
+        .iter()
+        .any(|scope| policy_matches_scope(policy_key, scope))
+    {
+        return Ok(());
+    }
+
+    let scope_list = if scopes.is_empty() {
+        "<none>".to_string()
+    } else {
+        scopes.join(", ")
+    };
+
+    Err(PluginError::InitFailed(format!(
+        "plugin '{plugin_name}' declared policy '{policy_key}' for {target}, but it is outside manifest policy scopes: [{scope_list}]"
+    )))
+}
+
+fn parse_entry_policy(
+    entry: &mlua::Table,
+    entry_name: &str,
+) -> Result<Option<String>, PluginError> {
+    entry
+        .get::<Option<String>>("policy")
+        .map_err(|e| PluginError::InitFailed(format!("invalid {entry_name} policy value: {e}")))
+}
+
 #[async_trait]
 impl Plugin for LuaPlugin {
     fn name(&self) -> &str {
@@ -445,6 +486,7 @@ impl Plugin for LuaPlugin {
         }
 
         let plugin_name = &self.manifest.plugin.name;
+        let allowed_policy_scopes = &self.manifest.policies.scopes;
 
         // Read pending routes, register with PluginManager
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
@@ -454,15 +496,31 @@ impl Plugin for LuaPlugin {
                     let method: String = entry.get("method").unwrap_or_default();
                     let path: String = entry.get("path").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
+                    let policy_key = parse_entry_policy(&entry, "route entry")?;
+                    if let Some(policy_key_value) = policy_key.as_deref() {
+                        validate_policy_scope(
+                            plugin_name,
+                            &format!("route {method} {path}"),
+                            policy_key_value,
+                            allowed_policy_scopes,
+                        )?;
+                    }
                     ctx.plugins
-                        .register_api_handler(&method, &path, plugin_name, &handler_key)
+                        .register_api_handler_with_policy(
+                            &method,
+                            &path,
+                            plugin_name,
+                            &handler_key,
+                            policy_key.as_deref(),
+                        )
                         .await;
                     tracing::debug!(
-                        "plugin {} registered route {} {} (handler: {})",
+                        "plugin {} registered route {} {} (handler: {}, policy: {:?})",
                         plugin_name,
                         method,
                         path,
-                        handler_key
+                        handler_key,
+                        policy_key
                     );
                 }
             }
@@ -475,14 +533,29 @@ impl Plugin for LuaPlugin {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
                     let name: String = entry.get("name").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
+                    let policy_key = parse_entry_policy(&entry, "command entry")?;
+                    if let Some(policy_key_value) = policy_key.as_deref() {
+                        validate_policy_scope(
+                            plugin_name,
+                            &format!("command {name}"),
+                            policy_key_value,
+                            allowed_policy_scopes,
+                        )?;
+                    }
                     ctx.plugins
-                        .register_cli_handler(&name, plugin_name, &handler_key)
+                        .register_cli_handler_with_policy(
+                            &name,
+                            plugin_name,
+                            &handler_key,
+                            policy_key.as_deref(),
+                        )
                         .await;
                     tracing::debug!(
-                        "plugin {} registered command {} (handler: {})",
+                        "plugin {} registered command {} (handler: {}, policy: {:?})",
                         plugin_name,
                         name,
-                        handler_key
+                        handler_key,
+                        policy_key
                     );
                 }
             }
@@ -501,6 +574,15 @@ impl Plugin for LuaPlugin {
                     let path: String = entry.get("path").unwrap_or_default();
                     let title: String = entry.get("title").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
+                    let policy_key = parse_entry_policy(&entry, "page entry")?;
+                    if let Some(policy_key_value) = policy_key.as_deref() {
+                        validate_policy_scope(
+                            plugin_name,
+                            &format!("page {path}"),
+                            policy_key_value,
+                            allowed_policy_scopes,
+                        )?;
+                    }
                     let (bundle_names, page_js, page_css) = parse_page_assets_entry(&entry)?;
                     let assets = resolve_page_assets(
                         &self.plugin_path_id,
@@ -512,20 +594,22 @@ impl Plugin for LuaPlugin {
                         &static_prefix,
                     )?;
                     ctx.plugins
-                        .register_admin_handler_with_assets(
+                        .register_admin_handler_with_assets_and_policy(
                             &path,
                             plugin_name,
                             &title,
                             &handler_key,
                             assets,
+                            policy_key.as_deref(),
                         )
                         .await;
                     tracing::debug!(
-                        "plugin {} registered page {} ({}) (handler: {})",
+                        "plugin {} registered page {} ({}) (handler: {}, policy: {:?})",
                         plugin_name,
                         path,
                         title,
-                        handler_key
+                        handler_key,
+                        policy_key
                     );
                 }
             }
@@ -868,6 +952,121 @@ end
         let ctx = test_context().await;
 
         plugins[0].init(&ctx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_load_fails_when_declared_policy_outside_scope() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("third_party").join("policy_mismatch");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "policy_mismatch"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+
+[permissions]
+routes = true
+
+[policies]
+scopes = ["api.plugin.*"]
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    sushi.api.route("GET", "/api/mismatch", function()
+        return "ok"
+    end, { policy = "admin.users.read" })
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+        let err = plugins[0].init(&ctx).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("policy_mismatch"));
+        assert!(msg.contains("admin.users.read"));
+        assert!(msg.contains("api.plugin.*"));
+    }
+
+    #[tokio::test]
+    async fn plugin_load_persists_policy_metadata_for_registrations() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("third_party").join("policy_capture");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "policy_capture"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+
+[permissions]
+routes = true
+commands = true
+admin = true
+
+[policies]
+scopes = ["api.notes.*", "cli.notes.run", "admin.notes.*"]
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    sushi.api.route("GET", "/api/notes", function()
+        return "api"
+    end, { policy = "api.notes.read" })
+
+    sushi.cli.command("notes-run", "Run notes command", function()
+        return "cli"
+    end, { policy = "cli.notes.run" })
+
+    sushi.admin.page("/admin/notes", "Notes", function()
+        return "admin"
+    end, { policy = "admin.notes.read" })
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+        plugins[0].init(&ctx).await.unwrap();
+
+        assert_eq!(
+            ctx.plugins
+                .api_route_policy("GET", "/api/notes")
+                .await
+                .as_deref(),
+            Some("api.notes.read")
+        );
+        assert_eq!(
+            ctx.plugins.cli_command_policy("notes-run").await.as_deref(),
+            Some("cli.notes.run")
+        );
+        assert_eq!(
+            ctx.plugins
+                .admin_page_policy("/admin/notes")
+                .await
+                .as_deref(),
+            Some("admin.notes.read")
+        );
     }
 
     #[tokio::test]

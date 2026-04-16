@@ -36,9 +36,24 @@ pub struct PageResolvedAssets {
 }
 
 #[derive(Debug, Clone)]
+struct ApiHandlerBinding {
+    plugin_name: String,
+    handler_key: String,
+    policy_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CliHandlerBinding {
+    plugin_name: String,
+    handler_key: String,
+    policy_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 struct AdminHandlerBinding {
     plugin_name: String,
     handler_key: String,
+    policy_key: Option<String>,
     title: String,
     assets: PageResolvedAssets,
 }
@@ -47,8 +62,8 @@ struct AdminHandlerBinding {
 #[derive(Clone, Default)]
 pub struct PluginManager {
     vms: Arc<RwLock<HashMap<String, mlua::Lua>>>,
-    api_handlers: Arc<RwLock<HashMap<(String, String), (String, String)>>>,
-    cli_handlers: Arc<RwLock<HashMap<String, (String, String)>>>,
+    api_handlers: Arc<RwLock<HashMap<(String, String), ApiHandlerBinding>>>,
+    cli_handlers: Arc<RwLock<HashMap<String, CliHandlerBinding>>>,
     admin_handlers: Arc<RwLock<HashMap<String, AdminHandlerBinding>>>,
     plugin_info: Arc<RwLock<HashMap<String, PluginInfo>>>,
     plugin_static_roots: Arc<RwLock<HashMap<String, PathBuf>>>,
@@ -142,9 +157,26 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) {
+        self.register_api_handler_with_policy(method, path, plugin_name, handler_key, None)
+            .await;
+    }
+
+    /// Register an API route handler with an optional policy key.
+    pub async fn register_api_handler_with_policy(
+        &self,
+        method: &str,
+        path: &str,
+        plugin_name: &str,
+        handler_key: &str,
+        policy_key: Option<&str>,
+    ) {
         self.api_handlers.write().await.insert(
             (method.to_uppercase(), path.to_string()),
-            (plugin_name.to_string(), handler_key.to_string()),
+            ApiHandlerBinding {
+                plugin_name: plugin_name.to_string(),
+                handler_key: handler_key.to_string(),
+                policy_key: policy_key.map(ToOwned::to_owned),
+            },
         );
     }
 
@@ -155,9 +187,25 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) {
+        self.register_cli_handler_with_policy(command_name, plugin_name, handler_key, None)
+            .await;
+    }
+
+    /// Register a CLI command handler with an optional policy key.
+    pub async fn register_cli_handler_with_policy(
+        &self,
+        command_name: &str,
+        plugin_name: &str,
+        handler_key: &str,
+        policy_key: Option<&str>,
+    ) {
         self.cli_handlers.write().await.insert(
             command_name.to_string(),
-            (plugin_name.to_string(), handler_key.to_string()),
+            CliHandlerBinding {
+                plugin_name: plugin_name.to_string(),
+                handler_key: handler_key.to_string(),
+                policy_key: policy_key.map(ToOwned::to_owned),
+            },
         );
     }
 
@@ -169,12 +217,26 @@ impl PluginManager {
         title: &str,
         handler_key: &str,
     ) {
-        self.register_admin_handler_with_assets(
+        self.register_admin_handler_with_policy(page_path, plugin_name, title, handler_key, None)
+            .await;
+    }
+
+    /// Register an admin page handler with an optional policy key.
+    pub async fn register_admin_handler_with_policy(
+        &self,
+        page_path: &str,
+        plugin_name: &str,
+        title: &str,
+        handler_key: &str,
+        policy_key: Option<&str>,
+    ) {
+        self.register_admin_handler_with_assets_and_policy(
             page_path,
             plugin_name,
             title,
             handler_key,
             PageResolvedAssets::default(),
+            policy_key,
         )
         .await;
     }
@@ -188,11 +250,33 @@ impl PluginManager {
         handler_key: &str,
         assets: PageResolvedAssets,
     ) {
+        self.register_admin_handler_with_assets_and_policy(
+            page_path,
+            plugin_name,
+            title,
+            handler_key,
+            assets,
+            None,
+        )
+        .await;
+    }
+
+    /// Register an admin page handler and resolved page assets with an optional policy key.
+    pub async fn register_admin_handler_with_assets_and_policy(
+        &self,
+        page_path: &str,
+        plugin_name: &str,
+        title: &str,
+        handler_key: &str,
+        assets: PageResolvedAssets,
+        policy_key: Option<&str>,
+    ) {
         self.admin_handlers.write().await.insert(
             page_path.to_string(),
             AdminHandlerBinding {
                 plugin_name: plugin_name.to_string(),
                 handler_key: handler_key.to_string(),
+                policy_key: policy_key.map(ToOwned::to_owned),
                 title: title.to_string(),
                 assets,
             },
@@ -212,26 +296,27 @@ impl PluginManager {
         let map = self.api_handlers.read().await;
 
         // Try exact match first
-        let (plugin_name, handler_key) =
-            if let Some(v) = map.get(&(method_upper.clone(), path.to_string())) {
-                v.clone()
-            } else {
-                // Try prefix wildcard match: find entries where path ends with *
-                let mut best_match = None;
-                let mut longest_prefix_len = 0;
-                for ((m, prefix), val) in map.iter() {
-                    if m == &method_upper && prefix.ends_with('*') {
-                        let prefix_str = &prefix[..prefix.len() - 1];
-                        if path.starts_with(prefix_str) {
-                            if prefix_str.len() > longest_prefix_len {
-                                longest_prefix_len = prefix_str.len();
-                                best_match = Some(val.clone());
-                            }
+        let binding = if let Some(v) = map.get(&(method_upper.clone(), path.to_string())) {
+            v.clone()
+        } else {
+            // Try prefix wildcard match: find entries where path ends with *
+            let mut best_match = None;
+            let mut longest_prefix_len = 0;
+            for ((m, prefix), val) in map.iter() {
+                if m == &method_upper && prefix.ends_with('*') {
+                    let prefix_str = &prefix[..prefix.len() - 1];
+                    if path.starts_with(prefix_str) {
+                        if prefix_str.len() > longest_prefix_len {
+                            longest_prefix_len = prefix_str.len();
+                            best_match = Some(val.clone());
                         }
                     }
                 }
-                best_match?
-            };
+            }
+            best_match?
+        };
+        let plugin_name = binding.plugin_name;
+        let handler_key = binding.handler_key;
         drop(map);
 
         // Pass path + body as args so Lua handler can extract path params
@@ -245,20 +330,38 @@ impl PluginManager {
         )
     }
 
+    /// Return the optional policy key for an API route registration.
+    pub async fn api_route_policy(&self, method: &str, path: &str) -> Option<String> {
+        self.api_handlers
+            .read()
+            .await
+            .get(&(method.to_uppercase(), path.to_string()))
+            .and_then(|binding| binding.policy_key.clone())
+    }
+
     /// Call a CLI command handler with string args, returns the output.
     pub async fn call_cli_handler(
         &self,
         command_name: &str,
         args: &[String],
     ) -> Option<Result<String, String>> {
-        let (plugin_name, handler_key) = {
+        let binding = {
             let map = self.cli_handlers.read().await;
             map.get(command_name).cloned()?
         };
         Some(
-            self.call_handler_with_args(&plugin_name, &handler_key, args)
+            self.call_handler_with_args(&binding.plugin_name, &binding.handler_key, args)
                 .await,
         )
+    }
+
+    /// Return the optional policy key for a CLI command registration.
+    pub async fn cli_command_policy(&self, command_name: &str) -> Option<String> {
+        self.cli_handlers
+            .read()
+            .await
+            .get(command_name)
+            .and_then(|binding| binding.policy_key.clone())
     }
 
     /// Call an admin page handler, returns HTML String.
@@ -271,6 +374,15 @@ impl PluginManager {
             self.call_handler_no_args(&binding.plugin_name, &binding.handler_key)
                 .await,
         )
+    }
+
+    /// Return the optional policy key for an admin page registration.
+    pub async fn admin_page_policy(&self, page_path: &str) -> Option<String> {
+        self.admin_handlers
+            .read()
+            .await
+            .get(page_path)
+            .and_then(|binding| binding.policy_key.clone())
     }
 
     /// List all registered API routes.
@@ -585,5 +697,80 @@ mod tests {
         assert!(plugins[0].permissions.routes);
         assert!(plugins[0].permissions.commands);
         assert!(plugins[0].permissions.admin);
+    }
+
+    #[tokio::test]
+    async fn registration_policy_metadata_is_stored() {
+        let manager = PluginManager::new();
+        manager
+            .register_api_handler_with_policy(
+                "GET",
+                "/api/notes",
+                "notes",
+                "handler::api",
+                Some("api.notes.read"),
+            )
+            .await;
+        manager
+            .register_api_handler("POST", "/api/notes", "notes", "handler::api-post")
+            .await;
+        manager
+            .register_cli_handler_with_policy(
+                "notes-run",
+                "notes",
+                "handler::cli",
+                Some("cli.notes.run"),
+            )
+            .await;
+        manager
+            .register_cli_handler("notes-list", "notes", "handler::cli-list")
+            .await;
+        manager
+            .register_admin_handler_with_assets_and_policy(
+                "/admin/notes",
+                "notes",
+                "Notes",
+                "handler::admin",
+                PageResolvedAssets::default(),
+                Some("admin.notes.read"),
+            )
+            .await;
+        manager
+            .register_admin_handler("/admin/notes-open", "notes", "Notes Open", "handler::open")
+            .await;
+
+        assert_eq!(
+            manager
+                .api_route_policy("GET", "/api/notes")
+                .await
+                .as_deref(),
+            Some("api.notes.read")
+        );
+        assert_eq!(
+            manager
+                .api_route_policy("POST", "/api/notes")
+                .await
+                .as_deref(),
+            None
+        );
+        assert_eq!(
+            manager.cli_command_policy("notes-run").await.as_deref(),
+            Some("cli.notes.run")
+        );
+        assert_eq!(
+            manager.cli_command_policy("notes-list").await.as_deref(),
+            None
+        );
+        assert_eq!(
+            manager.admin_page_policy("/admin/notes").await.as_deref(),
+            Some("admin.notes.read")
+        );
+        assert_eq!(
+            manager
+                .admin_page_policy("/admin/notes-open")
+                .await
+                .as_deref(),
+            None
+        );
     }
 }
