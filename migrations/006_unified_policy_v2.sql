@@ -34,7 +34,18 @@ CREATE TABLE IF NOT EXISTS policy_bindings (
     is_system INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (policy_key_id) REFERENCES policy_keys(id) ON DELETE CASCADE
+    FOREIGN KEY (policy_key_id) REFERENCES policy_keys(id) ON DELETE CASCADE,
+    CHECK (
+        (target_type = 'http_route'
+            AND method IS NOT NULL
+            AND path_pattern IS NOT NULL
+            AND command_name IS NULL)
+        OR (target_type = 'cli_command'
+            AND command_name IS NOT NULL
+            AND method IS NULL
+            AND path_pattern IS NULL)
+        OR (target_type NOT IN ('http_route', 'cli_command'))
+    )
 );
 
 CREATE TABLE IF NOT EXISTS plugin_policy_scopes (
@@ -50,5 +61,17 @@ CREATE INDEX IF NOT EXISTS idx_policy_bindings_policy_key_id
     ON policy_bindings(policy_key_id);
 CREATE INDEX IF NOT EXISTS idx_policy_bindings_surface_target
     ON policy_bindings(surface, target_type, target_ref);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_bindings_unique_tuple
+    ON policy_bindings(
+        surface,
+        target_type,
+        target_ref,
+        COALESCE(method, ''),
+        COALESCE(path_pattern, ''),
+        COALESCE(command_name, ''),
+        policy_key_id,
+        owner_type,
+        owner_id
+    );
 
 INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (6, '006_unified_policy_v2');
