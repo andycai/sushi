@@ -2,11 +2,14 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
+    Extension,
 };
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use sushi_core::{auth::rbac::RbacRepository, context::SushiContext, storage::Storage};
+
+use crate::router::AdminAuthContext;
 
 fn module_template(module: &str) -> Option<&'static str> {
     match module {
@@ -19,24 +22,6 @@ fn module_template(module: &str) -> Option<&'static str> {
         "config" => Some("admin/fragments/config_content.html"),
         "logs" => Some("admin/fragments/logs_content.html"),
         "menus" => Some("admin/fragments/menus_content.html"),
-        _ => None,
-    }
-}
-
-pub fn permission_for_module(module: &str) -> Option<&'static str> {
-    let module = module.trim_matches('/');
-
-    match module {
-        "dashboard" => Some("dashboard.view"),
-        "users" => Some("users.view"),
-        "roles" => Some("roles.view"),
-        "permissions" => Some("permissions.view"),
-        "plugins" => Some("plugins.view"),
-        "kv" => Some("kv.manage"),
-        "config" => Some("config.view"),
-        "logs" => Some("logs.view"),
-        "menus" => Some("menus.view"),
-        _ if module.starts_with("plugins/") => Some("plugins.view"),
         _ => None,
     }
 }
@@ -61,6 +46,7 @@ pub struct WorkspaceAssetsResponse {
 pub async fn workspace_assets_api(
     Query(query): Query<HashMap<String, String>>,
     State(ctx): State<SushiContext>,
+    Extension(auth): Extension<AdminAuthContext>,
 ) -> impl IntoResponse {
     let Some(path) = query
         .get("path")
@@ -75,6 +61,22 @@ pub async fn workspace_assets_api(
         )
             .into_response();
     };
+
+    if !auth.is_admin
+        && ctx
+            .authorizer
+            .check_http(&auth.role, "admin", "GET", path)
+            .await
+            .is_err()
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({
+                "error": "forbidden",
+            })),
+        )
+            .into_response();
+    }
 
     let assets = ctx
         .plugins

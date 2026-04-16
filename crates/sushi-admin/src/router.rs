@@ -11,11 +11,10 @@ use axum::{
 };
 use std::collections::HashSet;
 use std::sync::Arc;
+use sushi_core::auth::authorizer::Authorizer;
 use sushi_core::auth::jwt::JwtService;
-use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::PageResolvedAssets;
-use sushi_core::storage::Storage;
 use tower_http::services::{ServeDir, ServeFile};
 
 /// Admin auth middleware state
@@ -23,7 +22,13 @@ use tower_http::services::{ServeDir, ServeFile};
 pub struct AdminAuthState {
     pub jwt: Arc<JwtService>,
     pub static_url_prefix: String,
-    pub storage: Arc<dyn Storage>,
+    pub authorizer: Arc<Authorizer>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AdminAuthContext {
+    pub role: String,
+    pub is_admin: bool,
 }
 
 pub async fn build_admin_router(ctx: &SushiContext) -> Router {
@@ -245,7 +250,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
     let auth_state = AdminAuthState {
         jwt: Arc::clone(&ctx.jwt),
         static_url_prefix,
-        storage: ctx.db.clone() as Arc<dyn Storage>,
+        authorizer: Arc::clone(&ctx.authorizer),
     };
 
     router
@@ -289,10 +294,10 @@ async fn list_plugins_api(State(ctx): State<SushiContext>) -> impl IntoResponse 
 
 async fn admin_auth_middleware(
     axum::extract::State(state): axum::extract::State<AdminAuthState>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> impl IntoResponse {
-    let path = req.uri().path();
+    let path = req.uri().path().to_string();
     let method = req.method().as_str().to_string();
 
     // Redirect /admin (no trailing slash) to /admin/ (with trailing slash)
@@ -311,7 +316,7 @@ async fn admin_auth_middleware(
     }
 
     // Allow static assets without auth
-    if matches_static_prefix(path, &state.static_url_prefix) {
+    if matches_static_prefix(&path, &state.static_url_prefix) {
         return next.run(req).await;
     }
 
@@ -345,165 +350,31 @@ async fn admin_auth_middleware(
                 return axum::response::Redirect::temporary("/admin-login").into_response();
             }
 
-            if claims.role == "admin" {
+            let auth_context = AdminAuthContext {
+                role: claims.role.clone(),
+                is_admin: claims.role == "admin",
+            };
+            req.extensions_mut().insert(auth_context.clone());
+
+            if auth_context.is_admin {
                 return next.run(req).await;
             }
 
-            let required_permission = required_admin_permission(&method, path);
-            let required_permission = match required_permission {
-                Some(permission) => permission,
-                None => {
-                    return (
-                        axum::http::StatusCode::FORBIDDEN,
-                        "Insufficient privileges for admin access",
-                    )
-                        .into_response();
-                }
-            };
-
-            let repo = RbacRepository::new(Arc::clone(&state.storage));
-            match repo
-                .role_has_permission(&claims.role, required_permission)
+            match state
+                .authorizer
+                .check_http(&auth_context.role, "admin", &method, &path)
                 .await
             {
-                Ok(true) => next.run(req).await,
-                Ok(false) => (
+                Ok(()) => next.run(req).await,
+                Err(_) => (
                     axum::http::StatusCode::FORBIDDEN,
                     "Insufficient privileges for admin access",
-                )
-                    .into_response(),
-                Err(err) => (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Authorization check failed: {err}"),
                 )
                     .into_response(),
             }
         }
         Err(_) => axum::response::Redirect::temporary("/admin-login").into_response(),
     }
-}
-
-fn required_admin_permission(method: &str, path: &str) -> Option<&'static str> {
-    // Routes with identical access semantics are grouped for maintainability.
-    if method == "GET" {
-        if let Some(module) = path.strip_prefix("/admin/workspace/") {
-            return workspace::permission_for_module(module);
-        }
-    }
-
-    let read_map: &[(&str, &str)] = &[
-        ("GET", "/admin/"),
-        ("GET", "/admin/logs"),
-        ("GET", "/admin/api/logs"),
-        ("GET", "/admin/config"),
-        ("GET", "/admin/api/config"),
-        ("GET", "/admin/plugins"),
-        ("GET", "/admin/plugins/{plugin}"),
-        ("GET", "/admin/partials/plugins/table"),
-        ("GET", "/admin/api/plugins"),
-        ("GET", "/admin/api/plugins/{plugin}/pages"),
-        ("GET", "/admin/api/workspace/assets"),
-        ("GET", "/admin/menus"),
-        ("GET", "/admin/partials/menus/table"),
-        ("GET", "/admin/api/menu"),
-        ("GET", "/admin/users"),
-        ("GET", "/admin/partials/users/table"),
-        ("GET", "/admin/roles"),
-        ("GET", "/admin/partials/roles/table"),
-        ("GET", "/admin/permissions"),
-        ("GET", "/admin/partials/permissions/table"),
-        ("GET", "/admin/partials/roles/{id}/permissions/form"),
-    ];
-
-    let write_map: &[(&str, &str)] = &[
-        ("POST", "/admin/partials/users/create"),
-        ("DELETE", "/admin/partials/users/{id}"),
-        ("POST", "/admin/partials/roles/create"),
-        ("POST", "/admin/partials/roles/{id}/update"),
-        ("POST", "/admin/partials/roles/{id}/permissions"),
-        ("DELETE", "/admin/partials/roles/{id}"),
-        ("POST", "/admin/partials/permissions/create"),
-        ("POST", "/admin/partials/permissions/{id}/update"),
-        ("DELETE", "/admin/partials/permissions/{id}"),
-        ("POST", "/admin/partials/menus/create"),
-        ("POST", "/admin/partials/menus/{id}/update"),
-        ("DELETE", "/admin/partials/menus/{id}"),
-        ("POST", "/admin/api/menu"),
-        ("PUT", "/admin/api/menu/{id}"),
-        ("DELETE", "/admin/api/menu/{id}"),
-    ];
-
-    if path == "/admin/kv" || path.starts_with("/admin/partials/kv/") {
-        return Some("kv.manage");
-    }
-
-    if read_map
-        .iter()
-        .any(|(m, p)| *m == method && admin_path_matches(path, p))
-    {
-        return Some(match path {
-            "/admin/" => "dashboard.view",
-            "/admin/logs" | "/admin/api/logs" => "logs.view",
-            "/admin/config" | "/admin/api/config" => "config.view",
-            "/admin/plugins" | "/admin/partials/plugins/table" | "/admin/api/plugins" => {
-                "plugins.view"
-            }
-            _ if admin_path_matches(path, "/admin/plugins/{plugin}") => "plugins.view",
-            _ if admin_path_matches(path, "/admin/api/plugins/{plugin}/pages") => "plugins.view",
-            "/admin/api/workspace/assets" => "plugins.view",
-            "/admin/menus" | "/admin/partials/menus/table" | "/admin/api/menu" => "menus.view",
-            "/admin/users" | "/admin/partials/users/table" => "users.view",
-            "/admin/roles" | "/admin/partials/roles/table" => "roles.view",
-            "/admin/permissions" | "/admin/partials/permissions/table" => "permissions.view",
-            _ => "roles.manage",
-        });
-    }
-
-    if write_map
-        .iter()
-        .any(|(m, p)| *m == method && admin_path_matches(path, p))
-    {
-        return Some(match path {
-            "/admin/partials/users/create" => "users.manage",
-            _ if path.starts_with("/admin/partials/users/") => "users.manage",
-            "/admin/partials/roles/create" => "roles.manage",
-            _ if path.starts_with("/admin/partials/roles/") => "roles.manage",
-            "/admin/partials/permissions/create" => "permissions.manage",
-            _ if path.starts_with("/admin/partials/permissions/") => "permissions.manage",
-            "/admin/partials/menus/create" => "menus.manage",
-            _ if path.starts_with("/admin/partials/menus/") => "menus.manage",
-            "/admin/api/menu" => "menus.manage",
-            _ if path.starts_with("/admin/api/menu/") => "menus.manage",
-            _ => return None,
-        });
-    }
-
-    None
-}
-
-fn admin_path_matches(path: &str, pattern: &str) -> bool {
-    let path_parts: Vec<&str> = path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    let pattern_parts: Vec<&str> = pattern
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-
-    if path_parts.len() != pattern_parts.len() {
-        return false;
-    }
-
-    path_parts
-        .iter()
-        .zip(pattern_parts.iter())
-        .all(|(actual, expected)| {
-            if expected.starts_with('{') && expected.ends_with('}') {
-                return true;
-            }
-            actual == expected
-        })
 }
 
 fn is_plugin_workspace_root_path(path: &str) -> bool {

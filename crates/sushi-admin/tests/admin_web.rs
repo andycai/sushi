@@ -8,11 +8,13 @@ use std::{
     path::{Path, PathBuf},
 };
 use sushi_admin::router::build_admin_router;
+use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::PageResolvedAssets;
 use sushi_core::storage::sqlite::SqliteStorage;
+use sushi_core::storage::Storage;
 use sushi_core::web::template_service::TemplateService;
 use tower::ServiceExt;
 
@@ -252,7 +254,316 @@ fn directory_has_files(dir: &Path) -> bool {
     false
 }
 
-async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
+fn admin_http_bindings() -> Vec<HttpBinding> {
+    vec![
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/".to_string(),
+            policy_key: "dashboard.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/logs".to_string(),
+            policy_key: "logs.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/api/logs".to_string(),
+            policy_key: "logs.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/config".to_string(),
+            policy_key: "config.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/api/config".to_string(),
+            policy_key: "config.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/plugins".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/plugins/{plugin}".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/partials/plugins/table".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/api/plugins".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/api/plugins/{plugin}/pages".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/api/workspace/assets".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/menus".to_string(),
+            policy_key: "menus.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/partials/menus/table".to_string(),
+            policy_key: "menus.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/api/menu".to_string(),
+            policy_key: "menus.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/users".to_string(),
+            policy_key: "users.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/partials/users/table".to_string(),
+            policy_key: "users.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/roles".to_string(),
+            policy_key: "roles.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/partials/roles/table".to_string(),
+            policy_key: "roles.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/permissions".to_string(),
+            policy_key: "permissions.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/partials/permissions/table".to_string(),
+            policy_key: "permissions.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/partials/roles/{id}/permissions/form".to_string(),
+            policy_key: "roles.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/users/create".to_string(),
+            policy_key: "users.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "DELETE".to_string(),
+            path_pattern: "/admin/partials/users/{id}".to_string(),
+            policy_key: "users.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/roles/create".to_string(),
+            policy_key: "roles.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/roles/{id}/update".to_string(),
+            policy_key: "roles.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/roles/{id}/permissions".to_string(),
+            policy_key: "roles.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "DELETE".to_string(),
+            path_pattern: "/admin/partials/roles/{id}".to_string(),
+            policy_key: "roles.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/permissions/create".to_string(),
+            policy_key: "permissions.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/permissions/{id}/update".to_string(),
+            policy_key: "permissions.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "DELETE".to_string(),
+            path_pattern: "/admin/partials/permissions/{id}".to_string(),
+            policy_key: "permissions.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/menus/create".to_string(),
+            policy_key: "menus.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/partials/menus/{id}/update".to_string(),
+            policy_key: "menus.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "DELETE".to_string(),
+            path_pattern: "/admin/partials/menus/{id}".to_string(),
+            policy_key: "menus.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "POST".to_string(),
+            path_pattern: "/admin/api/menu".to_string(),
+            policy_key: "menus.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "PUT".to_string(),
+            path_pattern: "/admin/api/menu/{id}".to_string(),
+            policy_key: "menus.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "DELETE".to_string(),
+            path_pattern: "/admin/api/menu/{id}".to_string(),
+            policy_key: "menus.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/dashboard".to_string(),
+            policy_key: "dashboard.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/users".to_string(),
+            policy_key: "users.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/roles".to_string(),
+            policy_key: "roles.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/permissions".to_string(),
+            policy_key: "permissions.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/plugins".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/plugins/{plugin}".to_string(),
+            policy_key: "plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/kv".to_string(),
+            policy_key: "kv.manage".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/config".to_string(),
+            policy_key: "config.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/logs".to_string(),
+            policy_key: "logs.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "GET".to_string(),
+            path_pattern: "/admin/workspace/menus".to_string(),
+            policy_key: "menus.view".to_string(),
+        },
+    ]
+}
+
+async fn refresh_admin_authorizer(ctx: &SushiContext) {
+    let grants_rows = ctx
+        .db
+        .query(
+            r#"
+            SELECT r.slug AS role_slug, p.slug AS permission_slug
+            FROM roles r
+            JOIN role_permissions rp ON rp.role_id = r.id
+            JOIN permissions p ON p.id = rp.permission_id
+            "#,
+            vec![],
+        )
+        .await
+        .expect("failed to load role permission grants");
+
+    let role_grants: Vec<(String, String)> = grants_rows
+        .into_iter()
+        .filter_map(|row| {
+            let role = row.get("role_slug").and_then(Value::as_str)?;
+            let permission = row.get("permission_slug").and_then(Value::as_str)?;
+            Some((role.to_string(), permission.to_string()))
+        })
+        .collect();
+
+    let snapshot = CompiledPolicySnapshot::new(admin_http_bindings(), vec![], role_grants);
+    ctx.authorizer.replace_snapshot(snapshot).await;
+}
+
+async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Router, SushiContext) {
     let templates_dir = templates_root();
     let static_dir = static_root();
 
@@ -295,7 +606,13 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
-    build_admin_router(&ctx).await
+    refresh_admin_authorizer(&ctx).await;
+    (build_admin_router(&ctx).await, ctx)
+}
+
+async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
+    let (app, _ctx) = build_app_with_context(static_url_prefix).await;
+    app
 }
 
 async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Path) -> axum::Router {
@@ -338,6 +655,7 @@ async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Pat
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
+    refresh_admin_authorizer(&ctx).await;
     ctx.plugins
         .register_plugin_static_root(plugin_name, plugin_static_dir.to_path_buf())
         .await;
@@ -388,6 +706,7 @@ async fn build_app_with_plugin_page_assets(
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
+    refresh_admin_authorizer(&ctx).await;
     ctx.plugins
         .register_admin_handler_with_assets(
             page_path,
@@ -440,6 +759,7 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
+    refresh_admin_authorizer(&ctx).await;
     build_admin_router(&ctx).await
 }
 
@@ -521,6 +841,120 @@ async fn workspace_assets_api_returns_plugin_assets_for_page_path() {
             .map(|arr| arr.len()),
         Some(1)
     );
+}
+
+#[tokio::test]
+async fn viewer_cannot_fetch_workspace_assets_for_users_path_without_admin_users_read() {
+    let (app, ctx) = build_app_with_context(None).await;
+    let admin = admin_bearer_token();
+
+    let create_role_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/roles/create")
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "slug=plugins_viewer&name=Plugins+Viewer&description=Can+view+plugins+only",
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(create_role_response.status(), StatusCode::OK);
+
+    let roles_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/roles/table")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let roles_table_body = to_bytes(roles_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let roles_table_html = String::from_utf8_lossy(&roles_table_body);
+    let role_id = extract_dataset_id_by_slug(
+        &roles_table_html,
+        "data-role-slug",
+        "plugins_viewer",
+        "data-role-id",
+    )
+    .expect("role id should be discoverable");
+
+    let permissions_table_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/partials/permissions/table")
+                .header("authorization", format!("Bearer {admin}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    let permissions_table_body = to_bytes(permissions_table_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let permissions_table_html = String::from_utf8_lossy(&permissions_table_body);
+    let plugins_view_permission_id = extract_dataset_id_by_slug(
+        &permissions_table_html,
+        "data-permission-slug",
+        "plugins.view",
+        "data-permission-id",
+    )
+    .expect("plugins.view permission id should be discoverable");
+
+    let assign_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/admin/partials/roles/{role_id}/permissions"))
+                .header("authorization", format!("Bearer {admin}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "permission_ids={plugins_view_permission_id}"
+                )))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(assign_response.status(), StatusCode::OK);
+    refresh_admin_authorizer(&ctx).await;
+
+    let plugins_viewer = bearer_token_for_role("plugins_viewer");
+    let allowed_target_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/workspace/assets?path=/admin/plugins")
+                .header("authorization", format!("Bearer {plugins_viewer}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(allowed_target_response.status(), StatusCode::OK);
+
+    let denied_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/workspace/assets?path=/admin/users")
+                .header("authorization", format!("Bearer {plugins_viewer}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(denied_response.status(), StatusCode::FORBIDDEN);
 }
 
 fn admin_bearer_token() -> String {
@@ -1922,7 +2356,7 @@ async fn admin_can_crud_roles_and_assign_permissions() {
 
 #[tokio::test]
 async fn custom_role_tokens_follow_permission_matrix() {
-    let app = build_app(None).await;
+    let (app, ctx) = build_app_with_context(None).await;
     let admin = admin_bearer_token();
 
     let create_role_response = app
@@ -2004,6 +2438,7 @@ async fn custom_role_tokens_follow_permission_matrix() {
         .await
         .expect("request failed");
     assert_eq!(assign_response.status(), StatusCode::OK);
+    refresh_admin_authorizer(&ctx).await;
 
     let auditor = bearer_token_for_role("auditor");
     let can_view_users = app
@@ -2038,7 +2473,7 @@ async fn custom_role_tokens_follow_permission_matrix() {
 
 #[tokio::test]
 async fn custom_role_menus_permissions_are_enforced() {
-    let app = build_app(None).await;
+    let (app, ctx) = build_app_with_context(None).await;
     let admin = admin_bearer_token();
 
     let create_role_response = app
@@ -2127,6 +2562,7 @@ async fn custom_role_menus_permissions_are_enforced() {
         .await
         .expect("request failed");
     assert_eq!(assign_view_only_response.status(), StatusCode::OK);
+    refresh_admin_authorizer(&ctx).await;
 
     let menu_operator = bearer_token_for_role("menu_operator");
 
@@ -2192,6 +2628,7 @@ async fn custom_role_menus_permissions_are_enforced() {
         .await
         .expect("request failed");
     assert_eq!(assign_view_and_manage_response.status(), StatusCode::OK);
+    refresh_admin_authorizer(&ctx).await;
 
     let can_create_menu_with_manage = app
         .oneshot(
