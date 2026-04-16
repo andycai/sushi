@@ -4,6 +4,12 @@
 
 Sushi is a modular application platform built with **Rust** as the core runtime and **Lua** as a first-class plugin language. The project consists of three equal components: **admin** (web admin panel), **api** (HTTP API server), and **cli** (command-line interface). Rust and Lua share equal status across all components — any capability expressible in Rust is also expressible in Lua plugins, and vice versa.
 
+## Name Meaning (Important)
+
+In this project, **"sushi" means Su Shi (苏轼), not food sushi**.
+
+Su Shi (1037-1101), style name Zizhan (子瞻), also known as Hezhong (和仲), and by the sobriquets Tieguan Daoren (铁冠道人) and Dongpo Jushi (东坡居士), commonly called Su Dongpo (苏东坡), was from Meizhou Meishan (present-day Meishan, Sichuan). He was a Northern Song writer, calligrapher, painter, and a historical figure in water-management governance. Together with his father Su Xun and younger brother Su Zhe, they are known as the "Three Su" (三苏).
+
 ## Tech Stack
 
 | Layer | Technology | Purpose |
