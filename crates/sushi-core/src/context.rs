@@ -1,3 +1,4 @@
+use crate::auth::authorizer::{Authorizer, CompiledPolicySnapshot};
 use crate::auth::jwt::JwtService;
 use crate::auth::middleware::AuthState;
 use crate::config::ConfigStore;
@@ -19,6 +20,7 @@ pub struct SushiContext {
     pub db_gateway: DbGateway,
     pub event: EventBus,
     pub jwt: Arc<JwtService>,
+    pub authorizer: Arc<Authorizer>,
     pub plugins: PluginManager,
     pub templates: Arc<TemplateService>,
     pub logs: Arc<LogService>,
@@ -42,6 +44,7 @@ impl SushiContext {
             db_gateway,
             event: EventBus::new(),
             jwt: Arc::new(jwt),
+            authorizer: Arc::new(Authorizer::new(CompiledPolicySnapshot::default())),
             plugins: PluginManager::new(),
             templates: Arc::new(templates),
             logs: Arc::new(LogService::new()),
@@ -52,6 +55,7 @@ impl SushiContext {
     pub fn auth_state(&self) -> AuthState {
         AuthState {
             jwt_service: Arc::clone(&self.jwt),
+            authorizer: Arc::clone(&self.authorizer),
         }
     }
 }
