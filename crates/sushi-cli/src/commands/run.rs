@@ -11,8 +11,10 @@ pub struct RunArgs {
     pub args: Vec<String>,
 }
 
-pub async fn run(args: RunArgs) -> Result<()> {
+pub async fn run(args: RunArgs, role: &str) -> Result<()> {
     let ctx = crate::app::bootstrap(None).await?;
+    crate::commands::authorization::ensure_command_authorized(&ctx, role, &args.plugin_name)
+        .await?;
 
     match ctx
         .plugins

@@ -1,3 +1,4 @@
+pub mod authorization;
 pub mod config_cmd;
 pub mod plugin;
 pub mod run;

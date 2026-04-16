@@ -13,10 +13,13 @@ pub enum PluginCommand {
     List,
 }
 
-pub async fn run(args: PluginArgs) -> Result<()> {
+pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
+    let ctx = crate::app::bootstrap(None).await?;
+
     match args.command {
         PluginCommand::List => {
-            let ctx = crate::app::bootstrap(None).await?;
+            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:list")
+                .await?;
             let routes = ctx.plugins.list_api_routes().await;
             let cmds = ctx.plugins.list_cli_commands().await;
             let pages = ctx.plugins.list_admin_pages().await;
