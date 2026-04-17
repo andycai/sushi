@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>File Browser</title>
+  <script defer src="{{ static_url_prefix }}/plugins/official/file-browser/file_browser.js"></script>
   <script defer src="{{ static_url_prefix }}/js/alpine-3.15.11.js"></script>
   <script defer src="{{ static_url_prefix }}/js/htmx.min-2.0.8.js"></script>
   <script defer src="{{ static_url_prefix }}/js/tailwindcss-4.2.2.js"></script>
-  <script defer src="{{ static_url_prefix }}/plugins/official/file-browser/file_browser.js"></script>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900" x-data="fileBrowserPage({ routePrefix: '{{ route_prefix }}', rootId: '{{ root_id }}', relPath: '{{ rel_path }}' })" x-init="init()">
   <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
