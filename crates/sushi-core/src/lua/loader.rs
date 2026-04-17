@@ -935,6 +935,23 @@ end)
         assert!(source.contains("sushi.cli.command(\"cms\""));
     }
 
+    #[test]
+    fn cms_utils_contract_is_stable() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let slug = std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/slug.lua"))
+            .unwrap();
+        let validate =
+            std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/validate.lua"))
+                .unwrap();
+        let markdown =
+            std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/markdown.lua"))
+                .unwrap();
+
+        assert!(slug.contains("function M.normalize"));
+        assert!(validate.contains("function M.validate_status"));
+        assert!(markdown.contains("function M.to_html"));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
