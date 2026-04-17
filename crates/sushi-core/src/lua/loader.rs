@@ -4,7 +4,9 @@ use crate::lua::bindings::inject_sushi_api;
 use crate::lua::module_loader::install_plugin_require;
 use crate::lua::vm::create_sandboxed_vm;
 use crate::plugin::manager::PageResolvedAssets;
-use crate::plugin::{Permissions, Plugin, PluginError, PluginKind, PluginManifest};
+use crate::plugin::{
+    Permissions, Plugin, PluginError, PluginFileBrowserConfig, PluginKind, PluginManifest,
+};
 use crate::storage::Storage;
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -85,6 +87,13 @@ impl LuaPlugin {
                         ))
                     })?;
 
+                validate_file_browser_config(&manifest).map_err(|message| {
+                    PluginError::ManifestError(format!(
+                        "plugin '{}' file_browser config invalid: {message}",
+                        manifest.plugin.name
+                    ))
+                })?;
+
                 if manifest_kind != expected_kind {
                     return Err(PluginError::ManifestError(format!(
                         "plugin '{}' kind '{}' does not match '{}' directory",
@@ -153,6 +162,88 @@ impl LuaPlugin {
     pub fn into_vm(self) -> Option<mlua::Lua> {
         self.lua
     }
+}
+
+fn validate_file_browser_config(manifest: &PluginManifest) -> Result<(), String> {
+    let Some(config) = &manifest.file_browser else {
+        return Ok(());
+    };
+
+    validate_route_prefix(config)?;
+    validate_roots(config)?;
+    Ok(())
+}
+
+fn validate_route_prefix(config: &PluginFileBrowserConfig) -> Result<(), String> {
+    let route_prefix = config.route_prefix.trim();
+    if route_prefix.is_empty() {
+        return Err("route_prefix must be non-empty".to_string());
+    }
+    if !route_prefix.starts_with('/') {
+        return Err(format!("route_prefix '{route_prefix}' must start with '/'"));
+    }
+    Ok(())
+}
+
+fn validate_roots(config: &PluginFileBrowserConfig) -> Result<(), String> {
+    let mut seen_ids = HashSet::new();
+    let mut canonical_roots = Vec::with_capacity(config.roots.len());
+
+    for root in &config.roots {
+        let id = root.id.trim();
+        if id.is_empty() {
+            return Err("root id must be non-empty".to_string());
+        }
+        if !id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        {
+            return Err(format!(
+                "root id '{id}' is invalid; expected pattern [a-z0-9-_]+"
+            ));
+        }
+        if !seen_ids.insert(id.to_string()) {
+            return Err(format!("duplicate root id '{id}'"));
+        }
+
+        let path = Path::new(root.path.trim());
+        if !path.is_absolute() {
+            return Err(format!(
+                "root path '{}' for id '{id}' must be absolute",
+                root.path
+            ));
+        }
+        if !path.is_dir() {
+            return Err(format!(
+                "root path '{}' for id '{id}' must be an existing directory",
+                root.path
+            ));
+        }
+
+        let canonical = std::fs::canonicalize(path).map_err(|e| {
+            format!(
+                "failed to canonicalize root path '{}' for id '{id}': {e}",
+                root.path
+            )
+        })?;
+        canonical_roots.push((id.to_string(), canonical));
+    }
+
+    for left in 0..canonical_roots.len() {
+        for right in (left + 1)..canonical_roots.len() {
+            let (left_id, left_path) = &canonical_roots[left];
+            let (right_id, right_path) = &canonical_roots[right];
+            if left_path.starts_with(right_path) || right_path.starts_with(left_path) {
+                return Err(format!(
+                    "root paths overlap between ids '{left_id}' ({}) and '{right_id}' ({})",
+                    left_path.display(),
+                    right_path.display()
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn normalize_static_url_prefix(raw: &str) -> String {
@@ -787,6 +878,19 @@ end)
         dir
     }
 
+    fn create_plugin_dir_with_manifest(
+        parent: &Path,
+        category: &str,
+        name: &str,
+        manifest_content: &str,
+    ) -> PathBuf {
+        let dir = parent.join(category).join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("plugin.toml"), manifest_content).unwrap();
+        std::fs::write(dir.join("init.lua"), "sushi.log.info('hello')").unwrap();
+        dir
+    }
+
     #[test]
     fn kv_store_plugin_no_longer_embeds_html() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
@@ -975,6 +1079,31 @@ kind = "third_party"
         let err = result.err().unwrap().to_string();
         assert!(err.contains("legacy flat plugin directories"));
         assert!(err.contains("legacy_flat"));
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_rejects_invalid_file_browser_config() {
+        let tmp = TempDir::new().unwrap();
+        create_plugin_dir_with_manifest(
+            tmp.path(),
+            "official",
+            "bad_browser",
+            r#"
+[plugin]
+name = "bad_browser"
+version = "0.1.0"
+kind = "official"
+
+[file_browser]
+route_prefix = "admin/files"
+"#,
+        );
+
+        let result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("file_browser config invalid"));
+        assert!(err.contains("route_prefix"));
     }
 
     #[tokio::test]

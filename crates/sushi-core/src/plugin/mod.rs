@@ -36,6 +36,7 @@ pub struct PluginManifest {
     pub permissions: Permissions,
     pub policies: PluginPoliciesConfig,
     pub admin: Option<PluginAdminConfig>,
+    pub file_browser: Option<PluginFileBrowserConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -92,6 +93,32 @@ pub struct PluginAssetBundle {
     pub css: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginFileBrowserConfig {
+    #[serde(default = "default_file_browser_route_prefix")]
+    pub route_prefix: String,
+    #[serde(default)]
+    pub roots: Vec<PluginFileBrowserRoot>,
+    #[serde(default)]
+    pub capabilities: PluginFileBrowserCapabilities,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginFileBrowserRoot {
+    pub id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+pub struct PluginFileBrowserCapabilities {
+    #[serde(default)]
+    pub read: bool,
+    #[serde(default)]
+    pub write: bool,
+    #[serde(default)]
+    pub delete: bool,
+}
+
 impl Default for PluginManifest {
     fn default() -> Self {
         Self {
@@ -104,6 +131,7 @@ impl Default for PluginManifest {
             permissions: Permissions::default(),
             policies: PluginPoliciesConfig::default(),
             admin: None,
+            file_browser: None,
         }
     }
 }
@@ -127,6 +155,8 @@ struct PluginManifestRaw {
     policies: PluginPoliciesConfig,
     #[serde(default)]
     admin: Option<PluginAdminConfig>,
+    #[serde(default)]
+    file_browser: Option<PluginFileBrowserConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +183,7 @@ impl PluginManifest {
                 permissions: raw.permissions,
                 policies: raw.policies,
                 admin: raw.admin,
+                file_browser: raw.file_browser,
             },
             raw.plugin.kind,
         )
@@ -173,6 +204,10 @@ impl<'de> serde::Deserialize<'de> for PluginManifest {
 
 fn default_entry() -> String {
     "init.lua".to_string()
+}
+
+fn default_file_browser_route_prefix() -> String {
+    "/files".to_string()
 }
 
 /// Plugin permission levels.
@@ -328,6 +363,7 @@ database = "write"
         assert_eq!(manifest.permissions.database, DatabasePermission::None);
         assert!(manifest.policies.scopes.is_empty());
         assert!(manifest.admin.is_none());
+        assert!(manifest.file_browser.is_none());
     }
 
     #[test]
@@ -463,5 +499,42 @@ version = "0.1.0"
 
         let third_party = PluginKind::ThirdParty.effective_permissions(&declared);
         assert_eq!(third_party, declared);
+    }
+
+    #[test]
+    fn parse_file_browser_config_from_manifest() {
+        let toml_str = r#"
+[plugin]
+name = "file_browser_plugin"
+version = "0.1.0"
+kind = "official"
+
+[file_browser]
+route_prefix = "/admin/files"
+
+[file_browser.capabilities]
+read = true
+write = true
+
+[[file_browser.roots]]
+id = "workspace"
+path = "/tmp"
+
+[[file_browser.roots]]
+id = "logs"
+path = "/var/log"
+"#;
+
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        let cfg = manifest.file_browser.expect("expected file_browser config");
+        assert_eq!(cfg.route_prefix, "/admin/files");
+        assert_eq!(cfg.roots.len(), 2);
+        assert_eq!(cfg.roots[0].id, "workspace");
+        assert_eq!(cfg.roots[0].path, "/tmp");
+        assert_eq!(cfg.roots[1].id, "logs");
+        assert_eq!(cfg.roots[1].path, "/var/log");
+        assert!(cfg.capabilities.read);
+        assert!(cfg.capabilities.write);
+        assert!(!cfg.capabilities.delete);
     }
 }

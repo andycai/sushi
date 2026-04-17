@@ -560,6 +560,7 @@ mod tests {
             },
             policies: PluginPoliciesConfig::default(),
             admin: None,
+            file_browser: None,
         };
 
         manager.register_plugin_manifest(&manifest).await;
@@ -584,6 +585,7 @@ mod tests {
             permissions: Permissions::default(),
             policies: PluginPoliciesConfig::default(),
             admin: None,
+            file_browser: None,
         };
         manager.register_plugin_manifest(&manifest).await;
 
@@ -680,6 +682,7 @@ mod tests {
             permissions: Permissions::default(),
             policies: PluginPoliciesConfig::default(),
             admin: None,
+            file_browser: None,
         };
 
         let effective = Permissions {
