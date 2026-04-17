@@ -92,6 +92,12 @@ impl FileBrowserFsService {
     pub fn from_manifest(config: &PluginFileBrowserConfig) -> Result<Self, FsError> {
         let mut roots = HashMap::with_capacity(config.roots.len());
         for root in &config.roots {
+            if roots.contains_key(&root.id) {
+                return Err(FsError::InvalidPath(format!(
+                    "duplicate root id '{}'",
+                    root.id
+                )));
+            }
             let path = std::fs::canonicalize(&root.path).map_err(map_io_error)?;
             roots.insert(
                 root.id.clone(),
@@ -197,6 +203,11 @@ impl FileBrowserFsService {
         let root = self.root(root_id, RequiredCapability::Write)?;
         let from = self.resolve_existing(root, from_rel_path, false)?;
         let to = self.resolve_for_create(root, to_rel_path)?;
+        match tokio::fs::symlink_metadata(&to).await {
+            Ok(_) => return Err(FsError::Conflict),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(map_io_error(err)),
+        }
         tokio::fs::rename(from, to).await.map_err(map_io_error)
     }
 
@@ -219,7 +230,12 @@ impl FileBrowserFsService {
     ) -> Result<(), FsError> {
         let root = self.root(root_id, RequiredCapability::Write)?;
         let target = self.resolve_for_create(root, rel_path)?;
-        tokio::fs::write(target, content).await.map_err(map_io_error)
+        let mut opts = tokio::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        let mut file = opts.open(target).await.map_err(map_io_error)?;
+        use tokio::io::AsyncWriteExt;
+        file.write_all(content).await.map_err(map_io_error)?;
+        Ok(())
     }
 
     pub async fn prepare_download(
