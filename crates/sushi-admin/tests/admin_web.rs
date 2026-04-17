@@ -12,6 +12,7 @@ use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
+use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::manager::PageResolvedAssets;
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
@@ -737,6 +738,85 @@ async fn build_app_with_plugin_page_assets(
     build_admin_router(&ctx).await
 }
 
+async fn build_app_with_plugin_admin_page(page_path: &str) -> axum::Router {
+    let templates_dir = templates_root();
+    let static_dir = static_root();
+
+    let mut config = SushiConfig::default();
+    config.web.templates_dir = templates_dir.to_string_lossy().to_string();
+    config.web.static_dir = static_dir.to_string_lossy().to_string();
+
+    let config = ConfigStore::new(config);
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .run_migrations(KV_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 004_menu");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
+    storage
+        .run_migrations(CMS_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 007_cms");
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+    let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
+
+    let ctx = SushiContext::new(config, storage, jwt, templates);
+    refresh_admin_authorizer(&ctx).await;
+
+    let lua = create_sandboxed_vm().expect("failed to create sandboxed vm");
+    let sushi = lua.create_table().expect("failed to create sushi table");
+    let handlers = lua.create_table().expect("failed to create handlers table");
+    sushi
+        .set("__handlers", handlers)
+        .expect("failed to set handlers table");
+    lua.globals()
+        .set("sushi", sushi)
+        .expect("failed to set sushi global");
+    lua.load(
+        r#"
+        sushi.__handlers["handler::cms_page"] = function(_args)
+            return "<section>CMS workspace</section>"
+        end
+        "#,
+    )
+    .exec()
+    .expect("failed to register cms admin handler");
+
+    ctx.plugins.register_vm("cms", lua).await;
+    ctx.plugins
+        .register_admin_handler_with_assets(
+            page_path,
+            "cms",
+            "CMS",
+            "handler::cms_page",
+            PageResolvedAssets::default(),
+        )
+        .await;
+
+    build_admin_router(&ctx).await
+}
+
 async fn build_app_with_legacy_menu_table() -> axum::Router {
     let templates_dir = templates_root();
     let static_dir = static_root();
@@ -863,6 +943,40 @@ async fn workspace_assets_api_returns_plugin_assets_for_page_path() {
             .map(|arr| arr.len()),
         Some(1)
     );
+}
+
+#[tokio::test]
+async fn admin_cms_workspace_page_renders() {
+    let app = build_app_with_plugin_admin_page("/admin/cms").await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/cms")
+                .header(header::AUTHORIZATION, format!("Bearer {}", admin_bearer_token()))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("CMS workspace"));
+}
+
+#[test]
+fn admin_cms_category_delete_returns_flash_on_conflict() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/lua/interfaces/admin.lua"),
+    )
+    .expect("failed to read cms admin interface");
+
+    assert!(source.contains("conflict_has_posts"));
+    assert!(source.contains("Category still has posts and cannot be deleted"));
+    assert!(source.contains("plugins/official/cms/fragments/flash.html"));
 }
 
 #[tokio::test]
