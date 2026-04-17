@@ -69,14 +69,33 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 11px;
-  background: linear-gradient(160deg, #89b8ff, #5f8df0);
-  color: #06173e;
-  font-weight: 800;
+  background: linear-gradient(160deg, #8fbcff, #6694f2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
   margin-right: 10px;
+  padding: 6px;
+  box-shadow: inset 0 0 0 1px rgba(243, 249, 255, 0.28);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-brand-logo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: contrast(1.06) brightness(0.98);
+  transition: filter 160ms ease;
+}
+
+.admin-brand:hover .admin-brand-logo,
+.admin-brand:focus-within .admin-brand-logo {
+  transform: translateY(-1px) scale(1.015);
+  box-shadow: inset 0 0 0 1px rgba(243, 249, 255, 0.34), 0 6px 12px rgba(20, 52, 120, 0.26);
+}
+
+.admin-brand:hover .admin-brand-logo img,
+.admin-brand:focus-within .admin-brand-logo img {
+  filter: contrast(1.11) brightness(1.01);
 }
 
 .admin-brand-title {
