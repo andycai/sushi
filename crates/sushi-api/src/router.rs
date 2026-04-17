@@ -220,9 +220,10 @@ async fn plugin_api_dispatch(
                 )
                     .into_response()
             } else {
+                let content_type = infer_response_content_type(&response_body);
                 (
                     axum::http::StatusCode::OK,
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    [(axum::http::header::CONTENT_TYPE, content_type)],
                     response_body,
                 )
                     .into_response()
@@ -301,6 +302,17 @@ fn sanitize_content_disposition_name(name: &str) -> String {
         "download.bin".to_string()
     } else {
         sanitized
+    }
+}
+
+fn infer_response_content_type(body: &str) -> &'static str {
+    let trimmed = body.trim_start();
+    if trimmed.starts_with('<') {
+        "text/html; charset=utf-8"
+    } else if serde_json::from_str::<Value>(body).is_ok() {
+        "application/json"
+    } else {
+        "text/plain; charset=utf-8"
     }
 }
 
@@ -978,6 +990,66 @@ end
 
         let body = to_bytes(response.into_body(), 1024).await.unwrap();
         assert_eq!(body.as_ref(), &[0x00, 0x01, 0x02, 0xff]);
+    }
+
+    #[tokio::test]
+    async fn html_plugin_route_returns_text_html_content_type() {
+        let ctx = test_context().await;
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_html";
+        let handler = lua
+            .create_async_function(|_, ()| async {
+                Ok("<!doctype html><html><body>ok</body></html>".to_string())
+            })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        ctx.plugins.register_vm("plugin", lua).await;
+        ctx.plugins
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/app/files",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
+            .await;
+
+        let app = build_plugin_api_routes(&ctx)
+            .await
+            .with_state(PluginApiState {
+                plugins: ctx.plugins.clone(),
+                auth_state: ctx.auth_state(),
+                logs: Arc::new(LogService::new()),
+                body_size_limit: 1024,
+                route_map: Vec::new(),
+            });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/app/files")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html; charset=utf-8")
+        );
     }
 
     #[tokio::test]
