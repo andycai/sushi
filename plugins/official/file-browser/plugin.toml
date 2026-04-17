@@ -1,0 +1,58 @@
+[plugin]
+name = "file-browser"
+version = "0.1.0"
+description = "Public web file browser"
+entry = "init.lua"
+kind = "official"
+
+[permissions]
+routes = true
+commands = false
+admin = false
+database = false
+
+[file_browser]
+route_prefix = "/app/files"
+hide_dotfiles = true
+deny_symlink = true
+text_extensions = [
+  "txt",
+  "md",
+  "markdown",
+  "json",
+  "toml",
+  "yaml",
+  "yml",
+  "ini",
+  "csv",
+  "log",
+  "lua",
+  "rs",
+  "js",
+  "jsx",
+  "ts",
+  "tsx",
+  "css",
+  "html",
+  "htm",
+  "xml",
+  "sh",
+]
+
+# Configure one or more roots in deployment environments.
+#
+# [[file_browser.roots]]
+# id = "docs"
+# title = "Documents"
+# path = "/srv/docs"
+#
+# [file_browser.roots.capabilities]
+# can_list = true
+# can_view_text = true
+# can_edit_text = true
+# can_create_text = true
+# can_create_dir = true
+# can_rename = true
+# can_delete = true
+# can_upload = true
+# can_download = true

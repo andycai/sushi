@@ -15,7 +15,8 @@
 | `sushi.api` | 1 | `routes = true` | HTTP 路由注册 |
 | `sushi.cli` | 1 | `commands = true` | CLI 命令注册 |
 | `sushi.admin` | 1 | `admin = true` | Admin 页面注册 |
-| `sushi.web` | 3 | `admin = true` 或 `routes = true` | Web 渲染 |
+| `sushi.web` | 4 | `admin = true` 或 `routes = true` | Web 渲染与下载 envelope |
+| `sushi.fs` | 11 | `file_browser` 配置存在时自动注入 | 受限文件系统访问 |
 
 ## 权限级别说明
 

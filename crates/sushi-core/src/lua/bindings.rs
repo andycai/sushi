@@ -329,7 +329,13 @@ pub async fn inject_sushi_api(
         cli_table.set(
             "command",
             lua.create_function(
-                move |lua, (name, desc, handler, opts): (String, String, mlua::Function, Option<mlua::Table>)| {
+                move |lua,
+                      (name, desc, handler, opts): (
+                    String,
+                    String,
+                    mlua::Function,
+                    Option<mlua::Table>,
+                )| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
@@ -365,7 +371,13 @@ pub async fn inject_sushi_api(
         admin_table.set(
             "page",
             lua.create_function(
-                move |lua, (path, title, handler, opts): (String, String, mlua::Function, Option<mlua::Table>)| {
+                move |lua,
+                      (path, title, handler, opts): (
+                    String,
+                    String,
+                    mlua::Function,
+                    Option<mlua::Table>,
+                )| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
@@ -513,6 +525,27 @@ pub async fn inject_sushi_api(
                 serde_json::to_string(&envelope)
                     .map_err(|e| mlua::Error::RuntimeError(format!("json encode error: {e}")))
             })?,
+        )?;
+
+        web_table.set(
+            "download",
+            lua.create_function(
+                |_lua, (file_name, mime, body): (String, String, mlua::String)| {
+                    let mut body_hex = String::with_capacity(body.as_bytes().len() * 2);
+                    for byte in body.as_bytes().as_ref() {
+                        use std::fmt::Write as _;
+                        let _ = write!(&mut body_hex, "{byte:02x}");
+                    }
+                    let envelope = serde_json::json!({
+                        "__sushi_file_download": true,
+                        "file_name": file_name,
+                        "mime": mime,
+                        "body_hex": body_hex,
+                    });
+                    serde_json::to_string(&envelope)
+                        .map_err(|e| mlua::Error::RuntimeError(format!("json encode error: {e}")))
+                },
+            )?,
         )?;
 
         sushi.set("web", web_table)?;
@@ -675,9 +708,21 @@ pub async fn inject_sushi_api(
 }
 
 /// Inject `sushi.fs` for file-browser capable plugins.
-pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Result<(), mlua::Error> {
+pub fn inject_sushi_fs(
+    lua: &Lua,
+    fs_service: Arc<FileBrowserFsService>,
+) -> Result<(), mlua::Error> {
     let sushi: mlua::Table = lua.globals().get("sushi")?;
     let fs_table = lua.create_table()?;
+
+    let route_prefix = fs_service.route_prefix().to_string();
+    fs_table.set("route_prefix", route_prefix)?;
+
+    let roots = fs_service.roots();
+    fs_table.set(
+        "roots",
+        lua.create_function(move |lua, ()| lua.to_value(&roots))?,
+    )?;
 
     let list_service = fs_service.clone();
     fs_table.set(
@@ -685,7 +730,10 @@ pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Resu
         lua.create_async_function(move |lua, (root_id, rel_path): (String, String)| {
             let service = list_service.clone();
             async move {
-                let entries = service.list(&root_id, &rel_path).await.map_err(map_fs_error)?;
+                let entries = service
+                    .list(&root_id, &rel_path)
+                    .await
+                    .map_err(map_fs_error)?;
                 lua.to_value(&entries)
             }
         })?,
@@ -696,7 +744,12 @@ pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Resu
         "read_text",
         lua.create_async_function(move |_lua, (root_id, rel_path): (String, String)| {
             let service = read_text_service.clone();
-            async move { service.read_text(&root_id, &rel_path).await.map_err(map_fs_error) }
+            async move {
+                service
+                    .read_text(&root_id, &rel_path)
+                    .await
+                    .map_err(map_fs_error)
+            }
         })?,
     )?;
 
@@ -737,7 +790,12 @@ pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Resu
         "mkdir",
         lua.create_async_function(move |_lua, (root_id, rel_path): (String, String)| {
             let service = mkdir_service.clone();
-            async move { service.mkdir(&root_id, &rel_path).await.map_err(map_fs_error) }
+            async move {
+                service
+                    .mkdir(&root_id, &rel_path)
+                    .await
+                    .map_err(map_fs_error)
+            }
         })?,
     )?;
 
@@ -762,7 +820,12 @@ pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Resu
         "delete",
         lua.create_async_function(move |_lua, (root_id, rel_path): (String, String)| {
             let service = delete_service.clone();
-            async move { service.delete(&root_id, &rel_path).await.map_err(map_fs_error) }
+            async move {
+                service
+                    .delete(&root_id, &rel_path)
+                    .await
+                    .map_err(map_fs_error)
+            }
         })?,
     )?;
 
@@ -793,6 +856,27 @@ pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Resu
                     .await
                     .map_err(map_fs_error)?;
                 lua.to_value(&ticket)
+            }
+        })?,
+    )?;
+
+    let read_download_service = fs_service.clone();
+    fs_table.set(
+        "read_download",
+        lua.create_async_function(move |lua, (root_id, rel_path): (String, String)| {
+            let service = read_download_service.clone();
+            async move {
+                let payload = service
+                    .read_download(&root_id, &rel_path)
+                    .await
+                    .map_err(map_fs_error)?;
+                let table = lua.create_table()?;
+                table.set("root_id", payload.ticket.root_id)?;
+                table.set("rel_path", payload.ticket.rel_path)?;
+                table.set("file_name", payload.ticket.file_name)?;
+                table.set("size", payload.ticket.size)?;
+                table.set("content", lua.create_string(&payload.content)?)?;
+                Ok(mlua::Value::Table(table))
             }
         })?,
     )?;
@@ -1502,10 +1586,9 @@ mod tests {
             )
             .exec();
         let err = result.expect_err("public should require boolean");
-        assert!(
-            err.to_string()
-                .contains("sushi.api.route opts.public must be a boolean")
-        );
+        assert!(err
+            .to_string()
+            .contains("sushi.api.route opts.public must be a boolean"));
     }
 
     #[tokio::test]
@@ -1523,8 +1606,8 @@ mod tests {
             )
             .exec();
         let err = result.expect_err("policy/public conflict should be rejected");
-        assert!(err.to_string().contains(
-            "sushi.api.route opts.policy cannot be combined with opts.public=true"
-        ));
+        assert!(err
+            .to_string()
+            .contains("sushi.api.route opts.policy cannot be combined with opts.public=true"));
     }
 }

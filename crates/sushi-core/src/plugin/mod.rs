@@ -1,7 +1,7 @@
 pub mod manager;
 
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -93,30 +93,50 @@ pub struct PluginAssetBundle {
     pub css: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct PluginFileBrowserConfig {
     #[serde(default = "default_file_browser_route_prefix")]
     pub route_prefix: String,
+    #[serde(default = "default_true")]
+    pub hide_dotfiles: bool,
+    #[serde(default = "default_true")]
+    pub deny_symlink: bool,
+    #[serde(default)]
+    pub text_extensions: Vec<String>,
     #[serde(default)]
     pub roots: Vec<PluginFileBrowserRoot>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+pub struct PluginFileBrowserRoot {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    pub path: String,
     #[serde(default)]
     pub capabilities: PluginFileBrowserCapabilities,
 }
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
-pub struct PluginFileBrowserRoot {
-    pub id: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct PluginFileBrowserCapabilities {
     #[serde(default)]
-    pub read: bool,
+    pub can_list: bool,
     #[serde(default)]
-    pub write: bool,
+    pub can_view_text: bool,
     #[serde(default)]
-    pub delete: bool,
+    pub can_edit_text: bool,
+    #[serde(default)]
+    pub can_create_text: bool,
+    #[serde(default)]
+    pub can_create_dir: bool,
+    #[serde(default)]
+    pub can_rename: bool,
+    #[serde(default)]
+    pub can_delete: bool,
+    #[serde(default)]
+    pub can_upload: bool,
+    #[serde(default)]
+    pub can_download: bool,
 }
 
 impl Default for PluginManifest {
@@ -207,7 +227,11 @@ fn default_entry() -> String {
 }
 
 fn default_file_browser_route_prefix() -> String {
-    "/files".to_string()
+    "/app/files".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Plugin permission levels.
@@ -510,31 +534,61 @@ version = "0.1.0"
 kind = "official"
 
 [file_browser]
-route_prefix = "/admin/files"
-
-[file_browser.capabilities]
-read = true
-write = true
+route_prefix = "/app/files"
+hide_dotfiles = true
+deny_symlink = true
+text_extensions = ["txt", "md", "json"]
 
 [[file_browser.roots]]
 id = "workspace"
+title = "Workspace"
 path = "/tmp"
+
+[file_browser.roots.capabilities]
+can_list = true
+can_view_text = true
+can_edit_text = true
+can_create_text = true
+can_create_dir = true
+can_rename = true
+can_delete = true
+can_upload = true
+can_download = false
 
 [[file_browser.roots]]
 id = "logs"
+title = "Logs"
 path = "/var/log"
+
+[file_browser.roots.capabilities]
+can_list = true
+can_view_text = true
+can_download = true
 "#;
 
         let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
         let cfg = manifest.file_browser.expect("expected file_browser config");
-        assert_eq!(cfg.route_prefix, "/admin/files");
+        assert_eq!(cfg.route_prefix, "/app/files");
+        assert!(cfg.hide_dotfiles);
+        assert!(cfg.deny_symlink);
+        assert_eq!(
+            cfg.text_extensions,
+            vec!["txt".to_string(), "md".to_string(), "json".to_string()]
+        );
         assert_eq!(cfg.roots.len(), 2);
         assert_eq!(cfg.roots[0].id, "workspace");
+        assert_eq!(cfg.roots[0].title, "Workspace");
         assert_eq!(cfg.roots[0].path, "/tmp");
+        assert!(cfg.roots[0].capabilities.can_list);
+        assert!(cfg.roots[0].capabilities.can_edit_text);
+        assert!(cfg.roots[0].capabilities.can_upload);
+        assert!(!cfg.roots[0].capabilities.can_download);
         assert_eq!(cfg.roots[1].id, "logs");
+        assert_eq!(cfg.roots[1].title, "Logs");
         assert_eq!(cfg.roots[1].path, "/var/log");
-        assert!(cfg.capabilities.read);
-        assert!(cfg.capabilities.write);
-        assert!(!cfg.capabilities.delete);
+        assert!(cfg.roots[1].capabilities.can_list);
+        assert!(cfg.roots[1].capabilities.can_view_text);
+        assert!(!cfg.roots[1].capabilities.can_edit_text);
+        assert!(cfg.roots[1].capabilities.can_download);
     }
 }

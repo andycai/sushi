@@ -11,6 +11,7 @@ Web 渲染接口，提供模板渲染和 JSON 响应功能。
 | `render` | `admin = true` 或 `routes = true` |
 | `page` | `admin = true` |
 | `json` | `admin = true` 或 `routes = true` |
+| `download` | `admin = true` 或 `routes = true` |
 
 ## 方法
 
@@ -100,6 +101,26 @@ end)
 --   "status": 200,
 --   "body": { "status": "ok", "uptime": 3600 }
 -- }
+```
+
+---
+
+### `sushi.web.download(file_name, mime, body_bytes)`
+
+构建下载响应 envelope，配合插件路由调度器返回附件流。
+
+**参数：**
+- `file_name` (string): 下载文件名（用于 `Content-Disposition`）
+- `mime` (string): `Content-Type`
+- `body_bytes` (string): Lua 二进制字符串
+
+**返回值：**
+- (string): JSON 字符串（包含 `__sushi_file_download` envelope）
+
+**示例：**
+```lua
+local payload = sushi.fs.read_download("docs", "report.bin")
+return sushi.web.download(payload.file_name, "application/octet-stream", payload.content)
 ```
 
 ---

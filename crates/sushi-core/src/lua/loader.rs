@@ -171,6 +171,7 @@ fn validate_file_browser_config(manifest: &PluginManifest) -> Result<(), String>
     };
 
     validate_route_prefix(config)?;
+    validate_text_extensions(config)?;
     validate_roots(config)?;
     Ok(())
 }
@@ -180,8 +181,31 @@ fn validate_route_prefix(config: &PluginFileBrowserConfig) -> Result<(), String>
     if route_prefix.is_empty() {
         return Err("route_prefix must be non-empty".to_string());
     }
+    if route_prefix.trim() != route_prefix {
+        return Err("route_prefix cannot contain leading/trailing whitespace".to_string());
+    }
     if !route_prefix.starts_with('/') {
         return Err(format!("route_prefix '{route_prefix}' must start with '/'"));
+    }
+    Ok(())
+}
+
+fn validate_text_extensions(config: &PluginFileBrowserConfig) -> Result<(), String> {
+    for ext in &config.text_extensions {
+        let trimmed = ext.trim();
+        if trimmed.is_empty() {
+            return Err("text_extensions cannot contain empty values".to_string());
+        }
+        let normalized = trimmed.trim_start_matches('.');
+        if normalized.is_empty()
+            || !normalized
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(format!(
+                "text_extensions entry '{ext}' is invalid; expected extension token"
+            ));
+        }
     }
     Ok(())
 }
@@ -208,6 +232,12 @@ fn validate_roots(config: &PluginFileBrowserConfig) -> Result<(), String> {
         }
 
         let path = Path::new(root.path.as_str());
+        if root.path.trim() != root.path {
+            return Err(format!(
+                "root path '{}' for id '{id}' cannot contain leading/trailing whitespace",
+                root.path
+            ));
+        }
         if !path.is_absolute() {
             return Err(format!(
                 "root path '{}' for id '{id}' must be absolute",
@@ -1038,6 +1068,79 @@ end)
         assert!(source.contains(
             "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", deps.cli.kv_set, { policy = \"cli.kv.set\" })"
         ));
+        assert!(source.contains("return M"));
+    }
+
+    #[test]
+    fn file_browser_plugin_is_split_into_module_files() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        assert!(repo_root
+            .join("plugins/official/file-browser/plugin.toml")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/init.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/lua/bootstrap/register.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/lua/interfaces/web.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/lua/domain/browser.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/lua/utils/form.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/lua/utils/path.lua")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/web/templates/file_browser.html")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/web/templates/fragments/list.html")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/web/templates/fragments/editor.html")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/web/templates/fragments/flash.html")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/file-browser/web/static/file_browser.js")
+            .is_file());
+    }
+
+    #[test]
+    fn file_browser_plugin_bootstrap_registration_is_public_only() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path =
+            repo_root.join("plugins/official/file-browser/lua/bootstrap/register.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("function M.register(app)"));
+        assert!(source
+            .contains("sushi.api.route(\"GET\", \"/app/files\", app.page, { public = true })"));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/app/files/list/*\", app.list_partial, { public = true })"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/app/files/open/*\", app.open_partial, { public = true })"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/app/files/save/*\", app.save_text, { public = true })"
+        ));
+        assert!(source.contains("sushi.api.route(\"POST\", \"/app/files/create-text\", app.create_text, { public = true })"));
+        assert!(source.contains("sushi.api.route(\"POST\", \"/app/files/create-dir\", app.create_dir, { public = true })"));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/app/files/rename\", app.rename_entry, { public = true })"
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/app/files/delete\", app.delete_entry, { public = true })"
+        ));
+        assert!(source.contains("sushi.api.route(\"POST\", \"/app/files/upload/*\", app.upload_file, { public = true })"));
+        assert!(source.contains("sushi.api.route(\"GET\", \"/app/files/download/*\", app.download_file, { public = true })"));
         assert!(source.contains("return M"));
     }
 

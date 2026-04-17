@@ -193,7 +193,26 @@ async fn plugin_api_dispatch(
         .await
     {
         Some(Ok(response_body)) => {
-            if let Some((status, body)) = parse_status_envelope(&response_body) {
+            if let Some((file_name, mime, body)) = parse_download_envelope(&response_body) {
+                let mut response = axum::response::Response::new(axum::body::Body::from(body));
+                *response.status_mut() = axum::http::StatusCode::OK;
+
+                let mime_header = axum::http::HeaderValue::from_str(&mime).unwrap_or_else(|_| {
+                    axum::http::HeaderValue::from_static("application/octet-stream")
+                });
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::CONTENT_TYPE, mime_header);
+
+                let safe_name = sanitize_content_disposition_name(&file_name);
+                let disposition = format!("attachment; filename=\"{safe_name}\"");
+                let disposition_header = axum::http::HeaderValue::from_str(&disposition)
+                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("attachment"));
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::CONTENT_DISPOSITION, disposition_header);
+                response
+            } else if let Some((status, body)) = parse_status_envelope(&response_body) {
                 (
                     status,
                     [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -229,11 +248,60 @@ async fn plugin_api_dispatch(
     }
 }
 
+#[derive(serde::Deserialize)]
+struct DownloadEnvelope {
+    #[serde(default)]
+    __sushi_file_download: bool,
+    file_name: String,
+    mime: String,
+    body_hex: String,
+}
+
+fn parse_download_envelope(body: &str) -> Option<(String, String, Vec<u8>)> {
+    let parsed: DownloadEnvelope = serde_json::from_str(body).ok()?;
+    if !parsed.__sushi_file_download {
+        return None;
+    }
+    let decoded = decode_hex_bytes(&parsed.body_hex)?;
+    Some((parsed.file_name, parsed.mime, decoded))
+}
+
 fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
     let cookie = cookie_header?;
     cookie
         .split(';')
         .find_map(|part| part.trim().strip_prefix("sushi_token="))
+}
+
+fn decode_hex_bytes(input: &str) -> Option<Vec<u8>> {
+    if !input.len().is_multiple_of(2) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(input.len() / 2);
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let chunk = std::str::from_utf8(&bytes[index..index + 2]).ok()?;
+        let value = u8::from_str_radix(chunk, 16).ok()?;
+        out.push(value);
+        index += 2;
+    }
+    Some(out)
+}
+
+fn sanitize_content_disposition_name(name: &str) -> String {
+    let sanitized = name
+        .chars()
+        .map(|ch| match ch {
+            '"' | '\\' | '\r' | '\n' => '_',
+            _ => ch,
+        })
+        .collect::<String>();
+    if sanitized.trim().is_empty() {
+        "download.bin".to_string()
+    } else {
+        sanitized
+    }
 }
 
 fn parse_status_envelope(body: &str) -> Option<(axum::http::StatusCode, String)> {
@@ -837,6 +905,79 @@ end
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn file_browser_download_returns_attachment_headers() {
+        let ctx = test_context().await;
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_download";
+        let handler = lua
+            .create_async_function(|_, ()| async {
+                Ok(
+                    r#"{"__sushi_file_download":true,"file_name":"report.bin","mime":"application/octet-stream","body_hex":"000102ff"}"#
+                        .to_string(),
+                )
+            })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        ctx.plugins.register_vm("plugin", lua).await;
+        ctx.plugins
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/app/files/download/docs",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
+            .await;
+
+        let app = build_plugin_api_routes(&ctx)
+            .await
+            .with_state(PluginApiState {
+                plugins: ctx.plugins.clone(),
+                auth_state: ctx.auth_state(),
+                logs: Arc::new(LogService::new()),
+                body_size_limit: 1024,
+                route_map: Vec::new(),
+            });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/app/files/download/docs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/octet-stream")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|value| value.to_str().ok()),
+            Some("attachment; filename=\"report.bin\"")
+        );
+
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(body.as_ref(), &[0x00, 0x01, 0x02, 0xff]);
     }
 
     #[tokio::test]

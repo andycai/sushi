@@ -13,6 +13,7 @@ Lua 插件可调用的 Rust 接口文档。
 - [sushi.cli](lua-api/sushi.cli.md) - CLI 命令接口
 - [sushi.admin](lua-api/sushi.admin.md) - Admin 页面接口
 - [sushi.web](lua-api/sushi.web.md) - Web 渲染接口
+- [sushi.fs](lua-api/sushi.fs.md) - 文件浏览受限文件系统接口
 - [sushi.db](lua-api/sushi.db.md) - 数据库接口
 - [sushi.json](lua-api/sushi.json.md) - JSON 编解码接口
 - [sushi.config](lua-api/sushi.config.md) - 配置接口

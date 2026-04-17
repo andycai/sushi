@@ -8,11 +8,15 @@ use sushi_core::plugin::{
 fn config_for(root: &Path, capabilities: PluginFileBrowserCapabilities) -> PluginFileBrowserConfig {
     PluginFileBrowserConfig {
         route_prefix: "/app/files".to_string(),
+        hide_dotfiles: true,
+        deny_symlink: true,
+        text_extensions: Vec::new(),
         roots: vec![PluginFileBrowserRoot {
             id: "docs".to_string(),
+            title: "Documents".to_string(),
             path: root.to_string_lossy().to_string(),
+            capabilities,
         }],
-        capabilities,
     }
 }
 
@@ -22,9 +26,15 @@ async fn list_rejects_parent_directory_escape() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -44,9 +54,15 @@ async fn read_text_rejects_non_whitelisted_extension() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -69,9 +85,15 @@ async fn read_text_rejects_symlink_target() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -91,9 +113,15 @@ async fn write_delete_operations_require_capabilities() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: false,
-            delete: false,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: false,
+            can_create_text: false,
+            can_create_dir: false,
+            can_rename: false,
+            can_delete: false,
+            can_upload: false,
+            can_download: false,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -120,9 +148,15 @@ async fn rename_rejects_existing_destination() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -142,9 +176,15 @@ async fn rename_rejects_directory_source() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -164,9 +204,15 @@ async fn write_upload_rejects_existing_destination() {
     let cfg = config_for(
         tmp.path(),
         PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
         },
     );
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
@@ -186,22 +232,44 @@ fn from_manifest_rejects_duplicate_root_ids() {
         roots: vec![
             PluginFileBrowserRoot {
                 id: "docs".to_string(),
+                title: "Documents".to_string(),
                 path: tmp.path().to_string_lossy().to_string(),
+                capabilities: PluginFileBrowserCapabilities {
+                    can_list: true,
+                    can_view_text: true,
+                    can_edit_text: true,
+                    can_create_text: true,
+                    can_create_dir: true,
+                    can_rename: true,
+                    can_delete: true,
+                    can_upload: true,
+                    can_download: true,
+                },
             },
             PluginFileBrowserRoot {
                 id: "docs".to_string(),
+                title: "Duplicate".to_string(),
                 path: tmp.path().to_string_lossy().to_string(),
+                capabilities: PluginFileBrowserCapabilities {
+                    can_list: true,
+                    can_view_text: true,
+                    can_edit_text: true,
+                    can_create_text: true,
+                    can_create_dir: true,
+                    can_rename: true,
+                    can_delete: true,
+                    can_upload: true,
+                    can_download: true,
+                },
             },
         ],
-        capabilities: PluginFileBrowserCapabilities {
-            read: true,
-            write: true,
-            delete: true,
-        },
+        hide_dotfiles: true,
+        deny_symlink: true,
+        text_extensions: Vec::new(),
     };
 
-    let err = FileBrowserFsService::from_manifest(&cfg)
-        .expect_err("duplicate roots should be rejected");
+    let err =
+        FileBrowserFsService::from_manifest(&cfg).expect_err("duplicate roots should be rejected");
     assert!(matches!(err, FsError::InvalidPath(_)));
 }
 

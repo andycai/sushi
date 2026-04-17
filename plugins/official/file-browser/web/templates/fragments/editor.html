@@ -1,0 +1,28 @@
+<div class="space-y-3 p-3">
+  <div class="flex items-center justify-between">
+    <h2 class="text-sm font-semibold">Editor</h2>
+    {% if rel_path %}
+    <span class="text-xs text-slate-500">{{ rel_path }}</span>
+    {% endif %}
+  </div>
+
+  {% if open_error %}
+  <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{{ open_error }}</div>
+  {% endif %}
+
+  {% if is_text %}
+  <form data-fb-action="save-form" class="space-y-2">
+    <textarea name="content" rows="16" class="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm" {% if not can_edit %}readonly{% endif %}>{{ content }}</textarea>
+    <input type="hidden" name="path" value="{{ rel_path }}">
+    <div class="flex gap-2">
+      <button type="submit" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white" {% if not can_edit %}disabled{% endif %}>Save</button>
+      <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm" data-fb-action="refresh-list">Refresh List</button>
+      {% if can_download %}
+      <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm" data-fb-action="download" data-path="{{ rel_path }}">Download</button>
+      {% endif %}
+    </div>
+  </form>
+  {% else %}
+  <p class="text-sm text-slate-600">Open a text file to edit it here.</p>
+  {% endif %}
+</div>
