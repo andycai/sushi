@@ -904,6 +904,28 @@ end)
         assert!(source.contains("return M"));
     }
 
+    #[test]
+    fn cms_plugin_files_exist_and_are_modular() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        assert!(repo_root.join("plugins/official/cms/plugin.toml").is_file());
+        assert!(repo_root.join("plugins/official/cms/lua/interfaces/api.lua").is_file());
+        assert!(repo_root
+            .join("plugins/official/cms/lua/interfaces/admin.lua")
+            .is_file());
+        assert!(repo_root.join("plugins/official/cms/lua/interfaces/cli.lua").is_file());
+    }
+
+    #[test]
+    fn cms_plugin_registration_contract_is_stable() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let plugin_path = repo_root.join("plugins/official/cms/lua/bootstrap/register.lua");
+        let source = std::fs::read_to_string(plugin_path).unwrap();
+
+        assert!(source.contains("sushi.web.page(\"/admin/cms\""));
+        assert!(source.contains("sushi.api.route(\"GET\", \"/app/posts\""));
+        assert!(source.contains("sushi.cli.command(\"cms\""));
+    }
+
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();

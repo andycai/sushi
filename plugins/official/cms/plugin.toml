@@ -1,0 +1,23 @@
+[plugin]
+name = "cms"
+version = "0.1.0"
+description = "Official CMS plugin with page/post/category modules"
+entry = "init.lua"
+kind = "official"
+
+[permissions]
+routes = true
+commands = true
+admin = true
+database = "admin"
+
+[policies]
+scopes = [
+  "api.cms.*",
+  "admin.cms.*",
+  "cli.cms.*"
+]
+
+[admin.assets.bundles.workspace]
+js = ["cms.js"]
+css = []
