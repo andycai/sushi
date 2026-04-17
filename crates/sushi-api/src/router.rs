@@ -89,7 +89,12 @@ async fn plugin_api_dispatch(
     req: axum::extract::Request,
 ) -> impl axum::response::IntoResponse {
     let method = req.method().to_string();
-    let path = req.uri().path().to_string();
+    let match_path = req.uri().path().to_string();
+    let dispatch_path = req
+        .uri()
+        .path_and_query()
+        .map(|value| value.as_str().to_string())
+        .unwrap_or_else(|| match_path.clone());
 
     // Extract body for non-GET requests
     let body = if method == "GET" {
@@ -120,7 +125,11 @@ async fn plugin_api_dispatch(
         }
     };
 
-    match state.plugins.call_api_handler(&method, &path, body).await {
+    match state
+        .plugins
+        .call_api_handler_with_dispatch_path(&method, &match_path, &dispatch_path, body)
+        .await
+    {
         Some(Ok(response_body)) => {
             if let Some((status, body)) = parse_status_envelope(&response_body) {
                 (
@@ -139,7 +148,7 @@ async fn plugin_api_dispatch(
             }
         }
         Some(Err(e)) => {
-            let message = format!("plugin runtime error on {method} {path}: {e}");
+            let message = format!("plugin runtime error on {method} {match_path}: {e}");
             tracing::error!("{message}");
             state.logs.error(&message).await;
             (
@@ -322,6 +331,54 @@ mod tests {
             .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert_eq!(body, r#"{"ok":true}"#);
+    }
+
+    #[tokio::test]
+    async fn test_plugin_api_dispatch_forwards_path_query_to_lua_handler() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_query";
+        lua.load(
+            r#"
+            sushi.__handlers["h_query"] = function(args)
+                return args[1]
+            end
+            "#,
+        )
+        .exec()
+        .unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .await;
+
+        let state = PluginApiState {
+            plugins: manager,
+            logs: Arc::new(LogService::new()),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/test?foo=bar&baz=qux")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(body, "/api/test?foo=bar&baz=qux");
     }
 
     #[tokio::test]

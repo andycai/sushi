@@ -318,16 +318,29 @@ impl PluginManager {
         path: &str,
         body: Option<String>,
     ) -> Option<Result<String, String>> {
+        self.call_api_handler_with_dispatch_path(method, path, path, body)
+            .await
+    }
+
+    /// Call an API route handler while splitting the path used for route matching and
+    /// the path forwarded to the Lua handler.
+    pub async fn call_api_handler_with_dispatch_path(
+        &self,
+        method: &str,
+        match_path: &str,
+        dispatch_path: &str,
+        body: Option<String>,
+    ) -> Option<Result<String, String>> {
         let map = self.api_handlers.read().await;
-        let binding = match_api_handler_binding(&map, method, path)?;
+        let binding = match_api_handler_binding(&map, method, match_path)?;
         let plugin_name = binding.plugin_name;
         let handler_key = binding.handler_key;
         drop(map);
 
         // Pass path + body as args so Lua handler can extract path params
         let args = match body {
-            Some(b) => vec![path.to_string(), b],
-            None => vec![path.to_string()],
+            Some(b) => vec![dispatch_path.to_string(), b],
+            None => vec![dispatch_path.to_string()],
         };
         Some(
             self.call_handler_with_args(&plugin_name, &handler_key, &args)
@@ -805,5 +818,40 @@ mod tests {
                 .as_deref(),
             Some("api.notes.read")
         );
+    }
+
+    #[tokio::test]
+    async fn call_api_handler_matches_wildcards() {
+        let manager = PluginManager::new();
+        let lua = mlua::Lua::new();
+        let sushi = lua.create_table().expect("create sushi table");
+        let handlers = lua.create_table().expect("create handlers table");
+        sushi
+            .set("__handlers", handlers.clone())
+            .expect("set handlers table");
+        lua.globals()
+            .set("sushi", sushi)
+            .expect("set sushi global");
+        lua.load(
+            r#"
+            sushi.__handlers["h_wildcard"] = function(args)
+                return args[1]
+            end
+            "#,
+        )
+        .exec()
+        .expect("register wildcard handler");
+
+        manager.register_vm("notes", lua).await;
+        manager
+            .register_api_handler("GET", "/api/notes/*", "notes", "h_wildcard")
+            .await;
+
+        let response = manager
+            .call_api_handler("GET", "/api/notes/123", None)
+            .await
+            .expect("expected wildcard handler")
+            .expect("expected successful handler call");
+        assert_eq!(response, "/api/notes/123");
     }
 }
