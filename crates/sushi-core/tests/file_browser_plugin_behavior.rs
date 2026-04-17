@@ -128,6 +128,8 @@ async fn file_browser_public_routes_support_core_operations() {
 
     let html = dispatch(&ctx, "GET", "/app/files", "/app/files", None).await;
     assert!(html.contains("Official File Browser"));
+    assert!(html.contains("fb-context-menu"));
+    assert!(html.contains("Right click a folder in Explorer"));
 
     let create_dir_body = b"root_id=docs&parent_path=&name=notes".to_vec();
     let flash = dispatch(
@@ -202,6 +204,14 @@ async fn file_browser_public_routes_support_core_operations() {
     assert!(
         frontend_script.contains("data-fb-children-for"),
         "file browser frontend should support lazy tree children containers"
+    );
+    assert!(
+        frontend_script.contains("scrollIntoView"),
+        "file browser frontend should auto-scroll selected nodes into view"
+    );
+    assert!(
+        frontend_script.contains("ctx-create-dir"),
+        "file browser frontend should handle explorer context-menu actions"
     );
 
     let saved = std::fs::read_to_string(docs_root.join("notes").join("todo.txt"))

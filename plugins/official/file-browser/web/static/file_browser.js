@@ -50,14 +50,26 @@
     return chain;
   }
 
+  function fileName(path) {
+    const normalized = normalizePath(path);
+    if (!normalized) {
+      return "";
+    }
+    const parts = normalized.split("/");
+    return parts[parts.length - 1] || "";
+  }
+
   window.fileBrowserPage = function fileBrowserPage(initial) {
     return {
       routePrefix: initial.routePrefix || "/app/files",
       rootId: initial.rootId || "",
       relPath: normalizePath(initial.relPath || ""),
       activePath: normalizePath(initial.relPath || ""),
+      capabilities: initial.capabilities || {},
       expandedDirs: {},
       listRequestId: 0,
+      contextPath: "",
+      activeNodeScrollPath: "",
 
       init() {
         this.seedExpandedDirs();
@@ -69,6 +81,9 @@
         document.addEventListener("click", (event) => {
           const actionEl = event.target.closest("[data-fb-action]");
           if (!actionEl) {
+            if (!this.isContextMenuClick(event.target)) {
+              this.closeContextMenu();
+            }
             return;
           }
 
@@ -93,7 +108,35 @@
           } else if (action === "refresh-list") {
             event.preventDefault();
             this.refreshList();
+          } else if (action === "ctx-create-text") {
+            event.preventDefault();
+            this.closeContextMenu();
+            this.promptCreateText();
+          } else if (action === "ctx-create-dir") {
+            event.preventDefault();
+            this.closeContextMenu();
+            this.promptCreateDir();
+          } else if (action === "ctx-rename") {
+            event.preventDefault();
+            this.closeContextMenu();
+            this.promptRename();
+          } else if (action === "ctx-delete") {
+            event.preventDefault();
+            this.closeContextMenu();
+            this.promptDelete();
           }
+        });
+
+        document.addEventListener("contextmenu", (event) => {
+          const node = event.target.closest("[data-fb-node='1'][data-kind='dir'][data-path]");
+          if (!node || !this.hasContextActions()) {
+            this.closeContextMenu();
+            return;
+          }
+
+          event.preventDefault();
+          const path = node.getAttribute("data-path") || "";
+          this.openContextMenu(path, event.clientX, event.clientY);
         });
 
         document.addEventListener("submit", (event) => {
@@ -111,12 +154,18 @@
 
         document.addEventListener("keydown", (event) => {
           const isSave = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
+          if (event.key === "Escape") {
+            this.closeContextMenu();
+          }
           if (!isSave) {
             return;
           }
           event.preventDefault();
           this.saveActiveEditor();
         });
+
+        window.addEventListener("resize", () => this.closeContextMenu());
+        window.addEventListener("scroll", () => this.closeContextMenu(), true);
       },
 
       seedExpandedDirs() {
@@ -178,6 +227,59 @@
         if (target) {
           target.innerHTML = html;
         }
+      },
+
+      can(capabilityKey) {
+        return this.capabilities[capabilityKey] === true;
+      },
+
+      hasContextActions() {
+        return this.can("canCreateText") || this.can("canCreateDir") || this.can("canRename") || this.can("canDelete");
+      },
+
+      contextMenu() {
+        return q("#fb-context-menu");
+      },
+
+      isContextMenuOpen() {
+        const menu = this.contextMenu();
+        return !!menu && !menu.classList.contains("hidden");
+      },
+
+      isContextMenuClick(target) {
+        const menu = this.contextMenu();
+        return !!menu && target instanceof Element && menu.contains(target);
+      },
+
+      closeContextMenu() {
+        const menu = this.contextMenu();
+        if (!menu) {
+          return;
+        }
+        menu.classList.add("hidden");
+      },
+
+      openContextMenu(path, x, y) {
+        const menu = this.contextMenu();
+        if (!menu) {
+          return;
+        }
+
+        this.contextPath = normalizePath(path);
+        const label = q("#fb-context-path");
+        if (label) {
+          label.textContent = this.contextPath || "/";
+        }
+
+        menu.classList.remove("hidden");
+        menu.style.left = `${Math.max(8, x)}px`;
+        menu.style.top = `${Math.max(8, y)}px`;
+
+        const menuRect = menu.getBoundingClientRect();
+        const safeX = Math.min(Math.max(8, x), Math.max(8, window.innerWidth - menuRect.width - 8));
+        const safeY = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - menuRect.height - 8));
+        menu.style.left = `${safeX}px`;
+        menu.style.top = `${safeY}px`;
       },
 
       async fetchList(path) {
@@ -378,86 +480,166 @@
         }
       },
 
-      async createText(event) {
-        const form = event.target;
-        const formData = new FormData(form);
-        const body = toQuery({
-          root_id: this.rootId,
-          parent_path: this.relPath,
-          name: formData.get("name") || "",
-          initial_content: "",
-        });
-
-        const result = await fetchText(`${this.routePrefix}/create-text`, {
+      async postUrlEncoded(endpoint, payload) {
+        return fetchText(`${this.routePrefix}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body,
+          body: toQuery(payload),
+        });
+      },
+
+      async createTextAt(parent, name) {
+        const normalizedParent = normalizePath(parent || "");
+        const result = await this.postUrlEncoded("/create-text", {
+          root_id: this.rootId,
+          parent_path: normalizedParent,
+          name: String(name || ""),
+          initial_content: "",
         });
         this.showFlash(result.text);
         if (result.ok) {
+          this.relPath = normalizedParent;
+          pathChain(normalizedParent).forEach((dirPath) => {
+            this.expandedDirs[dirPath] = true;
+          });
+          await this.refreshList();
+        }
+      },
+
+      async createDirAt(parent, name) {
+        const normalizedParent = normalizePath(parent || "");
+        const result = await this.postUrlEncoded("/create-dir", {
+          root_id: this.rootId,
+          parent_path: normalizedParent,
+          name: String(name || ""),
+        });
+        this.showFlash(result.text);
+        if (result.ok) {
+          this.relPath = normalizedParent;
+          pathChain(normalizedParent).forEach((dirPath) => {
+            this.expandedDirs[dirPath] = true;
+          });
+          await this.refreshList();
+        }
+      },
+
+      async renamePath(path, newName) {
+        const normalizedPath = normalizePath(path || "");
+        const result = await this.postUrlEncoded("/rename", {
+          root_id: this.rootId,
+          path: normalizedPath,
+          new_name: String(newName || ""),
+        });
+        this.showFlash(result.text);
+        if (result.ok) {
+          const currentActive = normalizePath(this.activePath || "");
+          if (currentActive === normalizedPath || currentActive.startsWith(`${normalizedPath}/`)) {
+            this.activePath = parentPath(normalizedPath);
+          }
+          await this.refreshList();
+        }
+      },
+
+      async deletePath(path) {
+        const normalizedPath = normalizePath(path || "");
+        const result = await this.postUrlEncoded("/delete", {
+          root_id: this.rootId,
+          path: normalizedPath,
+        });
+        this.showFlash(result.text);
+        if (result.ok) {
+          const currentActive = normalizePath(this.activePath || "");
+          if (currentActive === normalizedPath || currentActive.startsWith(`${normalizedPath}/`)) {
+            this.activePath = parentPath(normalizedPath);
+            this.relPath = parentPath(normalizedPath);
+          }
+          await this.refreshList();
+        }
+      },
+
+      promptCreateText() {
+        if (!this.can("canCreateText")) {
+          return;
+        }
+        const targetPath = this.contextPath || this.relPath || "";
+        const name = window.prompt("New text file name", "notes.txt");
+        if (!name) {
+          return;
+        }
+        this.createTextAt(targetPath, name.trim());
+      },
+
+      promptCreateDir() {
+        if (!this.can("canCreateDir")) {
+          return;
+        }
+        const targetPath = this.contextPath || this.relPath || "";
+        const name = window.prompt("New folder name", "folder");
+        if (!name) {
+          return;
+        }
+        this.createDirAt(targetPath, name.trim());
+      },
+
+      promptRename() {
+        if (!this.can("canRename")) {
+          return;
+        }
+        const targetPath = this.contextPath;
+        if (!targetPath) {
+          return;
+        }
+        const currentName = fileName(targetPath) || targetPath;
+        const newName = window.prompt("New name", currentName);
+        if (!newName) {
+          return;
+        }
+        this.renamePath(targetPath, newName.trim());
+      },
+
+      promptDelete() {
+        if (!this.can("canDelete")) {
+          return;
+        }
+        const targetPath = this.contextPath;
+        if (!targetPath) {
+          return;
+        }
+        const ok = window.confirm(`Delete "${fileName(targetPath) || targetPath}" ?`);
+        if (!ok) {
+          return;
+        }
+        this.deletePath(targetPath);
+      },
+
+      async createText(event) {
+        const form = event.target;
+        const formData = new FormData(form);
+        await this.createTextAt(this.relPath, formData.get("name") || "");
+        if (form instanceof HTMLFormElement) {
           form.reset();
-          this.refreshList();
         }
       },
 
       async createDir(event) {
         const form = event.target;
         const formData = new FormData(form);
-        const body = toQuery({
-          root_id: this.rootId,
-          parent_path: this.relPath,
-          name: formData.get("name") || "",
-        });
-
-        const result = await fetchText(`${this.routePrefix}/create-dir`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body,
-        });
-        this.showFlash(result.text);
-        if (result.ok) {
+        await this.createDirAt(this.relPath, formData.get("name") || "");
+        if (form instanceof HTMLFormElement) {
           form.reset();
-          this.refreshList();
         }
       },
 
       async renameEntry(event) {
         const form = event.target;
         const formData = new FormData(form);
-        const body = toQuery({
-          root_id: this.rootId,
-          path: formData.get("path") || "",
-          new_name: formData.get("new_name") || "",
-        });
-
-        const result = await fetchText(`${this.routePrefix}/rename`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body,
-        });
-        this.showFlash(result.text);
-        if (result.ok) {
-          this.refreshList();
-        }
+        await this.renamePath(formData.get("path") || "", formData.get("new_name") || "");
       },
 
       async deleteEntry(event) {
         const form = event.target;
         const formData = new FormData(form);
-        const body = toQuery({
-          root_id: this.rootId,
-          path: formData.get("path") || "",
-        });
-
-        const result = await fetchText(`${this.routePrefix}/delete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body,
-        });
-        this.showFlash(result.text);
-        if (result.ok) {
-          this.refreshList();
-        }
+        await this.deletePath(formData.get("path") || "");
       },
 
       async saveText(form) {
@@ -518,13 +700,24 @@
 
       syncActiveNode() {
         const nodes = document.querySelectorAll("[data-fb-node='1'][data-path]");
+        let activeNode = null;
+        const activePath = normalizePath(this.activePath || "");
+
         nodes.forEach((node) => {
           const path = node.getAttribute("data-path") || "";
-          const selected = path === normalizePath(this.activePath || "");
+          const selected = path === activePath;
           node.classList.toggle("bg-blue-100", selected);
           node.classList.toggle("border-l-2", selected);
           node.classList.toggle("border-blue-500", selected);
+          if (selected) {
+            activeNode = node;
+          }
         });
+
+        if (activeNode && activePath && this.activeNodeScrollPath !== activePath) {
+          activeNode.scrollIntoView({ block: "nearest", inline: "nearest" });
+          this.activeNodeScrollPath = activePath;
+        }
       },
     };
   };

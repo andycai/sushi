@@ -17,7 +17,18 @@
     }
   </style>
 </head>
-<body class="min-h-screen bg-gradient-to-b from-[#f2f3f5] to-[#e8eaee] text-slate-900" x-data="fileBrowserPage({ routePrefix: '{{ route_prefix }}', rootId: '{{ root_id }}', relPath: '{{ rel_path }}' })" x-init="init()">
+<body class="min-h-screen bg-gradient-to-b from-[#f2f3f5] to-[#e8eaee] text-slate-900" x-data="fileBrowserPage({
+  routePrefix: '{{ route_prefix }}',
+  rootId: '{{ root_id }}',
+  relPath: '{{ rel_path }}',
+  capabilities: {
+    canCreateText: {% if root and root.capabilities and root.capabilities.can_create_text %}true{% else %}false{% endif %},
+    canCreateDir: {% if root and root.capabilities and root.capabilities.can_create_dir %}true{% else %}false{% endif %},
+    canRename: {% if root and root.capabilities and root.capabilities.can_rename %}true{% else %}false{% endif %},
+    canDelete: {% if root and root.capabilities and root.capabilities.can_delete %}true{% else %}false{% endif %},
+    canUpload: {% if root and root.capabilities and root.capabilities.can_upload %}true{% else %}false{% endif %}
+  }
+})" x-init="init()">
   <main class="mx-auto max-w-[1600px] p-4 lg:p-6">
     <section class="overflow-hidden rounded-xl border border-slate-300 bg-[#f8f8f8] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_36px_rgba(15,23,42,0.08)]">
       <header class="flex flex-col gap-3 border-b border-slate-300 bg-[#ececec] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -62,46 +73,27 @@
           </div>
 
           <div class="space-y-3 border-t border-slate-300 p-3">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {% if root and root.capabilities and root.capabilities.can_create_text %}
-              <form @submit.prevent="createText($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
-                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">New Text File</h2>
-                <input type="text" name="name" placeholder="notes.txt" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
-                <button type="submit" class="w-full rounded border border-emerald-700 bg-emerald-700 px-2 py-1.5 text-xs font-medium text-white">Create</button>
-              </form>
-              {% endif %}
-
-              {% if root and root.capabilities and root.capabilities.can_create_dir %}
-              <form @submit.prevent="createDir($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
-                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">New Folder</h2>
-                <input type="text" name="name" placeholder="assets" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
-                <button type="submit" class="w-full rounded border border-blue-700 bg-blue-700 px-2 py-1.5 text-xs font-medium text-white">Create</button>
-              </form>
-              {% endif %}
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {% if root and root.capabilities and root.capabilities.can_rename %}
-              <form @submit.prevent="renameEntry($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
-                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Rename</h2>
-                <input type="text" name="path" placeholder="Current path" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
-                <input type="text" name="new_name" placeholder="New name" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
-                <button type="submit" class="w-full rounded border border-amber-700 bg-amber-700 px-2 py-1.5 text-xs font-medium text-white">Apply</button>
-              </form>
-              {% endif %}
-
-              {% if root and root.capabilities and root.capabilities.can_delete %}
-              <form @submit.prevent="deleteEntry($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
-                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Delete</h2>
-                <input type="text" name="path" placeholder="Target path" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
-                <button type="submit" class="w-full rounded border border-rose-700 bg-rose-700 px-2 py-1.5 text-xs font-medium text-white">Delete</button>
-              </form>
-              {% endif %}
+            <div class="rounded border border-slate-300 bg-white px-3 py-2.5">
+              <p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Explorer Actions</p>
+              <p class="mt-1 text-xs leading-5 text-slate-500">
+                Right click a folder in Explorer for
+                {% set has_action = false %}
+                {% if root and root.capabilities and root.capabilities.can_create_text %}
+                {% set has_action = true %}new text file{% endif %}
+                {% if root and root.capabilities and root.capabilities.can_create_dir %}
+                {% if has_action %}, {% endif %}{% set has_action = true %}new folder{% endif %}
+                {% if root and root.capabilities and root.capabilities.can_rename %}
+                {% if has_action %}, {% endif %}{% set has_action = true %}rename{% endif %}
+                {% if root and root.capabilities and root.capabilities.can_delete %}
+                {% if has_action %}, {% endif %}{% set has_action = true %}delete{% endif %}
+                {% if not has_action %}no write actions{% endif %}.
+              </p>
             </div>
 
             {% if root and root.capabilities and root.capabilities.can_upload %}
             <form @submit.prevent="uploadFile($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
               <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Upload</h2>
+              <p class="fb-code-font rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600" x-text="relPath === '' ? '/' : relPath"></p>
               <input type="file" name="file" class="w-full text-xs" required>
               <button type="submit" class="w-full rounded border border-indigo-700 bg-indigo-700 px-2 py-1.5 text-xs font-medium text-white">Upload File</button>
             </form>
@@ -138,6 +130,24 @@
       </div>
       {% endif %}
     </section>
+
+    <div id="fb-context-menu" class="hidden fixed z-50 min-w-[210px] overflow-hidden rounded-md border border-slate-300 bg-[#f8f8f8] shadow-[0_10px_30px_rgba(15,23,42,0.22)]">
+      <div id="fb-context-path" class="fb-code-font truncate border-b border-slate-300 bg-[#ebedf1] px-2.5 py-1.5 text-[11px] text-slate-600">/</div>
+      <div class="p-1.5">
+        {% if root and root.capabilities and root.capabilities.can_create_text %}
+        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-create-text">New Text File...</button>
+        {% endif %}
+        {% if root and root.capabilities and root.capabilities.can_create_dir %}
+        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-create-dir">New Folder...</button>
+        {% endif %}
+        {% if root and root.capabilities and root.capabilities.can_rename %}
+        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-rename">Rename...</button>
+        {% endif %}
+        {% if root and root.capabilities and root.capabilities.can_delete %}
+        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-100" data-fb-action="ctx-delete">Delete</button>
+        {% endif %}
+      </div>
+    </div>
   </main>
 </body>
 </html>

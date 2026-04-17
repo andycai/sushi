@@ -8,7 +8,7 @@
     <li>
       {% if item.is_dir %}
       <div class="group">
-        <div class="flex items-center justify-between px-2 py-1.5 hover:bg-slate-200/70" data-fb-node="1" data-path="{{ item.path }}">
+        <div class="flex items-center justify-between px-2 py-1.5 hover:bg-slate-200/70" data-fb-node="1" data-kind="dir" data-path="{{ item.path }}">
           <div class="min-w-0 flex flex-1 items-center gap-1.5">
             <button
               type="button"
@@ -39,7 +39,7 @@
         ></div>
       </div>
       {% else %}
-      <div class="group flex items-center justify-between px-2 py-1.5 hover:bg-slate-200/70" data-fb-node="1" data-path="{{ item.path }}">
+      <div class="group flex items-center justify-between px-2 py-1.5 hover:bg-slate-200/70" data-fb-node="1" data-kind="file" data-path="{{ item.path }}">
         <button
           type="button"
           class="min-w-0 flex flex-1 items-center gap-2 text-left"
