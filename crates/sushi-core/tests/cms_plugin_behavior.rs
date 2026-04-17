@@ -77,3 +77,27 @@ fn cms_public_post_detail_hides_draft_posts() {
     assert!(source.contains("post.get_by_slug(slug, { only_published = true })"));
     assert!(source.contains("return json_error(kind, msg)"));
 }
+
+#[test]
+fn cms_page_domain_exposes_overview_and_status_helpers() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/domain/page.lua"),
+    )
+    .expect("failed to read page domain");
+
+    assert!(source.contains("function page.count_by_status"));
+    assert!(source.contains("function page.recent"));
+    assert!(source.contains("function page.set_status"));
+}
+
+#[test]
+fn cms_post_domain_exposes_overview_and_status_helpers() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/domain/post.lua"),
+    )
+    .expect("failed to read post domain");
+
+    assert!(source.contains("function post.count_by_status"));
+    assert!(source.contains("function post.recent"));
+    assert!(source.contains("function post.set_status"));
+}

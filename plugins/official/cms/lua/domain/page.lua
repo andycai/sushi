@@ -17,6 +17,32 @@ function M.new(deps)
         return rows
     end
 
+    function page.count_by_status()
+        local rows, kind, msg = db.query(
+            "SELECT status, COUNT(1) AS total FROM cms_pages WHERE deleted_at IS NULL GROUP BY status ORDER BY status ASC",
+            {}
+        )
+        if not rows then
+            return nil, kind or "storage_error", msg
+        end
+        return rows
+    end
+
+    function page.recent(limit)
+        local max = tonumber(limit) or 5
+        if max < 1 then
+            return nil, "invalid_limit", "limit must be positive"
+        end
+        local rows, kind, msg = db.query(
+            "SELECT title, slug, status, updated_at FROM cms_pages WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?1",
+            { max }
+        )
+        if not rows then
+            return nil, kind or "storage_error", msg
+        end
+        return rows
+    end
+
     function page.get_by_slug(value, opts)
         local only_published = opts and opts.only_published
         local sql =
@@ -75,6 +101,21 @@ function M.new(deps)
         end
 
         return page.get_by_slug(normalized_slug)
+    end
+
+    function page.set_status(slug_value, status)
+        local status_value, kind, msg = validate.validate_status(status)
+        if not status_value then
+            return nil, kind, msg
+        end
+        local ok, exec_kind, exec_msg = db.execute(
+            "UPDATE cms_pages SET status = ?1, updated_at = datetime('now') WHERE slug = ?2 AND deleted_at IS NULL",
+            { status_value, slug_value }
+        )
+        if not ok then
+            return nil, exec_kind or "storage_error", exec_msg
+        end
+        return page.get_by_slug(slug_value)
     end
 
     function page.soft_delete(value)

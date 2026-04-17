@@ -45,6 +45,35 @@ function M.new(deps)
         return rows
     end
 
+    function post.count_by_status()
+        local rows, kind, msg = db.query(
+            "SELECT status, COUNT(1) AS total FROM cms_posts WHERE deleted_at IS NULL GROUP BY status ORDER BY status ASC",
+            {}
+        )
+        if not rows then
+            return nil, kind or "storage_error", msg
+        end
+        return rows
+    end
+
+    function post.recent(limit)
+        local max = tonumber(limit) or 5
+        if max < 1 then
+            return nil, "invalid_limit", "limit must be positive"
+        end
+        local rows, kind, msg = db.query(
+            "SELECT p.title, p.slug, p.status, p.updated_at, c.slug AS category_slug "
+                .. "FROM cms_posts p JOIN cms_categories c ON c.id = p.category_id "
+                .. "WHERE p.deleted_at IS NULL AND c.deleted_at IS NULL "
+                .. "ORDER BY p.updated_at DESC LIMIT ?1",
+            { max }
+        )
+        if not rows then
+            return nil, kind or "storage_error", msg
+        end
+        return rows
+    end
+
     function post.get_by_slug(value, opts)
         local only_published = opts and opts.only_published
         local sql = "SELECT p.id, p.title, p.slug, p.excerpt, p.markdown_body, p.status, c.slug AS category_slug, c.name AS category_name "
@@ -114,6 +143,21 @@ function M.new(deps)
         end
 
         return post.get_by_slug(normalized_slug)
+    end
+
+    function post.set_status(slug_value, status)
+        local status_value, kind, msg = validate.validate_status(status)
+        if not status_value then
+            return nil, kind, msg
+        end
+        local ok, exec_kind, exec_msg = db.execute(
+            "UPDATE cms_posts SET status = ?1, updated_at = datetime('now') WHERE slug = ?2 AND deleted_at IS NULL",
+            { status_value, slug_value }
+        )
+        if not ok then
+            return nil, exec_kind or "storage_error", exec_msg
+        end
+        return post.get_by_slug(slug_value, { only_published = false })
     end
 
     function post.soft_delete(value)
