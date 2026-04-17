@@ -914,7 +914,9 @@ mod tests {
         lua.globals().set("sushi", sushi).unwrap();
 
         let handler = lua
-            .create_async_function(|_, (dispatch_path, body): (String, mlua::String)| async move {
+            .create_async_function(|_, args: mlua::Table| async move {
+                let dispatch_path: String = args.get(1)?;
+                let body: mlua::String = args.get(2)?;
                 Ok(format!(
                     "{}|{}:{}",
                     dispatch_path,
