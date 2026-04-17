@@ -1189,6 +1189,17 @@ end)
     }
 
     #[test]
+    fn cms_plugin_declares_workspace_css_bundle() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let source =
+            std::fs::read_to_string(repo_root.join("plugins/official/cms/plugin.toml")).unwrap();
+
+        assert!(source.contains("[admin.assets.bundles.workspace]"));
+        assert!(source.contains("js = [\"cms.js\"]"));
+        assert!(source.contains("css = [\"cms.css\"]"));
+    }
+
+    #[test]
     fn cms_utils_contract_is_stable() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let slug = std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/slug.lua"))
