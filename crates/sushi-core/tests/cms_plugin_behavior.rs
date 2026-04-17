@@ -53,3 +53,27 @@ fn cms_post_list_category_query_filters_rows() {
     assert!(source.contains("path:match(\"[?&]category=([^&]+)\")"));
     assert!(source.contains("post.list({ only_published = true, category_slug = category_slug })"));
 }
+
+#[test]
+fn cms_cli_dispatch_supports_page_list() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/interfaces/cli.lua"),
+    )
+    .expect("failed to read cli interface");
+
+    assert!(source.contains("function cli.cms_dispatch"));
+    assert!(source.contains("resource == \"page\" and action == \"list\""));
+    assert!(source.contains("rows[i].slug .. \" [\" .. rows[i].status .. \"]\""));
+}
+
+#[test]
+fn cms_public_post_detail_hides_draft_posts() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/interfaces/api.lua"),
+    )
+    .expect("failed to read api interface");
+
+    assert!(source.contains("function api.public_post_detail"));
+    assert!(source.contains("post.get_by_slug(slug, { only_published = true })"));
+    assert!(source.contains("return json_error(kind, msg)"));
+}
