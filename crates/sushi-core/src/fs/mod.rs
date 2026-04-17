@@ -287,9 +287,12 @@ impl FileBrowserFsService {
         let to = self.resolve_for_create(root, to_rel_path)?;
         let metadata = tokio::fs::metadata(&from).await.map_err(map_io_error)?;
         if metadata.is_dir() {
-            return Err(FsError::InvalidPath(
-                "directory rename is not supported".to_string(),
-            ));
+            if to.starts_with(&from) {
+                return Err(FsError::InvalidPath(
+                    "directory rename target cannot be inside source directory".to_string(),
+                ));
+            }
+            return rename_directory_no_overwrite(&from, &to);
         }
 
         // Use hard link + remove to avoid destination overwrite races.
@@ -550,6 +553,23 @@ fn normalized_text_extensions(config: &PluginFileBrowserConfig) -> HashSet<Strin
     } else {
         out
     }
+}
+
+fn rename_directory_no_overwrite(from: &Path, to: &Path) -> Result<(), FsError> {
+    std::fs::create_dir(to).map_err(map_io_error)?;
+    let read_dir = std::fs::read_dir(from).map_err(map_io_error)?;
+    for entry in read_dir {
+        let entry = entry.map_err(map_io_error)?;
+        let source_path = entry.path();
+        let target_path = to.join(entry.file_name());
+        let file_type = entry.file_type().map_err(map_io_error)?;
+        if file_type.is_dir() {
+            rename_directory_no_overwrite(&source_path, &target_path)?;
+        } else {
+            std::fs::rename(&source_path, &target_path).map_err(map_io_error)?;
+        }
+    }
+    std::fs::remove_dir(from).map_err(map_io_error)
 }
 
 fn map_io_error(err: std::io::Error) -> FsError {

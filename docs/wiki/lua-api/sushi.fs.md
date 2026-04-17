@@ -40,7 +40,7 @@
 
 ### `sushi.fs.rename(root_id, from_rel_path, to_rel_path)`
 
-重命名文件（当前不支持目录重命名）。
+重命名文件或目录（目标已存在会报冲突；目录目标不允许位于源目录内部）。
 
 ### `sushi.fs.delete(root_id, rel_path)`
 
@@ -83,4 +83,3 @@
 - `conflict`
 - `not_empty_dir`
 - `io_error`
-

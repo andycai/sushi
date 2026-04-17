@@ -169,9 +169,47 @@ async fn rename_rejects_existing_destination() {
 }
 
 #[tokio::test]
-async fn rename_rejects_directory_source() {
+async fn rename_directory_moves_nested_entries() {
     let tmp = tempfile::tempdir().expect("create tempdir");
-    std::fs::create_dir(tmp.path().join("from-dir")).expect("create source directory");
+    let from_dir = tmp.path().join("from-dir");
+    std::fs::create_dir(&from_dir).expect("create source directory");
+    std::fs::write(from_dir.join("note.txt"), "hello").expect("write source nested file");
+
+    let cfg = config_for(
+        tmp.path(),
+        PluginFileBrowserCapabilities {
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
+        },
+    );
+    let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
+
+    service
+        .rename("docs", "from-dir", "to-dir")
+        .await
+        .expect("directory rename should succeed");
+
+    assert!(!tmp.path().join("from-dir").exists());
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("to-dir").join("note.txt"))
+            .expect("read moved nested file"),
+        "hello"
+    );
+}
+
+#[tokio::test]
+async fn rename_rejects_directory_target_inside_source() {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let from_dir = tmp.path().join("from-dir");
+    std::fs::create_dir(&from_dir).expect("create source directory");
+    std::fs::write(from_dir.join("note.txt"), "hello").expect("write source nested file");
 
     let cfg = config_for(
         tmp.path(),
@@ -190,9 +228,9 @@ async fn rename_rejects_directory_source() {
     let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
 
     let err = service
-        .rename("docs", "from-dir", "to-dir")
+        .rename("docs", "from-dir", "from-dir/child")
         .await
-        .expect_err("directory rename should be rejected");
+        .expect_err("directory rename into child should be rejected");
     assert!(matches!(err, FsError::InvalidPath(_)));
 }
 
