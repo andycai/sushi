@@ -59,6 +59,16 @@ local function render_flash(tone, message)
     })
 end
 
+local function root_id_or_unknown(root, fallback_root_id)
+    if root and root.id and root.id ~= "" then
+        return root.id
+    end
+    if fallback_root_id and fallback_root_id ~= "" then
+        return fallback_root_id
+    end
+    return "unknown"
+end
+
 local function list_context(browser, root_id, rel_path)
     local root, resolved_root_id = browser.root(root_id)
     local safe_rel_path = ensure_rel_path(rel_path)
@@ -73,7 +83,11 @@ local function list_context(browser, root_id, rel_path)
             list_error = friendly_error(kind, message)
         end
     else
-        list_error = "List operation is disabled for this root"
+        local root_name = root_id_or_unknown(root, resolved_root_id)
+        list_error = string.format(
+            "List operation is disabled for root '%s'. Check [file_browser.roots.capabilities].can_list in plugin.toml.",
+            root_name
+        )
     end
 
     return {
