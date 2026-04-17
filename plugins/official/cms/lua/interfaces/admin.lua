@@ -20,6 +20,10 @@ local function parse_urlencoded(body)
     return out
 end
 
+local function strip_query(path)
+    return (path or ""):match("^([^%?]+)") or ""
+end
+
 function M.new(deps)
     local admin = {}
     local page = deps.page
@@ -31,6 +35,56 @@ function M.new(deps)
             level = tostring(level or "success"),
             message = tostring(message or ""),
         })
+    end
+
+    local function normalize_resource(resource)
+        local value = tostring(resource or ""):lower()
+        if value == "page" or value == "pages" then
+            return "pages"
+        end
+        if value == "post" or value == "posts" then
+            return "posts"
+        end
+        if value == "category" or value == "categories" then
+            return "categories"
+        end
+        return nil
+    end
+
+    local function resolve_resource(args, route_prefix)
+        local path = strip_query((args and args[1]) or "")
+        local from_path = path:match("^" .. route_prefix .. "/([^/]+)$")
+        if from_path then
+            return normalize_resource(from_path)
+        end
+        local form = parse_urlencoded((args and args[2]) or "")
+        return normalize_resource(form.resource or form.content_type or form.kind or form.type)
+    end
+
+    local function dispatch_table_partial(resource)
+        if resource == "pages" then
+            return admin.pages_table_partial()
+        end
+        if resource == "posts" then
+            return admin.posts_table_partial()
+        end
+        if resource == "categories" then
+            return admin.categories_table_partial()
+        end
+        return flash("error", "Unknown CMS resource")
+    end
+
+    local function dispatch_upsert_partial(resource, args)
+        if resource == "pages" then
+            return admin.pages_upsert_partial(args)
+        end
+        if resource == "posts" then
+            return admin.posts_upsert_partial(args)
+        end
+        if resource == "categories" then
+            return admin.categories_upsert_partial(args)
+        end
+        return flash("error", "Unknown CMS resource")
     end
 
     function admin.pages_table_partial()
@@ -128,6 +182,46 @@ function M.new(deps)
             return flash("error", tostring(msg or kind or "failed to delete category"))
         end
         return flash("success", "Category deleted")
+    end
+
+    function admin.overview_partial()
+        return admin.pages_table_partial()
+    end
+
+    function admin.library_partial(args)
+        local resource = resolve_resource(args, "/admin/partials/cms/library")
+        if resource then
+            return dispatch_table_partial(resource)
+        end
+        return admin.pages_table_partial()
+    end
+
+    function admin.editor_partial(args)
+        local resource = resolve_resource(args, "/admin/partials/cms/editor")
+        if resource then
+            return dispatch_table_partial(resource)
+        end
+        return flash("info", "Workbench editor bridge is active; use current CMS forms.")
+    end
+
+    function admin.editor_save_partial(args)
+        local resource = resolve_resource(args, "/admin/partials/cms/editor")
+        if resource then
+            return dispatch_upsert_partial(resource, args)
+        end
+        return flash("error", "Missing CMS resource for editor save")
+    end
+
+    function admin.status_transition_partial(args)
+        local resource = resolve_resource(args, "/admin/partials/cms/status")
+        if resource then
+            return dispatch_upsert_partial(resource, args)
+        end
+        return flash("error", "Missing CMS resource for status transition")
+    end
+
+    function admin.commands_partial()
+        return flash("info", "Workbench commands panel will be introduced in a follow-up task.")
     end
 
     return admin
