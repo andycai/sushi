@@ -21,7 +21,7 @@
         {% if has_roots %}
         <div class="flex flex-wrap items-center gap-2">
           <label class="text-sm font-medium" for="fb-root">Root</label>
-          <select id="fb-root" class="rounded-md border border-slate-300 px-3 py-2 text-sm" x-model="rootId" @change="goToPath(relPath)">
+          <select id="fb-root" class="rounded-md border border-slate-300 px-3 py-2 text-sm" x-model="rootId" @change="switchRoot()">
             {% for item in roots %}
             <option value="{{ item.id }}">{{ item.title }}</option>
             {% endfor %}

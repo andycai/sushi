@@ -108,6 +108,11 @@
         this.refreshList();
       },
 
+      switchRoot() {
+        const query = toQuery({ root: this.rootId || "", path: this.relPath || "" });
+        window.location.href = `${this.routePrefix}?${query}`;
+      },
+
       goToParent() {
         if (!this.relPath) {
           return;
