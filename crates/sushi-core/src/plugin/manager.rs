@@ -960,4 +960,39 @@ mod tests {
             .expect("handler must run");
         assert_eq!(result, "/api/upload|/api/upload?mode=raw|0:255");
     }
+
+    #[tokio::test]
+    async fn call_api_handler_matches_wildcards() {
+        let manager = PluginManager::new();
+        let lua = mlua::Lua::new();
+        let sushi = lua.create_table().expect("create sushi table");
+        let handlers = lua.create_table().expect("create handlers table");
+        sushi
+            .set("__handlers", handlers.clone())
+            .expect("set handlers table");
+        lua.globals()
+            .set("sushi", sushi)
+            .expect("set sushi global");
+        lua.load(
+            r#"
+            sushi.__handlers["h_wildcard"] = function(args)
+                return args[1]
+            end
+            "#,
+        )
+        .exec()
+        .expect("register wildcard handler");
+
+        manager.register_vm("notes", lua).await;
+        manager
+            .register_api_handler("GET", "/api/notes/*", "notes", "h_wildcard")
+            .await;
+
+        let response = manager
+            .call_api_handler("GET", "/api/notes/123", None)
+            .await
+            .expect("expected wildcard handler")
+            .expect("expected successful handler call");
+        assert_eq!(response, "/api/notes/123");
+    }
 }

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+  <article class="max-w-3xl mx-auto py-8">
+    <header class="mb-4">
+      <h1 class="text-3xl font-semibold">{{ title }}</h1>
+    </header>
+    <section class="prose prose-slate max-w-none">
+      {{ content_html | safe }}
+    </section>
+  </article>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set active_section = "plugins" %}
+{% block title %}CMS — Sushi Admin{% endblock %}
+{% block content %}
+<section class="admin-module" data-admin-workspace-module="cms" x-data="cmsPage()">
+  <div class="ui-page-header">
+    <h1 class="ui-title">CMS</h1>
+    <p class="ui-subtitle">Manage pages, posts, and categories.</p>
+  </div>
+
+  <div id="cms-feedback" class="ui-feedback"></div>
+
+  <div class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Pages</h2>
+    </header>
+    <table class="ui-table">
+      <tbody id="cms-page-table"
+             hx-get="/admin/partials/cms/pages/table"
+             hx-trigger="load, cms:pages:refresh from:body"
+             hx-swap="innerHTML">
+      </tbody>
+    </table>
+  </div>
+
+  <div class="ui-card mt-4">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Posts</h2>
+    </header>
+    <table class="ui-table">
+      <tbody id="cms-post-table"
+             hx-get="/admin/partials/cms/posts/table"
+             hx-trigger="load, cms:posts:refresh from:body"
+             hx-swap="innerHTML">
+      </tbody>
+    </table>
+  </div>
+
+  <div class="ui-card mt-4">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Categories</h2>
+    </header>
+    <table class="ui-table">
+      <tbody id="cms-category-table"
+             hx-get="/admin/partials/cms/categories/table"
+             hx-trigger="load, cms:categories:refresh from:body"
+             hx-swap="innerHTML">
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% for item in items %}
+  <tr>
+    <td class="ui-mono">{{ item.slug }}</td>
+    <td>{{ item.name }}</td>
+  </tr>
+{% else %}
+  <tr>
+    <td colspan="2" class="ui-empty">No categories found.</td>
+  </tr>
+{% endfor %}
