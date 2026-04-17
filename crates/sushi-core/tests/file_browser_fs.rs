@@ -135,6 +135,28 @@ async fn rename_rejects_existing_destination() {
 }
 
 #[tokio::test]
+async fn rename_rejects_directory_source() {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    std::fs::create_dir(tmp.path().join("from-dir")).expect("create source directory");
+
+    let cfg = config_for(
+        tmp.path(),
+        PluginFileBrowserCapabilities {
+            read: true,
+            write: true,
+            delete: true,
+        },
+    );
+    let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
+
+    let err = service
+        .rename("docs", "from-dir", "to-dir")
+        .await
+        .expect_err("directory rename should be rejected");
+    assert!(matches!(err, FsError::InvalidPath(_)));
+}
+
+#[tokio::test]
 async fn write_upload_rejects_existing_destination() {
     let tmp = tempfile::tempdir().expect("create tempdir");
     std::fs::write(tmp.path().join("upload.bin"), [1, 2, 3]).expect("write destination fixture");

@@ -203,12 +203,16 @@ impl FileBrowserFsService {
         let root = self.root(root_id, RequiredCapability::Write)?;
         let from = self.resolve_existing(root, from_rel_path, false)?;
         let to = self.resolve_for_create(root, to_rel_path)?;
-        match tokio::fs::symlink_metadata(&to).await {
-            Ok(_) => return Err(FsError::Conflict),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(map_io_error(err)),
+        let metadata = tokio::fs::metadata(&from).await.map_err(map_io_error)?;
+        if metadata.is_dir() {
+            return Err(FsError::InvalidPath(
+                "directory rename is not supported".to_string(),
+            ));
         }
-        tokio::fs::rename(from, to).await.map_err(map_io_error)
+
+        // Use hard link + remove to avoid destination overwrite races.
+        tokio::fs::hard_link(&from, &to).await.map_err(map_io_error)?;
+        tokio::fs::remove_file(from).await.map_err(map_io_error)
     }
 
     pub async fn delete(&self, root_id: &str, rel_path: &str) -> Result<(), FsError> {
