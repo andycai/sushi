@@ -131,15 +131,19 @@ fn cms_admin_interface_exposes_workbench_handlers() {
     assert!(source.contains("function admin.commands_partial"));
 
     assert!(source.contains("plugins/official/cms/fragments/overview_panel.html"));
+    assert!(source.contains("plugins/official/cms/fragments/library_panel.html"));
+    assert!(source.contains("plugins/official/cms/fragments/editor_panel.html"));
     assert!(source.contains("page.count_by_status()"));
     assert!(source.contains("post.count_by_status()"));
     assert!(source.contains("page.recent(5)"));
     assert!(source.contains("post.recent(5)"));
     assert!(source.contains("path:match(\"^/admin/partials/cms/library/([^/?]+)\")"));
     assert!(source.contains("path:match(\"^/admin/partials/cms/editor/([^/?]+)\")"));
+    assert!(source.contains("path:match(\"^/admin/partials/cms/editor/[^/?]+/([^/?]+)\")"));
     assert!(source.contains("kind == \"page\" or resource == \"page\""));
     assert!(source.contains("kind == \"post\" or resource == \"post\""));
     assert!(source.contains("resource == \"categories\""));
+    assert!(source.contains("form.original_slug"));
     assert!(source.contains("category.upsert({"));
     assert!(source.contains("form.content_type"));
     assert!(source.contains("page.set_status("));

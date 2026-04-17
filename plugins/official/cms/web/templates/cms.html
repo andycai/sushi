@@ -2,7 +2,14 @@
 {% set active_section = "plugins" %}
 {% block title %}CMS — Sushi Admin{% endblock %}
 {% block content %}
-<section class="admin-module cms-workbench" data-admin-workspace-module="cms" x-data="cmsPage()" x-init="init()">
+<section
+  class="admin-module cms-workbench"
+  data-admin-workspace-module="cms"
+  data-cms-editor-save-url="/admin/partials/cms/editor/save"
+  data-cms-status-transition-url="/admin/partials/cms/status/transition"
+  x-data="cmsPage()"
+  x-init="init()"
+>
   <header class="cms-top-nav ui-card" data-cms-top-nav>
     <div class="cms-top-nav-left">
       <h1 class="ui-title">CMS workspace</h1>

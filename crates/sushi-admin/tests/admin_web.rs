@@ -1005,6 +1005,21 @@ fn cms_js_defines_shortcuts_and_command_palette_hooks() {
     assert!(source.contains("handleGlobalShortcut"));
 }
 
+#[test]
+fn cms_template_wires_overview_library_editor_endpoints() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/cms.html"),
+    )
+    .expect("failed to read cms template");
+
+    assert!(source.contains("/admin/partials/cms/overview"));
+    assert!(source.contains("/admin/partials/cms/library/posts"));
+    assert!(source.contains("/admin/partials/cms/editor/posts/new"));
+    assert!(source.contains("/admin/partials/cms/editor/save"));
+    assert!(source.contains("/admin/partials/cms/status/transition"));
+    assert!(source.contains("/admin/partials/cms/commands"));
+}
+
 #[tokio::test]
 async fn role_permission_updates_refresh_authorizer_for_workspace_asset_checks() {
     let (app, _ctx) = build_app_with_context(None).await;
