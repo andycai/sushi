@@ -373,7 +373,7 @@ mod tests {
         lua.load(&format!(
             r#"
 sushi.__handlers["{handler_key}"] = function(args)
-    return args[1]
+    return args[1] .. "|" .. (args.dispatch_path or "")
 end
 "#
         ))
@@ -403,7 +403,7 @@ end
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
-        assert_eq!(body, "/app/files/list/docs?path=%2F");
+        assert_eq!(body, "/app/files/list/docs|/app/files/list/docs?path=%2F");
     }
 
     #[tokio::test]

@@ -368,8 +368,14 @@ impl PluginManager {
         drop(map);
 
         Some(
-            self.call_api_handler_with_dispatch(&plugin_name, &handler_key, dispatch_path, body)
-                .await,
+            self.call_api_handler_with_dispatch(
+                &plugin_name,
+                &handler_key,
+                path,
+                dispatch_path,
+                body,
+            )
+            .await,
         )
     }
 
@@ -562,6 +568,7 @@ impl PluginManager {
         &self,
         plugin_name: &str,
         handler_key: &str,
+        path: &str,
         dispatch_path: &str,
         body: Option<Vec<u8>>,
     ) -> Result<String, String> {
@@ -572,16 +579,17 @@ impl PluginManager {
 
         let func = self.get_handler_fn(lua, handler_key)?;
 
-        // API handlers keep the existing `args[1]`/`args[2]` Lua-table contract.
+        // Preserve existing `args[1]`/`args[2]` contract for compatibility.
+        // Query-aware handlers can read `args.dispatch_path`.
         let args = lua
             .create_table()
             .map_err(|e| format!("create args table: {e}"))?;
         args.set(
             1,
-            lua.create_string(dispatch_path.as_bytes())
-                .map_err(|e| format!("create dispatch_path string: {e}"))?,
+            lua.create_string(path.as_bytes())
+                .map_err(|e| format!("create path string: {e}"))?,
         )
-        .map_err(|e| format!("set dispatch path arg: {e}"))?;
+        .map_err(|e| format!("set path arg: {e}"))?;
         if let Some(bytes) = body {
             args.set(
                 2,
@@ -590,6 +598,12 @@ impl PluginManager {
             )
             .map_err(|e| format!("set body arg: {e}"))?;
         }
+        args.set(
+            "dispatch_path",
+            lua.create_string(dispatch_path.as_bytes())
+                .map_err(|e| format!("create dispatch path string: {e}"))?,
+        )
+        .map_err(|e| format!("set dispatch_path field: {e}"))?;
 
         func.call_async::<String>(args).await.map_err(|e| {
             tracing::error!(
@@ -915,10 +929,12 @@ mod tests {
 
         let handler = lua
             .create_async_function(|_, args: mlua::Table| async move {
-                let dispatch_path: String = args.get(1)?;
+                let path: String = args.get(1)?;
+                let dispatch_path: String = args.get("dispatch_path")?;
                 let body: mlua::String = args.get(2)?;
                 Ok(format!(
-                    "{}|{}:{}",
+                    "{}|{}|{}:{}",
+                    path,
                     dispatch_path,
                     body.as_bytes()[0],
                     body.as_bytes()[1]
@@ -942,6 +958,6 @@ mod tests {
             .await
             .expect("handler must exist")
             .expect("handler must run");
-        assert_eq!(result, "/api/upload?mode=raw|0:255");
+        assert_eq!(result, "/api/upload|/api/upload?mode=raw|0:255");
     }
 }
