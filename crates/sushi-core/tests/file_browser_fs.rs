@@ -311,6 +311,44 @@ fn from_manifest_rejects_duplicate_root_ids() {
     assert!(matches!(err, FsError::InvalidPath(_)));
 }
 
+#[tokio::test]
+async fn from_manifest_with_root_base_resolves_relative_paths() {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let root_base = tmp.path().join("workspace");
+    let docs_dir = root_base.join("docs");
+    std::fs::create_dir_all(&docs_dir).expect("create docs dir");
+    std::fs::write(docs_dir.join("note.txt"), "hello").expect("write fixture");
+
+    let cfg = PluginFileBrowserConfig {
+        route_prefix: "/app/files".to_string(),
+        hide_dotfiles: true,
+        deny_symlink: true,
+        text_extensions: Vec::new(),
+        roots: vec![PluginFileBrowserRoot {
+            id: "docs".to_string(),
+            title: "Documents".to_string(),
+            path: "docs".to_string(),
+            capabilities: PluginFileBrowserCapabilities {
+                can_list: true,
+                can_view_text: true,
+                can_edit_text: true,
+                can_create_text: true,
+                can_create_dir: true,
+                can_rename: true,
+                can_delete: true,
+                can_upload: true,
+                can_download: true,
+            },
+        }],
+    };
+
+    let service = FileBrowserFsService::from_manifest_with_root_base(&cfg, &root_base)
+        .expect("service should build");
+    let entries = service.list("docs", "").await.expect("list root entries");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "note.txt");
+}
+
 #[cfg(unix)]
 fn create_symlink(target: &Path, link: &Path) {
     std::os::unix::fs::symlink(target, link).expect("create unix symlink");

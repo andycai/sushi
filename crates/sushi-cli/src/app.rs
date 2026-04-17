@@ -89,6 +89,11 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         resolve_static_dir(config_path, &guard.web.static_dir)?
     };
 
+    let file_browser_root_dir = {
+        let guard = config.get().await;
+        resolve_file_browser_root_dir(config_path, &guard.file_browser.root_dir)?
+    };
+
     let plugins_dir = {
         let guard = config.get().await;
         PathBuf::from(&guard.plugins.directory)
@@ -97,6 +102,7 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     config
         .update(|cfg| {
             cfg.web.static_dir = static_dir.to_string_lossy().to_string();
+            cfg.file_browser.root_dir = file_browser_root_dir.to_string_lossy().to_string();
         })
         .await;
 
@@ -177,6 +183,10 @@ fn resolve_templates_dir(config_path: Option<&Path>, templates_dir: &str) -> Res
 
 fn resolve_static_dir(config_path: Option<&Path>, static_dir: &str) -> Result<PathBuf> {
     resolve_dir(config_path, static_dir, "static")
+}
+
+fn resolve_file_browser_root_dir(config_path: Option<&Path>, root_dir: &str) -> Result<PathBuf> {
+    resolve_dir(config_path, root_dir, "file-browser root")
 }
 
 fn resolve_dir(config_path: Option<&Path>, dir: &str, kind: &str) -> Result<PathBuf> {

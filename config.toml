@@ -12,3 +12,6 @@ refresh_ttl = 604800
 
 [plugins]
 directory = "plugins"
+
+[file_browser]
+root_dir = "/Users/andy/Workspace"

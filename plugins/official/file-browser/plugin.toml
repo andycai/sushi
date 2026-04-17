@@ -44,7 +44,7 @@ text_extensions = [
 [[file_browser.roots]]
 id = "docs"
 title = "Documents"
-path = "/Users/andy/Workspace/httpshared"
+path = "httpshared"
 
 [file_browser.roots.capabilities]
 can_list = true
@@ -60,7 +60,7 @@ can_download = true
 [[file_browser.roots]]
 id = "temp"
 title = "Temporary Documents"
-path = "/Users/andy/Workspace/temp"
+path = "temp"
 
 [file_browser.roots.capabilities]
 can_list = true

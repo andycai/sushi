@@ -212,7 +212,6 @@ fn validate_text_extensions(config: &PluginFileBrowserConfig) -> Result<(), Stri
 
 fn validate_roots(config: &PluginFileBrowserConfig) -> Result<(), String> {
     let mut seen_ids = HashSet::new();
-    let mut canonical_roots = Vec::with_capacity(config.roots.len());
 
     for root in &config.roots {
         let id = root.id.as_str();
@@ -231,45 +230,31 @@ fn validate_roots(config: &PluginFileBrowserConfig) -> Result<(), String> {
             return Err(format!("duplicate root id '{id}'"));
         }
 
-        let path = Path::new(root.path.as_str());
         if root.path.trim() != root.path {
             return Err(format!(
                 "root path '{}' for id '{id}' cannot contain leading/trailing whitespace",
                 root.path
             ));
         }
-        if !path.is_absolute() {
-            return Err(format!(
-                "root path '{}' for id '{id}' must be absolute",
-                root.path
-            ));
+        let path = Path::new(root.path.as_str());
+        if path.as_os_str().is_empty() {
+            return Err(format!("root path for id '{id}' must be non-empty"));
         }
-        if !path.is_dir() {
-            return Err(format!(
-                "root path '{}' for id '{id}' must be an existing directory",
-                root.path
-            ));
-        }
-
-        let canonical = std::fs::canonicalize(path).map_err(|e| {
-            format!(
-                "failed to canonicalize root path '{}' for id '{id}': {e}",
-                root.path
-            )
-        })?;
-        canonical_roots.push((id.to_string(), canonical));
-    }
-
-    for left in 0..canonical_roots.len() {
-        for right in (left + 1)..canonical_roots.len() {
-            let (left_id, left_path) = &canonical_roots[left];
-            let (right_id, right_path) = &canonical_roots[right];
-            if left_path.starts_with(right_path) || right_path.starts_with(left_path) {
-                return Err(format!(
-                    "root paths overlap between ids '{left_id}' ({}) and '{right_id}' ({})",
-                    left_path.display(),
-                    right_path.display()
-                ));
+        for component in path.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    return Err(format!(
+                        "root path '{}' for id '{id}' cannot contain '..'",
+                        root.path
+                    ));
+                }
+                std::path::Component::Prefix(_) => {
+                    return Err(format!(
+                        "root path '{}' for id '{id}' has invalid prefix",
+                        root.path
+                    ));
+                }
+                _ => {}
             }
         }
     }
@@ -571,11 +556,21 @@ impl Plugin for LuaPlugin {
             ))
         })?;
 
+        let file_browser_root_dir = {
+            let cfg = ctx.config.get().await;
+            cfg.file_browser.root_dir.clone()
+        };
+
         let file_browser_fs = self
             .manifest
             .file_browser
             .as_ref()
-            .map(FileBrowserFsService::from_manifest)
+            .map(|manifest| {
+                FileBrowserFsService::from_manifest_with_root_base(
+                    manifest,
+                    Path::new(&file_browser_root_dir),
+                )
+            })
             .transpose()
             .map_err(|e| {
                 PluginError::InitFailed(format!(
@@ -1240,6 +1235,33 @@ route_prefix = "admin/files"
         let err = result.err().unwrap().to_string();
         assert!(err.contains("file_browser config invalid"));
         assert!(err.contains("route_prefix"));
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_accepts_relative_file_browser_root_paths() {
+        let tmp = TempDir::new().unwrap();
+        create_plugin_dir_with_manifest(
+            tmp.path(),
+            "official",
+            "relative_browser",
+            r#"
+[plugin]
+name = "relative_browser"
+version = "0.1.0"
+kind = "official"
+
+[file_browser]
+route_prefix = "/app/files"
+
+[[file_browser.roots]]
+id = "docs"
+path = "docs"
+"#,
+        );
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name(), "relative_browser");
     }
 
     #[tokio::test]

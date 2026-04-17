@@ -14,6 +14,8 @@ pub struct SushiConfig {
     #[serde(default)]
     pub plugins: PluginsConfig,
     #[serde(default)]
+    pub file_browser: FileBrowserConfig,
+    #[serde(default)]
     pub web: WebConfig,
 }
 
@@ -144,6 +146,24 @@ fn default_plugins_dir() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileBrowserConfig {
+    #[serde(default = "default_file_browser_root_dir")]
+    pub root_dir: String,
+}
+
+impl Default for FileBrowserConfig {
+    fn default() -> Self {
+        Self {
+            root_dir: default_file_browser_root_dir(),
+        }
+    }
+}
+
+fn default_file_browser_root_dir() -> String {
+    ".".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebConfig {
     #[serde(default = "default_templates_dir")]
     pub templates_dir: String,
@@ -182,6 +202,7 @@ impl Default for SushiConfig {
             database: DatabaseConfig::default(),
             jwt: JwtConfig::default(),
             plugins: PluginsConfig::default(),
+            file_browser: FileBrowserConfig::default(),
             web: WebConfig::default(),
         }
     }
@@ -255,6 +276,9 @@ refresh_ttl = 1209600
 [plugins]
 directory = "plugins"
 
+[file_browser]
+root_dir = "/srv/files"
+
 [web]
 templates_dir = "custom/templates"
 static_dir = "static/www"
@@ -267,6 +291,7 @@ static_url_prefix = "/assets"
         assert_eq!(config.jwt.access_ttl, 7200);
         assert_eq!(config.jwt.refresh_ttl, 1209600);
         assert_eq!(config.plugins.directory, "plugins");
+        assert_eq!(config.file_browser.root_dir, "/srv/files");
         assert_eq!(config.web.templates_dir, "custom/templates");
         assert_eq!(config.web.static_dir, "static/www");
         assert_eq!(config.web.static_url_prefix, "/assets");
@@ -281,6 +306,7 @@ static_url_prefix = "/assets"
         assert_eq!(config.jwt.access_ttl, 3600);
         assert_eq!(config.jwt.refresh_ttl, 604800);
         assert_eq!(config.plugins.directory, "plugins");
+        assert_eq!(config.file_browser.root_dir, ".");
         assert_eq!(config.web.templates_dir, "web/templates");
         assert_eq!(config.web.static_dir, "web/static");
         assert_eq!(config.web.static_url_prefix, "/static");
@@ -291,6 +317,7 @@ static_url_prefix = "/assets"
         let config: SushiConfig = toml::from_str("").unwrap();
         assert_eq!(config.server.port, 3000);
         assert_eq!(config.plugins.directory, "plugins");
+        assert_eq!(config.file_browser.root_dir, ".");
         assert_eq!(config.web.templates_dir, "web/templates");
         assert_eq!(config.web.static_dir, "web/static");
         assert_eq!(config.web.static_url_prefix, "/static");

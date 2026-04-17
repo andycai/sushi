@@ -131,7 +131,16 @@ impl From<std::io::Error> for FsError {
 
 impl FileBrowserFsService {
     pub fn from_manifest(config: &PluginFileBrowserConfig) -> Result<Self, FsError> {
+        let root_base = std::env::current_dir().map_err(map_io_error)?;
+        Self::from_manifest_with_root_base(config, &root_base)
+    }
+
+    pub fn from_manifest_with_root_base(
+        config: &PluginFileBrowserConfig,
+        root_base: &Path,
+    ) -> Result<Self, FsError> {
         let mut roots = HashMap::with_capacity(config.roots.len());
+        let mut canonical_roots = Vec::with_capacity(config.roots.len());
         for root in &config.roots {
             if roots.contains_key(&root.id) {
                 return Err(FsError::InvalidPath(format!(
@@ -139,7 +148,14 @@ impl FileBrowserFsService {
                     root.id
                 )));
             }
-            let path = std::fs::canonicalize(&root.path).map_err(map_io_error)?;
+            let configured_path = Path::new(&root.path);
+            let resolved_path = if configured_path.is_absolute() {
+                configured_path.to_path_buf()
+            } else {
+                root_base.join(configured_path)
+            };
+            let path = std::fs::canonicalize(&resolved_path).map_err(map_io_error)?;
+            canonical_roots.push((root.id.clone(), path.clone()));
             roots.insert(
                 root.id.clone(),
                 FsRoot {
@@ -153,6 +169,18 @@ impl FileBrowserFsService {
                     capabilities: root.capabilities.clone(),
                 },
             );
+        }
+
+        for left in 0..canonical_roots.len() {
+            for right in (left + 1)..canonical_roots.len() {
+                let (left_id, left_path) = &canonical_roots[left];
+                let (right_id, right_path) = &canonical_roots[right];
+                if left_path.starts_with(right_path) || right_path.starts_with(left_path) {
+                    return Err(FsError::InvalidPath(format!(
+                        "root paths overlap between ids '{left_id}' and '{right_id}'"
+                    )));
+                }
+            }
         }
 
         let text_extensions = normalized_text_extensions(config);

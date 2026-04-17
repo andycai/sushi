@@ -23,6 +23,9 @@ refresh_ttl = 604800      # 7 days in seconds
 [plugins]
 directory = "plugins"
 
+[file_browser]
+root_dir = "."
+
 [web]
 templates_dir = "web/templates"
 static_dir = "web/static"
@@ -66,6 +69,12 @@ static_url_prefix = "/static"
 | `templates_dir` | string | `"web/templates"` | 模板目录 |
 | `static_dir` | string | `"web/static"` | 静态文件目录 |
 | `static_url_prefix` | string | `"/static"` | 静态资源 URL 前缀 |
+
+### file_browser
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|-------|------|-------|------|
+| `root_dir` | string | `"."` | 文件浏览器根目录基准路径（`plugin.toml` 中相对 `path` 会相对该目录解析） |
 
 ## 启动命令
 

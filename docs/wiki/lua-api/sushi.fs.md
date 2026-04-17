@@ -6,6 +6,7 @@
 
 - **需要权限** - 插件必须声明 `file_browser` 配置。
 - **能力约束** - 每个 root 的 `capabilities` 独立控制可执行操作。
+- **路径解析** - `plugin.toml` 里 `[[file_browser.roots]].path` 若为相对路径，会相对 `config.toml` 的 `[file_browser].root_dir` 解析。
 
 ## 元数据
 

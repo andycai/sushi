@@ -24,5 +24,8 @@ pub async fn config_api(State(ctx): State<SushiContext>) -> impl IntoResponse {
         "plugins": {
             "directory": cfg.plugins.directory,
         },
+        "file_browser": {
+            "root_dir": cfg.file_browser.root_dir,
+        },
     }))
 }
