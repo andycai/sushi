@@ -175,7 +175,7 @@ fn validate_file_browser_config(manifest: &PluginManifest) -> Result<(), String>
 }
 
 fn validate_route_prefix(config: &PluginFileBrowserConfig) -> Result<(), String> {
-    let route_prefix = config.route_prefix.trim();
+    let route_prefix = config.route_prefix.as_str();
     if route_prefix.is_empty() {
         return Err("route_prefix must be non-empty".to_string());
     }
@@ -190,7 +190,7 @@ fn validate_roots(config: &PluginFileBrowserConfig) -> Result<(), String> {
     let mut canonical_roots = Vec::with_capacity(config.roots.len());
 
     for root in &config.roots {
-        let id = root.id.trim();
+        let id = root.id.as_str();
         if id.is_empty() {
             return Err("root id must be non-empty".to_string());
         }
@@ -206,7 +206,7 @@ fn validate_roots(config: &PluginFileBrowserConfig) -> Result<(), String> {
             return Err(format!("duplicate root id '{id}'"));
         }
 
-        let path = Path::new(root.path.trim());
+        let path = Path::new(root.path.as_str());
         if !path.is_absolute() {
             return Err(format!(
                 "root path '{}' for id '{id}' must be absolute",
@@ -1104,6 +1104,105 @@ route_prefix = "admin/files"
         let err = result.err().unwrap().to_string();
         assert!(err.contains("file_browser config invalid"));
         assert!(err.contains("route_prefix"));
+    }
+
+    #[tokio::test]
+    async fn test_scan_dir_rejects_whitespace_file_browser_values() {
+        let tmp = TempDir::new().unwrap();
+        let root_dir = tmp.path().join("fb_root");
+        std::fs::create_dir_all(&root_dir).unwrap();
+
+        create_plugin_dir_with_manifest(
+            tmp.path(),
+            "official",
+            "bad_whitespace_route",
+            &format!(
+                r#"
+[plugin]
+name = "bad_whitespace_route"
+version = "0.1.0"
+kind = "official"
+
+[file_browser]
+route_prefix = " /app/files"
+
+[[file_browser.roots]]
+id = "docs"
+path = "{}"
+"#,
+                root_dir.display()
+            ),
+        );
+
+        let route_result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(route_result.is_err());
+        let route_err = route_result.err().unwrap().to_string();
+        assert!(route_err.contains("file_browser config invalid"));
+        assert!(route_err.contains("route_prefix"));
+
+        let tmp = TempDir::new().unwrap();
+        let root_dir = tmp.path().join("fb_root");
+        std::fs::create_dir_all(&root_dir).unwrap();
+
+        create_plugin_dir_with_manifest(
+            tmp.path(),
+            "official",
+            "bad_whitespace_id",
+            &format!(
+                r#"
+[plugin]
+name = "bad_whitespace_id"
+version = "0.1.0"
+kind = "official"
+
+[file_browser]
+route_prefix = "/app/files"
+
+[[file_browser.roots]]
+id = "docs "
+path = "{}"
+"#,
+                root_dir.display()
+            ),
+        );
+
+        let id_result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(id_result.is_err());
+        let id_err = id_result.err().unwrap().to_string();
+        assert!(id_err.contains("file_browser config invalid"));
+        assert!(id_err.contains("root id"));
+
+        let tmp = TempDir::new().unwrap();
+        let root_dir = tmp.path().join("fb_root");
+        std::fs::create_dir_all(&root_dir).unwrap();
+
+        create_plugin_dir_with_manifest(
+            tmp.path(),
+            "official",
+            "bad_whitespace_path",
+            &format!(
+                r#"
+[plugin]
+name = "bad_whitespace_path"
+version = "0.1.0"
+kind = "official"
+
+[file_browser]
+route_prefix = "/app/files"
+
+[[file_browser.roots]]
+id = "docs"
+path = " {}"
+"#,
+                root_dir.display()
+            ),
+        );
+
+        let path_result = LuaPlugin::scan_dir(tmp.path()).await;
+        assert!(path_result.is_err());
+        let path_err = path_result.err().unwrap().to_string();
+        assert!(path_err.contains("file_browser config invalid"));
+        assert!(path_err.contains("root path"));
     }
 
     #[tokio::test]
