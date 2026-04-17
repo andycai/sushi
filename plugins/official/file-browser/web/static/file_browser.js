@@ -22,9 +22,11 @@
       routePrefix: initial.routePrefix || "/app/files",
       rootId: initial.rootId || "",
       relPath: initial.relPath || "",
+      activePath: initial.relPath || "",
 
       init() {
         this.bindDelegatedEvents();
+        this.syncActiveNode();
       },
 
       bindDelegatedEvents() {
@@ -37,7 +39,10 @@
           const action = actionEl.getAttribute("data-fb-action");
           const path = actionEl.getAttribute("data-path") || "";
 
-          if (action === "open-dir") {
+          if (action === "noop") {
+            event.preventDefault();
+            return;
+          } else if (action === "open-dir") {
             event.preventDefault();
             this.goToPath(path);
           } else if (action === "open-file") {
@@ -64,6 +69,15 @@
             this.saveText(form);
           }
         });
+
+        document.addEventListener("keydown", (event) => {
+          const isSave = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
+          if (!isSave) {
+            return;
+          }
+          event.preventDefault();
+          this.saveActiveEditor();
+        });
       },
 
       showFlash(html) {
@@ -86,6 +100,7 @@
         const url = `${this.routePrefix}/list/${encodeURIComponent(this.rootId)}?${query}`;
         const result = await fetchText(url);
         target.innerHTML = result.text;
+        this.syncActiveNode();
       },
 
       async openFile(path) {
@@ -101,16 +116,31 @@
         const url = `${this.routePrefix}/open/${encodeURIComponent(this.rootId)}?${query}`;
         const result = await fetchText(url);
         target.innerHTML = result.text;
+        this.activePath = path || "";
+        this.syncActiveNode();
       },
 
       goToPath(path) {
         this.relPath = path || "";
+        this.activePath = path || "";
         this.refreshList();
       },
 
       switchRoot() {
         const query = toQuery({ root: this.rootId || "", path: this.relPath || "" });
         window.location.href = `${this.routePrefix}?${query}`;
+      },
+
+      breadcrumbs() {
+        if (!this.relPath) {
+          return [];
+        }
+        const parts = this.relPath.split("/").filter(Boolean);
+        let current = "";
+        return parts.map((name) => {
+          current = current ? `${current}/${name}` : name;
+          return { name, path: current };
+        });
       },
 
       goToParent() {
@@ -120,6 +150,7 @@
         const parts = this.relPath.split("/").filter(Boolean);
         parts.pop();
         this.relPath = parts.join("/");
+        this.activePath = this.relPath;
         this.refreshList();
       },
 
@@ -220,6 +251,13 @@
         this.showFlash(result.text);
       },
 
+      saveActiveEditor() {
+        const form = document.querySelector("#fb-editor form[data-fb-action='save-form']");
+        if (form instanceof HTMLFormElement) {
+          this.saveText(form);
+        }
+      },
+
       async uploadFile(event) {
         const form = event.target;
         const input = form.querySelector("input[type='file']");
@@ -252,6 +290,17 @@
         const query = toQuery({ path: path || "" });
         const url = `${this.routePrefix}/download/${encodeURIComponent(this.rootId)}?${query}`;
         window.location.href = url;
+      },
+
+      syncActiveNode() {
+        const nodes = document.querySelectorAll("[data-fb-node='1'][data-path]");
+        nodes.forEach((node) => {
+          const path = node.getAttribute("data-path") || "";
+          const selected = path === (this.activePath || "");
+          node.classList.toggle("bg-blue-100", selected);
+          node.classList.toggle("border-l-2", selected);
+          node.classList.toggle("border-blue-500", selected);
+        });
       },
     };
   };

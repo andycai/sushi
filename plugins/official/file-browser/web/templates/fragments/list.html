@@ -1,48 +1,62 @@
-<div class="overflow-x-auto">
+<div class="h-full">
   {% if list_error %}
-  <div class="border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{{ list_error }}</div>
+  <div class="border-b border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">{{ list_error }}</div>
   {% endif %}
 
-  <table class="min-w-full divide-y divide-slate-200 text-sm">
-    <thead class="bg-slate-50">
-      <tr>
-        <th class="px-3 py-2 text-left font-semibold text-slate-600">Name</th>
-        <th class="px-3 py-2 text-left font-semibold text-slate-600">Type</th>
-        <th class="px-3 py-2 text-right font-semibold text-slate-600">Size</th>
-        <th class="px-3 py-2 text-right font-semibold text-slate-600">Actions</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y divide-slate-100 bg-white">
-      {% for item in entries %}
-      <tr>
-        <td class="px-3 py-2">
-          {% if item.is_dir %}
-          <button type="button" class="text-blue-700 underline" data-fb-action="open-dir" data-path="{{ item.path }}">{{ item.name }}</button>
-          {% else %}
-          <span>{{ item.name }}</span>
-          {% endif %}
-        </td>
-        <td class="px-3 py-2 text-slate-600">{% if item.is_dir %}Directory{% else %}File{% endif %}</td>
-        <td class="px-3 py-2 text-right text-slate-600">{% if item.is_dir %}-{% else %}{{ item.size }}{% endif %}</td>
-        <td class="px-3 py-2 text-right">
+  <ul class="divide-y divide-slate-200 text-sm">
+    {% if rel_path %}
+    <li>
+      <button
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-200/70"
+        data-fb-action="open-dir"
+        data-path="{{ parent_path }}"
+        data-fb-node="1"
+      >
+        <span class="font-mono text-xs text-slate-500">..</span>
+        <span class="text-xs uppercase tracking-[0.08em] text-slate-500">parent</span>
+      </button>
+    </li>
+    {% endif %}
+
+    {% for item in entries %}
+    <li>
+      <div
+        class="group flex items-center justify-between px-3 py-2 hover:bg-slate-200/70"
+        data-fb-node="1"
+        data-path="{{ item.path }}"
+      >
+        <button
+          type="button"
+          class="min-w-0 flex flex-1 items-center gap-2 text-left"
+          data-fb-action="{% if item.is_dir %}open-dir{% elif root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}"
+          data-path="{{ item.path }}"
+        >
+          <span class="shrink-0 text-[11px]">{% if item.is_dir %}📁{% else %}📄{% endif %}</span>
+          <span class="truncate text-sm text-slate-800">{{ item.name }}</span>
+        </button>
+
+        <div class="ml-3 flex shrink-0 items-center gap-1">
           {% if not item.is_dir %}
-          {% if root and root.capabilities and root.capabilities.can_view_text %}
-          <button type="button" class="mr-2 rounded border border-slate-300 px-2 py-1 text-xs" data-fb-action="open-file" data-path="{{ item.path }}">Open</button>
-          {% endif %}
+          <span class="text-[11px] text-slate-500">{{ item.size }}</span>
           {% if root and root.capabilities and root.capabilities.can_download %}
-          <button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs" data-fb-action="download" data-path="{{ item.path }}">Download</button>
+          <button
+            type="button"
+            class="rounded border border-slate-300 px-1.5 py-0.5 text-[10px] text-slate-700 opacity-0 transition group-hover:opacity-100"
+            data-fb-action="download"
+            data-path="{{ item.path }}"
+          >
+            ↓
+          </button>
           {% endif %}
-          {% else %}
-          <button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs" data-fb-action="open-dir" data-path="{{ item.path }}">Browse</button>
           {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-      {% if entries | length == 0 %}
-      <tr>
-        <td colspan="4" class="px-3 py-6 text-center text-slate-500">No entries</td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if entries | length == 0 %}
+  <div class="px-3 py-6 text-center text-xs text-slate-500">No entries in this folder</div>
+  {% endif %}
 </div>

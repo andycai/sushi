@@ -8,99 +8,128 @@
   <script defer src="{{ static_url_prefix }}/js/alpine-3.15.11.js"></script>
   <script defer src="{{ static_url_prefix }}/js/htmx.min-2.0.8.js"></script>
   <script defer src="{{ static_url_prefix }}/js/tailwindcss-4.2.2.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", sans-serif;
+    }
+    .fb-code-font {
+      font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+  </style>
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-900" x-data="fileBrowserPage({ routePrefix: '{{ route_prefix }}', rootId: '{{ root_id }}', relPath: '{{ rel_path }}' })" x-init="init()">
-  <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-    <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <header class="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 class="text-xl font-semibold">Official File Browser</h1>
-          <p class="text-sm text-slate-500">Public workspace for configured roots</p>
+<body class="min-h-screen bg-gradient-to-b from-[#f2f3f5] to-[#e8eaee] text-slate-900" x-data="fileBrowserPage({ routePrefix: '{{ route_prefix }}', rootId: '{{ root_id }}', relPath: '{{ rel_path }}' })" x-init="init()">
+  <main class="mx-auto max-w-[1600px] p-4 lg:p-6">
+    <section class="overflow-hidden rounded-xl border border-slate-300 bg-[#f8f8f8] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_36px_rgba(15,23,42,0.08)]">
+      <header class="flex flex-col gap-3 border-b border-slate-300 bg-[#ececec] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
+          <h1 class="truncate text-sm font-semibold tracking-wide text-slate-800">Official File Browser</h1>
+          <p class="text-xs text-slate-500">VSCode-style explorer + editor workspace</p>
         </div>
 
         {% if has_roots %}
         <div class="flex flex-wrap items-center gap-2">
-          <label class="text-sm font-medium" for="fb-root">Root</label>
-          <select id="fb-root" class="rounded-md border border-slate-300 px-3 py-2 text-sm" x-model="rootId" @change="switchRoot()">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500" for="fb-root">Root</label>
+          <select id="fb-root" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm" x-model="rootId" @change="switchRoot()">
             {% for item in roots %}
             <option value="{{ item.id }}">{{ item.title }}</option>
             {% endfor %}
           </select>
 
-          <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm" @click="goToParent()">Up</button>
-          <button type="button" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white" @click="refreshList()">Refresh</button>
+          <button type="button" class="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100" @click="goToParent()">Up</button>
+          <button type="button" class="rounded border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-700" @click="refreshList()">Refresh</button>
         </div>
         {% endif %}
       </header>
 
-      <div id="fb-flash" class="p-4"></div>
+      <div id="fb-flash" class="border-b border-slate-300 bg-white px-4 py-2"></div>
 
       {% if has_roots %}
-      <div class="grid gap-4 p-4 lg:grid-cols-12">
-        <section class="space-y-3 lg:col-span-7">
-          <div class="rounded-md bg-slate-50 px-3 py-2 text-sm">
-            <span class="font-medium">Path:</span>
-            <span x-text="relPath === '' ? '/' : relPath"></span>
+      <div class="flex h-[calc(100vh-13rem)] min-h-[620px] flex-col lg:flex-row">
+        <aside class="w-full border-b border-slate-300 bg-[#f3f3f3] lg:w-[404px] lg:border-b-0 lg:border-r">
+          <div class="flex h-full min-h-0">
+            <div class="hidden w-11 flex-col items-center gap-2 border-r border-slate-300 bg-[#e5e7eb] py-3 lg:flex">
+              <span class="rounded border border-slate-400 bg-[#d9dde3] px-1.5 py-1 text-[10px]">📂</span>
+              <span class="rounded border border-slate-300 bg-[#eef1f5] px-1.5 py-1 text-[10px] text-slate-500">🔎</span>
+            </div>
+            <div class="min-h-0 flex-1">
+          <div class="border-b border-slate-300 px-4 py-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Explorer</p>
+            <p class="fb-code-font mt-1 truncate rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700" x-text="relPath === '' ? '/' : relPath"></p>
           </div>
 
-          <div id="fb-list" class="rounded-lg border border-slate-200">
+          <div id="fb-list" class="min-h-0 flex-1 overflow-y-auto">
             {% include "plugins/official/file-browser/fragments/list.html" %}
           </div>
 
-          <div class="grid gap-3 rounded-lg border border-slate-200 p-3 md:grid-cols-2">
-            {% if root and root.capabilities and root.capabilities.can_create_text %}
-            <form @submit.prevent="createText($event)" class="space-y-2">
-              <h2 class="text-sm font-semibold">Create Text (.txt)</h2>
-              <input type="text" name="name" placeholder="notes" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" required>
-              <button type="submit" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white">Create</button>
-            </form>
-            {% endif %}
+          <div class="space-y-3 border-t border-slate-300 p-3">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              {% if root and root.capabilities and root.capabilities.can_create_text %}
+              <form @submit.prevent="createText($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
+                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">New Text File</h2>
+                <input type="text" name="name" placeholder="notes.txt" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
+                <button type="submit" class="w-full rounded border border-emerald-700 bg-emerald-700 px-2 py-1.5 text-xs font-medium text-white">Create</button>
+              </form>
+              {% endif %}
 
-            {% if root and root.capabilities and root.capabilities.can_create_dir %}
-            <form @submit.prevent="createDir($event)" class="space-y-2">
-              <h2 class="text-sm font-semibold">Create Directory</h2>
-              <input type="text" name="name" placeholder="assets" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" required>
-              <button type="submit" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white">Create</button>
+              {% if root and root.capabilities and root.capabilities.can_create_dir %}
+              <form @submit.prevent="createDir($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
+                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">New Folder</h2>
+                <input type="text" name="name" placeholder="assets" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
+                <button type="submit" class="w-full rounded border border-blue-700 bg-blue-700 px-2 py-1.5 text-xs font-medium text-white">Create</button>
+              </form>
+              {% endif %}
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              {% if root and root.capabilities and root.capabilities.can_rename %}
+              <form @submit.prevent="renameEntry($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
+                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Rename</h2>
+                <input type="text" name="path" placeholder="Current path" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
+                <input type="text" name="new_name" placeholder="New name" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
+                <button type="submit" class="w-full rounded border border-amber-700 bg-amber-700 px-2 py-1.5 text-xs font-medium text-white">Apply</button>
+              </form>
+              {% endif %}
+
+              {% if root and root.capabilities and root.capabilities.can_delete %}
+              <form @submit.prevent="deleteEntry($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
+                <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Delete</h2>
+                <input type="text" name="path" placeholder="Target path" class="w-full rounded border border-slate-300 px-2 py-1.5 text-xs" required>
+                <button type="submit" class="w-full rounded border border-rose-700 bg-rose-700 px-2 py-1.5 text-xs font-medium text-white">Delete</button>
+              </form>
+              {% endif %}
+            </div>
+
+            {% if root and root.capabilities and root.capabilities.can_upload %}
+            <form @submit.prevent="uploadFile($event)" class="space-y-2 rounded border border-slate-300 bg-white p-2.5">
+              <h2 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Upload</h2>
+              <input type="file" name="file" class="w-full text-xs" required>
+              <button type="submit" class="w-full rounded border border-indigo-700 bg-indigo-700 px-2 py-1.5 text-xs font-medium text-white">Upload File</button>
             </form>
             {% endif %}
           </div>
-        </section>
+            </div>
+          </div>
+        </aside>
 
-        <section class="space-y-3 lg:col-span-5">
-          <div id="fb-editor" class="rounded-lg border border-slate-200">
+        <section class="flex min-w-0 flex-1 flex-col bg-[#fcfcfc]">
+          <div class="border-b border-slate-300 bg-[#f3f3f3] px-4 py-2">
+            <div class="fb-code-font flex items-center gap-1 text-xs text-slate-600">
+              <button type="button" class="rounded px-1 py-0.5 hover:bg-slate-200" @click="goToPath('')" x-text="rootId || 'root'"></button>
+              <template x-for="crumb in breadcrumbs()" :key="crumb.path">
+                <span class="flex items-center gap-1">
+                  <span class="text-slate-400">/</span>
+                  <button type="button" class="rounded px-1 py-0.5 hover:bg-slate-200" @click="goToPath(crumb.path)" x-text="crumb.name"></button>
+                </span>
+              </template>
+            </div>
+          </div>
+          <div id="fb-editor" class="min-h-0 flex-1 overflow-auto">
             {% include "plugins/official/file-browser/fragments/editor.html" %}
           </div>
-
-          {% if root and root.capabilities and root.capabilities.can_rename %}
-          <div class="rounded-lg border border-slate-200 p-3">
-            <form @submit.prevent="renameEntry($event)" class="space-y-2">
-              <h2 class="text-sm font-semibold">Rename</h2>
-              <input type="text" name="path" placeholder="Current relative path" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" required>
-              <input type="text" name="new_name" placeholder="New name" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" required>
-              <button type="submit" class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white">Rename</button>
-            </form>
+          <div class="flex items-center justify-between border-t border-slate-300 bg-[#e9edf3] px-3 py-1.5 text-[11px] text-slate-600">
+            <span class="fb-code-font" x-text="rootId ? ('root: ' + rootId) : 'root: -'"></span>
+            <span class="fb-code-font">Ctrl/Cmd + S to save</span>
           </div>
-          {% endif %}
-
-          {% if root and root.capabilities and root.capabilities.can_delete %}
-          <div class="rounded-lg border border-slate-200 p-3">
-            <form @submit.prevent="deleteEntry($event)" class="space-y-2">
-              <h2 class="text-sm font-semibold">Delete</h2>
-              <input type="text" name="path" placeholder="Relative path" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" required>
-              <button type="submit" class="rounded-md bg-rose-600 px-3 py-2 text-sm font-medium text-white">Delete</button>
-            </form>
-          </div>
-          {% endif %}
-
-          {% if root and root.capabilities and root.capabilities.can_upload %}
-          <div class="rounded-lg border border-slate-200 p-3">
-            <form @submit.prevent="uploadFile($event)" class="space-y-2">
-              <h2 class="text-sm font-semibold">Upload</h2>
-              <input type="file" name="file" class="w-full text-sm" required>
-              <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white">Upload</button>
-            </form>
-          </div>
-          {% endif %}
         </section>
       </div>
       {% else %}

@@ -1,28 +1,38 @@
-<div class="space-y-3 p-3">
-  <div class="flex items-center justify-between">
-    <h2 class="text-sm font-semibold">Editor</h2>
-    {% if rel_path %}
-    <span class="text-xs text-slate-500">{{ rel_path }}</span>
-    {% endif %}
-  </div>
-
-  {% if open_error %}
-  <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{{ open_error }}</div>
-  {% endif %}
-
-  {% if is_text %}
-  <form data-fb-action="save-form" class="space-y-2">
-    <textarea name="content" rows="16" class="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm" {% if not can_edit %}readonly{% endif %}>{{ content }}</textarea>
-    <input type="hidden" name="path" value="{{ rel_path }}">
-    <div class="flex gap-2">
-      <button type="submit" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white" {% if not can_edit %}disabled{% endif %}>Save</button>
-      <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm" data-fb-action="refresh-list">Refresh List</button>
+<div class="flex h-full flex-col">
+  <div class="flex items-center justify-between border-b border-slate-300 bg-[#ececec] px-3 py-2">
+    <div class="min-w-0">
+      <p class="truncate font-mono text-xs text-slate-700">{% if rel_path %}{{ rel_path }}{% else %}No file selected{% endif %}</p>
+      <p class="text-[11px] text-slate-500">{% if is_text %}Text editor{% else %}Preview{% endif %}</p>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <button type="button" class="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100" data-fb-action="refresh-list">Refresh</button>
       {% if can_download %}
-      <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm" data-fb-action="download" data-path="{{ rel_path }}">Download</button>
+      <button type="button" class="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100" data-fb-action="download" data-path="{{ rel_path }}">Download</button>
       {% endif %}
     </div>
-  </form>
-  {% else %}
-  <p class="text-sm text-slate-600">Open a text file to edit it here.</p>
-  {% endif %}
+  </div>
+
+  <div class="min-h-0 flex-1 overflow-auto p-3">
+    {% if open_error %}
+    <div class="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{{ open_error }}</div>
+    {% endif %}
+
+    {% if is_text %}
+    <form data-fb-action="save-form" class="flex h-full min-h-[420px] flex-col gap-3">
+      <textarea
+        name="content"
+        class="min-h-0 flex-1 resize-none rounded border border-slate-300 bg-white p-3 font-mono text-[13px] leading-6 text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        {% if not can_edit %}readonly{% endif %}
+      >{{ content }}</textarea>
+      <input type="hidden" name="path" value="{{ rel_path }}">
+      <div class="flex justify-end gap-2">
+        <button type="submit" class="rounded border border-emerald-700 bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-60" {% if not can_edit %}disabled{% endif %}>Save Changes</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="flex h-full min-h-[420px] items-center justify-center rounded border border-dashed border-slate-300 bg-white/70">
+      <p class="px-6 text-center text-sm text-slate-500">Select a text file from the Explorer to view or edit.</p>
+    </div>
+    {% endif %}
+  </div>
 </div>
