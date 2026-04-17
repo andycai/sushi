@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% set active_section = "plugins" %}
+
+{% block title %}CMS — Sushi Admin{% endblock %}
+
+{% block content %}
+<section class="admin-module" data-admin-workspace-module="cms" x-data="cmsPage()">
+  <div class="ui-page-header">
+    <div>
+      <h1 class="ui-title">CMS</h1>
+      <p class="ui-subtitle">Scaffold workspace for Page, Post, and Category management.</p>
+    </div>
+  </div>
+
+  <div class="ui-card">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Scaffold Status</h2>
+    </header>
+    <div class="ui-card-body">
+      <p class="text-sm text-slate-600">CMS plugin scaffolding is active. Full CRUD UI is implemented in later tasks.</p>
+    </div>
+  </div>
+
+  <section class="ui-card mt-4">
+    <header class="ui-card-header">
+      <h2 class="text-lg font-semibold">Preview Rows</h2>
+    </header>
+    <div class="ui-table-wrap">
+      <table class="ui-table">
+        <tbody id="cms-scaffold-preview">
+          <tr>
+            <td class="ui-mono">cms-scaffold</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>
+{% endblock %}

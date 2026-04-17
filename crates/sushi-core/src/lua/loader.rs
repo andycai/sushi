@@ -908,6 +908,15 @@ end)
     fn cms_plugin_files_exist_and_are_modular() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         assert!(repo_root.join("plugins/official/cms/plugin.toml").is_file());
+        assert!(repo_root
+            .join("plugins/official/cms/web/templates/cms.html")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/cms/web/templates/fragments/rows.html")
+            .is_file());
+        assert!(repo_root
+            .join("plugins/official/cms/web/static/cms.js")
+            .is_file());
         assert!(repo_root.join("plugins/official/cms/lua/interfaces/api.lua").is_file());
         assert!(repo_root
             .join("plugins/official/cms/lua/interfaces/admin.lua")
