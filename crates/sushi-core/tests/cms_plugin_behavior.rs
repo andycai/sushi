@@ -88,6 +88,13 @@ fn cms_page_domain_exposes_overview_and_status_helpers() {
     assert!(source.contains("function page.count_by_status"));
     assert!(source.contains("function page.recent"));
     assert!(source.contains("function page.set_status"));
+    assert!(source.contains("validate.validate_status(status)"));
+    assert!(source.contains("slug.normalize(slug_input)"));
+    assert!(source.contains("slug cannot be empty"));
+    assert!(source.contains("limit:match(\"^%d+$\")"));
+    assert!(source.contains("max ~= math.floor(max)"));
+    assert!(source.contains("SAFE_INTEGER_MAX"));
+    assert!(source.contains("max > SAFE_INTEGER_MAX"));
 }
 
 #[test]
@@ -100,4 +107,11 @@ fn cms_post_domain_exposes_overview_and_status_helpers() {
     assert!(source.contains("function post.count_by_status"));
     assert!(source.contains("function post.recent"));
     assert!(source.contains("function post.set_status"));
+    assert!(source.contains("validate.validate_status(status)"));
+    assert!(source.contains("slug.normalize(slug_input)"));
+    assert!(source.contains("slug cannot be empty"));
+    assert!(source.contains("limit:match(\"^%d+$\")"));
+    assert!(source.contains("max ~= math.floor(max)"));
+    assert!(source.contains("SAFE_INTEGER_MAX"));
+    assert!(source.contains("max > SAFE_INTEGER_MAX"));
 }

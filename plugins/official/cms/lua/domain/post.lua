@@ -5,6 +5,30 @@ function M.new(deps)
     local validate = deps.validate
     local slug = deps.slug
     local post = {}
+    local SAFE_INTEGER_MAX = 9007199254740991
+
+    local function normalize_recent_limit(limit)
+        if limit == nil then
+            return 5
+        end
+
+        local max
+        if type(limit) == "number" then
+            max = limit
+        elseif type(limit) == "string" then
+            if not limit:match("^%d+$") then
+                return nil, "invalid_limit", "limit must be a positive integer"
+            end
+            max = tonumber(limit)
+        else
+            return nil, "invalid_limit", "limit must be a positive integer"
+        end
+
+        if not max or max < 1 or max ~= math.floor(max) or max > SAFE_INTEGER_MAX then
+            return nil, "invalid_limit", "limit must be a positive integer"
+        end
+        return max
+    end
 
     local function resolve_category_id(category_slug)
         local rows, kind, msg = db.query(
@@ -57,9 +81,9 @@ function M.new(deps)
     end
 
     function post.recent(limit)
-        local max = tonumber(limit) or 5
-        if max < 1 then
-            return nil, "invalid_limit", "limit must be positive"
+        local max, kind, msg = normalize_recent_limit(limit)
+        if not max then
+            return nil, kind, msg
         end
         local rows, kind, msg = db.query(
             "SELECT p.title, p.slug, p.status, p.updated_at, c.slug AS category_slug "
@@ -150,14 +174,22 @@ function M.new(deps)
         if not status_value then
             return nil, kind, msg
         end
+        local slug_input, slug_kind, slug_msg = validate.require_non_empty(slug_value, "slug")
+        if not slug_input then
+            return nil, slug_kind, slug_msg
+        end
+        local normalized_slug = slug.normalize(slug_input)
+        if normalized_slug == "" then
+            return nil, "invalid_slug", "slug cannot be empty"
+        end
         local ok, exec_kind, exec_msg = db.execute(
             "UPDATE cms_posts SET status = ?1, updated_at = datetime('now') WHERE slug = ?2 AND deleted_at IS NULL",
-            { status_value, slug_value }
+            { status_value, normalized_slug }
         )
         if not ok then
             return nil, exec_kind or "storage_error", exec_msg
         end
-        return post.get_by_slug(slug_value, { only_published = false })
+        return post.get_by_slug(normalized_slug, { only_published = false })
     end
 
     function post.soft_delete(value)
