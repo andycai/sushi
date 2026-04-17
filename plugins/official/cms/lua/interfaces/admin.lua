@@ -191,7 +191,29 @@ function M.new(deps)
             end
             return flash("success", "Post saved")
         end
-        return flash("error", "Workbench editor currently supports pages and posts only")
+        if resource == "categories" then
+            local item, kind, msg = category.upsert({
+                name = form.name,
+                slug = form.slug,
+                description = form.description,
+            }, form.original_slug)
+            if not item then
+                return flash("error", tostring(msg or kind or "failed to save category"))
+            end
+            return flash("success", "Category saved")
+        end
+        return flash("error", "Missing CMS resource for editor save")
+    end
+
+    local function render_overview_panel(data)
+        -- cms_overview_template_fallback_marker
+        local ok, html = pcall(sushi.web.render, "plugins/official/cms/fragments/overview_panel.html", data)
+        if ok and html then
+            return html
+        end
+        return sushi.web.render("plugins/official/cms/fragments/rows.html", {
+            label = "Overview panel template is not available yet.",
+        })
     end
 
     function admin.pages_table_partial()
@@ -309,7 +331,7 @@ function M.new(deps)
             return flash("error", tostring(posts_recent_msg or posts_recent_kind or "failed to load recent posts"))
         end
 
-        return sushi.web.render("plugins/official/cms/fragments/overview_panel.html", {
+        return render_overview_panel({
             page_counts = count_summary(page_counts_raw),
             post_counts = count_summary(post_counts_raw),
             recent_pages = recent_pages,
@@ -351,7 +373,7 @@ function M.new(deps)
     function admin.status_transition_partial(args)
         local form = parse_urlencoded((args and args[2]) or "")
         local path = request_path(args)
-        local resource = normalize_resource(path:match("^/admin/partials/cms/status/([^/?]+)") or form.resource or form.kind or form.type)
+        local resource = normalize_resource(path:match("^/admin/partials/cms/status/([^/?]+)") or form.resource or form.content_type or form.kind or form.type)
         local slug_value = form.slug or form.target_slug
         local next_status = form.status or form.next_status
 

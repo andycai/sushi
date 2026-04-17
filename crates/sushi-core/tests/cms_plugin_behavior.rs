@@ -139,6 +139,11 @@ fn cms_admin_interface_exposes_workbench_handlers() {
     assert!(source.contains("path:match(\"^/admin/partials/cms/editor/([^/?]+)\")"));
     assert!(source.contains("kind == \"page\" or resource == \"page\""));
     assert!(source.contains("kind == \"post\" or resource == \"post\""));
+    assert!(source.contains("resource == \"categories\""));
+    assert!(source.contains("category.upsert({"));
+    assert!(source.contains("form.content_type"));
     assert!(source.contains("page.set_status("));
     assert!(source.contains("post.set_status("));
+    assert!(source.contains("cms_overview_template_fallback_marker"));
+    assert!(source.contains("pcall(sushi.web.render, \"plugins/official/cms/fragments/overview_panel.html\", data)"));
 }
