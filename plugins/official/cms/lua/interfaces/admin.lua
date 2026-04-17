@@ -24,6 +24,10 @@ local function strip_query(path)
     return (path or ""):match("^([^%?]+)") or ""
 end
 
+local function request_path(args)
+    return strip_query((args and args.dispatch_path) or (args and args[1]) or "")
+end
+
 function M.new(deps)
     local admin = {}
     local page = deps.page
@@ -52,7 +56,7 @@ function M.new(deps)
     end
 
     local function resolve_resource(args, route_prefix)
-        local path = strip_query((args and args[1]) or "")
+        local path = request_path(args)
         local from_path = path:match("^" .. route_prefix .. "/([^/]+)$")
         if from_path then
             return normalize_resource(from_path)
@@ -85,6 +89,109 @@ function M.new(deps)
             return admin.categories_upsert_partial(args)
         end
         return flash("error", "Unknown CMS resource")
+    end
+
+    local function count_summary(rows)
+        local summary = {
+            draft = 0,
+            published = 0,
+            archived = 0,
+            total = 0,
+        }
+        for _, row in ipairs(rows or {}) do
+            local status = tostring(row.status or ""):lower()
+            local total = tonumber(row.total) or 0
+            if status == "draft" then
+                summary.draft = total
+            elseif status == "published" then
+                summary.published = total
+            elseif status == "archived" then
+                summary.archived = total
+            end
+            summary.total = summary.total + total
+        end
+        return summary
+    end
+
+    local function render_rows_for_scope(scope)
+        if scope == "pages" then
+            local rows, kind, msg = page.list()
+            if not rows then
+                return flash("error", tostring(msg or kind or "failed to load pages"))
+            end
+            return sushi.web.render("plugins/official/cms/fragments/page_rows.html", {
+                items = rows or {},
+            })
+        end
+        if scope == "posts" then
+            local rows, kind, msg = post.list({ only_published = false })
+            if not rows then
+                return flash("error", tostring(msg or kind or "failed to load posts"))
+            end
+            return sushi.web.render("plugins/official/cms/fragments/post_rows.html", {
+                items = rows or {},
+            })
+        end
+        if scope == "categories" then
+            local rows, kind, msg = category.list()
+            if not rows then
+                return flash("error", tostring(msg or kind or "failed to load categories"))
+            end
+            return sushi.web.render("plugins/official/cms/fragments/category_rows.html", {
+                items = rows or {},
+            })
+        end
+        return flash("error", "Unknown CMS resource")
+    end
+
+    local function resolve_editor_resource(args, form)
+        local path = request_path(args)
+        local from_path = path:match("^/admin/partials/cms/editor/([^/?]+)")
+        if from_path then
+            return normalize_resource(from_path)
+        end
+
+        local kind = tostring(form.kind or ""):lower()
+        local resource = tostring(form.resource or form.content_type or form.type or ""):lower()
+
+        if kind == "page" or resource == "page" then
+            return "pages"
+        end
+        if kind == "post" or resource == "post" then
+            return "posts"
+        end
+
+        return normalize_resource(kind) or normalize_resource(resource)
+    end
+
+    local function save_from_editor(resource, form)
+        if resource == "pages" then
+            local item, kind, msg = page.upsert({
+                title = form.title,
+                slug = form.slug,
+                markdown_body = form.markdown_body,
+                status = form.status,
+            }, form.original_slug)
+            if not item then
+                return flash("error", tostring(msg or kind or "failed to save page"))
+            end
+            return flash("success", "Page saved")
+        end
+        if resource == "posts" then
+            local item, kind, msg = post.upsert({
+                title = form.title,
+                slug = form.slug,
+                excerpt = form.excerpt,
+                markdown_body = form.markdown_body,
+                status = form.status,
+                category_slug = form.category_slug,
+            }, form.original_slug)
+            if not item then
+                return flash("error", tostring(msg or kind or "failed to save post"))
+            end
+            return flash("success", "Post saved")
+        end
+        return flash("error", "Workbench editor currently supports pages and posts only")
     end
 
     function admin.pages_table_partial()
@@ -185,43 +292,93 @@ function M.new(deps)
     end
 
     function admin.overview_partial()
-        return admin.pages_table_partial()
+        local page_counts_raw, page_kind, page_msg = page.count_by_status()
+        if not page_counts_raw then
+            return flash("error", tostring(page_msg or page_kind or "failed to load page overview"))
+        end
+        local post_counts_raw, post_kind, post_msg = post.count_by_status()
+        if not post_counts_raw then
+            return flash("error", tostring(post_msg or post_kind or "failed to load post overview"))
+        end
+        local recent_pages, pages_recent_kind, pages_recent_msg = page.recent(5)
+        if not recent_pages then
+            return flash("error", tostring(pages_recent_msg or pages_recent_kind or "failed to load recent pages"))
+        end
+        local recent_posts, posts_recent_kind, posts_recent_msg = post.recent(5)
+        if not recent_posts then
+            return flash("error", tostring(posts_recent_msg or posts_recent_kind or "failed to load recent posts"))
+        end
+
+        return sushi.web.render("plugins/official/cms/fragments/overview_panel.html", {
+            page_counts = count_summary(page_counts_raw),
+            post_counts = count_summary(post_counts_raw),
+            recent_pages = recent_pages,
+            recent_posts = recent_posts,
+        })
     end
 
     function admin.library_partial(args)
+        local path = request_path(args)
+        local scope = path:match("^/admin/partials/cms/library/([^/?]+)")
+        if scope then
+            return render_rows_for_scope(normalize_resource(scope))
+        end
         local resource = resolve_resource(args, "/admin/partials/cms/library")
         if resource then
-            return dispatch_table_partial(resource)
+            return render_rows_for_scope(resource)
         end
-        return admin.pages_table_partial()
+        return render_rows_for_scope("pages")
     end
 
     function admin.editor_partial(args)
-        local resource = resolve_resource(args, "/admin/partials/cms/editor")
+        local form = parse_urlencoded((args and args[2]) or "")
+        local resource = resolve_editor_resource(args, form)
         if resource then
-            return dispatch_table_partial(resource)
+            return render_rows_for_scope(resource)
         end
-        return flash("info", "Workbench editor bridge is active; use current CMS forms.")
+        return flash("info", "Workbench editor is ready; select pages, posts, or categories.")
     end
 
     function admin.editor_save_partial(args)
-        local resource = resolve_resource(args, "/admin/partials/cms/editor")
+        local form = parse_urlencoded((args and args[2]) or "")
+        local resource = resolve_editor_resource(args, form)
         if resource then
-            return dispatch_upsert_partial(resource, args)
+            return save_from_editor(resource, form)
         end
         return flash("error", "Missing CMS resource for editor save")
     end
 
     function admin.status_transition_partial(args)
-        local resource = resolve_resource(args, "/admin/partials/cms/status")
-        if resource then
-            return dispatch_upsert_partial(resource, args)
+        local form = parse_urlencoded((args and args[2]) or "")
+        local path = request_path(args)
+        local resource = normalize_resource(path:match("^/admin/partials/cms/status/([^/?]+)") or form.resource or form.kind or form.type)
+        local slug_value = form.slug or form.target_slug
+        local next_status = form.status or form.next_status
+
+        if resource == "pages" then
+            local item, kind, msg = page.set_status(slug_value, next_status)
+            if not item then
+                return flash("error", tostring(msg or kind or "failed to change page status"))
+            end
+            return flash("success", "Page status updated")
+        end
+        if resource == "posts" then
+            local item, kind, msg = post.set_status(slug_value, next_status)
+            if not item then
+                return flash("error", tostring(msg or kind or "failed to change post status"))
+            end
+            return flash("success", "Post status updated")
+        end
+        if resource == "categories" then
+            return flash("error", "Categories do not support status transitions")
         end
         return flash("error", "Missing CMS resource for status transition")
     end
 
     function admin.commands_partial()
-        return flash("info", "Workbench commands panel will be introduced in a follow-up task.")
+        return sushi.web.render("plugins/official/cms/fragments/rows.html", {
+            label = "Use `sushi cms page list` or `sushi cms post list` to inspect content from CLI.",
+        })
     end
 
     return admin

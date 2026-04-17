@@ -115,3 +115,30 @@ fn cms_post_domain_exposes_overview_and_status_helpers() {
     assert!(source.contains("SAFE_INTEGER_MAX"));
     assert!(source.contains("max > SAFE_INTEGER_MAX"));
 }
+
+#[test]
+fn cms_admin_interface_exposes_workbench_handlers() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/interfaces/admin.lua"),
+    )
+    .expect("failed to read admin interface");
+
+    assert!(source.contains("function admin.overview_partial"));
+    assert!(source.contains("function admin.library_partial"));
+    assert!(source.contains("function admin.editor_partial"));
+    assert!(source.contains("function admin.editor_save_partial"));
+    assert!(source.contains("function admin.status_transition_partial"));
+    assert!(source.contains("function admin.commands_partial"));
+
+    assert!(source.contains("plugins/official/cms/fragments/overview_panel.html"));
+    assert!(source.contains("page.count_by_status()"));
+    assert!(source.contains("post.count_by_status()"));
+    assert!(source.contains("page.recent(5)"));
+    assert!(source.contains("post.recent(5)"));
+    assert!(source.contains("path:match(\"^/admin/partials/cms/library/([^/?]+)\")"));
+    assert!(source.contains("path:match(\"^/admin/partials/cms/editor/([^/?]+)\")"));
+    assert!(source.contains("kind == \"page\" or resource == \"page\""));
+    assert!(source.contains("kind == \"post\" or resource == \"post\""));
+    assert!(source.contains("page.set_status("));
+    assert!(source.contains("post.set_status("));
+}
