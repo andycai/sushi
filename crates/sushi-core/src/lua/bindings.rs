@@ -194,6 +194,16 @@ fn parse_optional_policy(
     }
 }
 
+fn parse_optional_public(opts: &mlua::Table, api_name: &str) -> Result<Option<bool>, mlua::Error> {
+    match opts.get::<mlua::Value>("public")? {
+        mlua::Value::Nil => Ok(None),
+        mlua::Value::Boolean(value) => Ok(Some(value)),
+        _ => Err(mlua::Error::RuntimeError(format!(
+            "{api_name} opts.public must be a boolean"
+        ))),
+    }
+}
+
 /// Inject the `sushi` global table into the Lua VM.
 /// Only namespaces permitted by the plugin's permissions are injected.
 pub async fn inject_sushi_api(
@@ -271,9 +281,18 @@ pub async fn inject_sushi_api(
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
-                    let policy = match opts {
-                        Some(table) => parse_optional_policy(&table, "sushi.api.route")?,
-                        None => None,
+                    let (policy, is_public) = match opts {
+                        Some(table) => {
+                            let policy = parse_optional_policy(&table, "sushi.api.route")?;
+                            let is_public = parse_optional_public(&table, "sushi.api.route")?;
+                            if policy.is_some() && is_public == Some(true) {
+                                return Err(mlua::Error::RuntimeError(
+                                    "sushi.api.route opts.policy cannot be combined with opts.public=true".to_string(),
+                                ));
+                            }
+                            (policy, is_public.unwrap_or(false))
+                        }
+                        None => (None, false),
                     };
 
                     let pending: mlua::Table = sushi.get("__pending_routes")?;
@@ -283,6 +302,9 @@ pub async fn inject_sushi_api(
                     entry.set("handler_key", handler_key)?;
                     if let Some(policy) = policy {
                         entry.set("policy", policy)?;
+                    }
+                    if is_public {
+                        entry.set("public", true)?;
                     }
                     let len = pending.raw_len();
                     pending.set(len + 1, entry)?;
@@ -1306,5 +1328,71 @@ mod tests {
             admin_page_entry.get::<String>("policy").unwrap(),
             "admin.page.direct.read"
         );
+    }
+
+    #[tokio::test]
+    async fn test_api_route_registration_public_flag_when_enabled() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.routes = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        lua.load(
+            r#"sushi.api.route("GET", "/api/public", function() return "ok" end, { public = true })"#,
+        )
+        .exec()
+        .unwrap();
+
+        let pending: mlua::Table = lua
+            .globals()
+            .get::<mlua::Table>("sushi")
+            .unwrap()
+            .get("__pending_routes")
+            .unwrap();
+        let first: mlua::Table = pending.get(1).unwrap();
+        assert_eq!(first.get::<bool>("public").unwrap(), true);
+    }
+
+    #[tokio::test]
+    async fn test_api_route_registration_public_requires_boolean() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.routes = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.api.route("GET", "/api/public", function() return "ok" end, { public = "yes" })"#,
+            )
+            .exec();
+        let err = result.expect_err("public should require boolean");
+        assert!(
+            err.to_string()
+                .contains("sushi.api.route opts.public must be a boolean")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_api_route_registration_rejects_policy_and_public_true() {
+        let lua = create_sandboxed_vm().unwrap();
+        let ctx = test_context().await;
+        let mut permissions = Permissions::default();
+        permissions.routes = true;
+
+        inject_sushi_api(&lua, &ctx, &permissions).await.unwrap();
+
+        let result: mlua::Result<()> = lua
+            .load(
+                r#"sushi.api.route("GET", "/api/public", function() return "ok" end, { policy = "api.public.read", public = true })"#,
+            )
+            .exec();
+        let err = result.expect_err("policy/public conflict should be rejected");
+        assert!(err.to_string().contains(
+            "sushi.api.route opts.policy cannot be combined with opts.public=true"
+        ));
     }
 }

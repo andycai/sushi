@@ -40,6 +40,7 @@ struct ApiHandlerBinding {
     plugin_name: String,
     handler_key: String,
     policy_key: Option<String>,
+    is_public: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -183,8 +184,15 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
     ) {
-        self.register_api_handler_with_policy(method, path, plugin_name, handler_key, None)
-            .await;
+        self.register_api_handler_with_policy_and_public(
+            method,
+            path,
+            plugin_name,
+            handler_key,
+            None,
+            false,
+        )
+        .await;
     }
 
     /// Register an API route handler with an optional policy key.
@@ -196,12 +204,29 @@ impl PluginManager {
         handler_key: &str,
         policy_key: Option<&str>,
     ) {
+        self.register_api_handler_with_policy_and_public(
+            method, path, plugin_name, handler_key, policy_key, false,
+        )
+        .await;
+    }
+
+    /// Register an API route handler with optional policy key and public flag.
+    pub async fn register_api_handler_with_policy_and_public(
+        &self,
+        method: &str,
+        path: &str,
+        plugin_name: &str,
+        handler_key: &str,
+        policy_key: Option<&str>,
+        is_public: bool,
+    ) {
         self.api_handlers.write().await.insert(
             (method.to_uppercase(), path.to_string()),
             ApiHandlerBinding {
                 plugin_name: plugin_name.to_string(),
                 handler_key: handler_key.to_string(),
                 policy_key: policy_key.map(ToOwned::to_owned),
+                is_public,
             },
         );
     }
@@ -318,19 +343,32 @@ impl PluginManager {
         path: &str,
         body: Option<String>,
     ) -> Option<Result<String, String>> {
+        self.dispatch_api_handler(
+            method,
+            path,
+            path,
+            body.map(|value| value.into_bytes()),
+        )
+        .await
+    }
+
+    /// Dispatch an API route handler using a dispatch path and optional binary request body.
+    /// Route matching remains based on `path`, while Lua receives `dispatch_path`.
+    pub async fn dispatch_api_handler(
+        &self,
+        method: &str,
+        path: &str,
+        dispatch_path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Option<Result<String, String>> {
         let map = self.api_handlers.read().await;
         let binding = match_api_handler_binding(&map, method, path)?;
         let plugin_name = binding.plugin_name;
         let handler_key = binding.handler_key;
         drop(map);
 
-        // Pass path + body as args so Lua handler can extract path params
-        let args = match body {
-            Some(b) => vec![path.to_string(), b],
-            None => vec![path.to_string()],
-        };
         Some(
-            self.call_handler_with_args(&plugin_name, &handler_key, &args)
+            self.call_api_handler_with_dispatch(&plugin_name, &handler_key, dispatch_path, body)
                 .await,
         )
     }
@@ -339,6 +377,14 @@ impl PluginManager {
     pub async fn api_route_policy(&self, method: &str, path: &str) -> Option<String> {
         let map = self.api_handlers.read().await;
         match_api_handler_binding(&map, method, path).and_then(|binding| binding.policy_key)
+    }
+
+    /// Return true when the API route was registered as public.
+    pub async fn is_api_route_public(&self, method: &str, path: &str) -> bool {
+        let map = self.api_handlers.read().await;
+        match_api_handler_binding(&map, method, path)
+            .map(|binding| binding.is_public)
+            .unwrap_or(false)
     }
 
     /// Call a CLI command handler with string args, returns the output.
@@ -505,6 +551,47 @@ impl PluginManager {
         }
 
         func.call_async::<String>(args_table).await.map_err(|e| {
+            tracing::error!(
+                "lua plugin handler failed: plugin={plugin_name} handler={handler_key} error={e}"
+            );
+            format!("handler error: {e}")
+        })
+    }
+
+    async fn call_api_handler_with_dispatch(
+        &self,
+        plugin_name: &str,
+        handler_key: &str,
+        dispatch_path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<String, String> {
+        let vms = self.vms.read().await;
+        let lua = vms
+            .get(plugin_name)
+            .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;
+
+        let func = self.get_handler_fn(lua, handler_key)?;
+
+        // API handlers keep the existing `args[1]`/`args[2]` Lua-table contract.
+        let args = lua
+            .create_table()
+            .map_err(|e| format!("create args table: {e}"))?;
+        args.set(
+            1,
+            lua.create_string(dispatch_path.as_bytes())
+                .map_err(|e| format!("create dispatch_path string: {e}"))?,
+        )
+        .map_err(|e| format!("set dispatch path arg: {e}"))?;
+        if let Some(bytes) = body {
+            args.set(
+                2,
+                lua.create_string(&bytes)
+                    .map_err(|e| format!("create body string: {e}"))?,
+            )
+            .map_err(|e| format!("set body arg: {e}"))?;
+        }
+
+        func.call_async::<String>(args).await.map_err(|e| {
             tracing::error!(
                 "lua plugin handler failed: plugin={plugin_name} handler={handler_key} error={e}"
             );
@@ -708,12 +795,13 @@ mod tests {
     async fn registration_policy_metadata_is_stored() {
         let manager = PluginManager::new();
         manager
-            .register_api_handler_with_policy(
+            .register_api_handler_with_policy_and_public(
                 "GET",
                 "/api/notes",
                 "notes",
                 "handler::api",
                 Some("api.notes.read"),
+                true,
             )
             .await;
         manager
@@ -751,6 +839,7 @@ mod tests {
                 .as_deref(),
             Some("api.notes.read")
         );
+        assert!(manager.is_api_route_public("GET", "/api/notes").await);
         assert_eq!(
             manager
                 .api_route_policy("POST", "/api/notes")
@@ -758,6 +847,7 @@ mod tests {
                 .as_deref(),
             None
         );
+        assert!(!manager.is_api_route_public("POST", "/api/notes").await);
         assert_eq!(
             manager.cli_command_policy("notes-run").await.as_deref(),
             Some("cli.notes.run")
@@ -783,21 +873,23 @@ mod tests {
     async fn api_route_policy_matches_wildcard_for_concrete_path() {
         let manager = PluginManager::new();
         manager
-            .register_api_handler_with_policy(
+            .register_api_handler_with_policy_and_public(
                 "GET",
                 "/api/*",
                 "notes",
                 "handler::api-root",
                 Some("api.root.read"),
+                false,
             )
             .await;
         manager
-            .register_api_handler_with_policy(
+            .register_api_handler_with_policy_and_public(
                 "GET",
                 "/api/notes/*",
                 "notes",
                 "handler::api-notes",
                 Some("api.notes.read"),
+                true,
             )
             .await;
 
@@ -808,5 +900,46 @@ mod tests {
                 .as_deref(),
             Some("api.notes.read")
         );
+        assert!(manager.is_api_route_public("GET", "/api/notes/123").await);
+    }
+
+    #[tokio::test]
+    async fn dispatch_api_handler_forwards_dispatch_path_and_binary_body() {
+        let manager = PluginManager::new();
+        let lua = mlua::Lua::new();
+
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler = lua
+            .create_async_function(|_, (dispatch_path, body): (String, mlua::String)| async move {
+                Ok(format!(
+                    "{}|{}:{}",
+                    dispatch_path,
+                    body.as_bytes()[0],
+                    body.as_bytes()[1]
+                ))
+            })
+            .unwrap();
+        handlers.set("h_dispatch", handler).unwrap();
+
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("POST", "/api/upload", "plugin", "h_dispatch")
+            .await;
+
+        let result = manager
+            .dispatch_api_handler(
+                "POST",
+                "/api/upload",
+                "/api/upload?mode=raw",
+                Some(vec![0, 255]),
+            )
+            .await
+            .expect("handler must exist")
+            .expect("handler must run");
+        assert_eq!(result, "/api/upload?mode=raw|0:255");
     }
 }

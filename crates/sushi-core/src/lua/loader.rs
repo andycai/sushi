@@ -515,6 +515,13 @@ fn parse_entry_policy(
         .map_err(|e| PluginError::InitFailed(format!("invalid {entry_name} policy value: {e}")))
 }
 
+fn parse_entry_public(entry: &mlua::Table, entry_name: &str) -> Result<bool, PluginError> {
+    entry
+        .get::<Option<bool>>("public")
+        .map_err(|e| PluginError::InitFailed(format!("invalid {entry_name} public flag: {e}")))
+        .map(|value| value.unwrap_or(false))
+}
+
 #[async_trait]
 impl Plugin for LuaPlugin {
     fn name(&self) -> &str {
@@ -595,6 +602,12 @@ impl Plugin for LuaPlugin {
                     let path: String = entry.get("path").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     let policy_key = parse_entry_policy(&entry, "route entry")?;
+                    let is_public = parse_entry_public(&entry, "route entry")?;
+                    if is_public && policy_key.is_some() {
+                        return Err(PluginError::InitFailed(format!(
+                            "route {method} {path} cannot declare both policy and public=true"
+                        )));
+                    }
                     if let Some(policy_key_value) = policy_key.as_deref() {
                         validate_policy_scope(
                             plugin_name,
@@ -627,21 +640,23 @@ impl Plugin for LuaPlugin {
                             })?;
                     }
                     ctx.plugins
-                        .register_api_handler_with_policy(
+                        .register_api_handler_with_policy_and_public(
                             &method,
                             &path,
                             plugin_name,
                             &handler_key,
                             policy_key.as_deref(),
+                            is_public,
                         )
                         .await;
                     tracing::debug!(
-                        "plugin {} registered route {} {} (handler: {}, policy: {:?})",
+                        "plugin {} registered route {} {} (handler: {}, policy: {:?}, public: {})",
                         plugin_name,
                         method,
                         path,
                         handler_key,
-                        policy_key
+                        policy_key,
+                        is_public
                     );
                 }
             }

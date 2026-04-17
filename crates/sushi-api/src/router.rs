@@ -90,24 +90,17 @@ async fn plugin_api_dispatch(
 ) -> impl axum::response::IntoResponse {
     let method = req.method().to_string();
     let path = req.uri().path().to_string();
+    let dispatch_path = match req.uri().query() {
+        Some(query) if !query.is_empty() => format!("{path}?{query}"),
+        _ => path.clone(),
+    };
 
     // Extract body for non-GET requests
     let body = if method == "GET" {
         None
     } else {
         match axum::body::to_bytes(req.into_body(), state.body_size_limit).await {
-            Ok(b) => match String::from_utf8(b.to_vec()) {
-                Ok(s) => Some(s),
-                Err(_) => {
-                    // TODO: add mechanism to handle binary file streams for Lua plugins
-                    return (
-                        axum::http::StatusCode::BAD_REQUEST,
-                        [(axum::http::header::CONTENT_TYPE, "text/plain")],
-                        "bad request: binary or non-utf8 bodies are not supported yet",
-                    )
-                        .into_response();
-                }
-            },
+            Ok(b) => Some(b.to_vec()),
             Err(_) => {
                 let limit_kb = state.body_size_limit / 1024;
                 return (
@@ -120,7 +113,11 @@ async fn plugin_api_dispatch(
         }
     };
 
-    match state.plugins.call_api_handler(&method, &path, body).await {
+    match state
+        .plugins
+        .dispatch_api_handler(&method, &path, &dispatch_path, body)
+        .await
+    {
         Some(Ok(response_body)) => {
             if let Some((status, body)) = parse_status_envelope(&response_body) {
                 (
@@ -362,6 +359,97 @@ mod tests {
             .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert_eq!(body, r#"{"status":201,"body":{"ok":true}}"#);
+    }
+
+    #[tokio::test]
+    async fn test_plugin_api_dispatch_forwards_query_string_to_handler() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_query";
+        lua.load(&format!(
+            r#"
+sushi.__handlers["{handler_key}"] = function(args)
+    return args[1]
+end
+"#
+        ))
+        .exec()
+        .unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("GET", "/app/files/list/docs", "plugin", handler_key)
+            .await;
+
+        let state = PluginApiState {
+            plugins: manager,
+            logs: Arc::new(LogService::new()),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/app/files/list/docs?path=%2F")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(body, "/app/files/list/docs?path=%2F");
+    }
+
+    #[tokio::test]
+    async fn test_plugin_api_dispatch_accepts_binary_request_body() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_binary";
+        lua.load(&format!(
+            r#"
+sushi.__handlers["{handler_key}"] = function(args)
+    local body = args[2] or ""
+    return tostring(string.len(body))
+end
+"#
+        ))
+        .exec()
+        .unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler("POST", "/api/upload", "plugin", handler_key)
+            .await;
+
+        let state = PluginApiState {
+            plugins: manager,
+            logs: Arc::new(LogService::new()),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/upload")
+            .body(Body::from(vec![0xff, 0x00, b'a']))
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(body, "3");
     }
 
     #[tokio::test]
