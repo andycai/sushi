@@ -1,44 +1,56 @@
-<div class="h-full">
+<div class="h-full" data-fb-list-root="{{ rel_path }}">
   {% if list_error %}
   <div class="border-b border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">{{ list_error }}</div>
   {% endif %}
 
-  <ul class="divide-y divide-slate-200 text-sm">
-    {% if rel_path %}
-    <li>
-      <button
-        type="button"
-        class="flex w-full items-center gap-2 px-3 py-2 text-left text-slate-700 hover:bg-slate-200/70"
-        data-fb-action="open-dir"
-        data-path="{{ parent_path }}"
-        data-fb-node="1"
-      >
-        <span class="font-mono text-xs text-slate-500">..</span>
-        <span class="text-xs uppercase tracking-[0.08em] text-slate-500">parent</span>
-      </button>
-    </li>
-    {% endif %}
-
+  <ul class="divide-y divide-slate-200 text-sm" data-fb-list-entries="1">
     {% for item in entries %}
     <li>
-      <div
-        class="group flex items-center justify-between px-3 py-2 hover:bg-slate-200/70"
-        data-fb-node="1"
-        data-path="{{ item.path }}"
-      >
+      {% if item.is_dir %}
+      <div class="group">
+        <div class="flex items-center justify-between px-2 py-1.5 hover:bg-slate-200/70" data-fb-node="1" data-path="{{ item.path }}">
+          <div class="min-w-0 flex flex-1 items-center gap-1.5">
+            <button
+              type="button"
+              class="grid h-5 w-5 place-items-center rounded text-[10px] text-slate-500 hover:bg-slate-200"
+              data-fb-action="toggle-dir"
+              data-path="{{ item.path }}"
+              aria-label="Toggle folder"
+              aria-expanded="false"
+              aria-busy="false"
+            >
+              <span data-fb-chevron="{{ item.path }}">▸</span>
+            </button>
+            <button
+              type="button"
+              class="min-w-0 flex flex-1 items-center gap-2 text-left"
+              data-fb-action="open-dir"
+              data-path="{{ item.path }}"
+            >
+              <span class="shrink-0 text-[11px]">📁</span>
+              <span class="truncate text-sm text-slate-800">{{ item.name }}</span>
+            </button>
+          </div>
+        </div>
+        <div
+          class="fb-tree-children ml-4 hidden border-l border-slate-300/80"
+          data-fb-children-for="{{ item.path }}"
+          data-loaded="0"
+        ></div>
+      </div>
+      {% else %}
+      <div class="group flex items-center justify-between px-2 py-1.5 hover:bg-slate-200/70" data-fb-node="1" data-path="{{ item.path }}">
         <button
           type="button"
           class="min-w-0 flex flex-1 items-center gap-2 text-left"
-          data-fb-action="{% if item.is_dir %}open-dir{% elif root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}"
+          data-fb-action="{% if root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}"
           data-path="{{ item.path }}"
         >
-          <span class="shrink-0 text-[11px]">{% if item.is_dir %}📁{% else %}📄{% endif %}</span>
+          <span class="ml-6 shrink-0 text-[11px]">📄</span>
           <span class="truncate text-sm text-slate-800">{{ item.name }}</span>
         </button>
-
         <div class="ml-3 flex shrink-0 items-center gap-1">
-          {% if not item.is_dir %}
-          <span class="text-[11px] text-slate-500">{{ item.size }}</span>
+          <span class="fb-code-font text-[11px] text-slate-500">{{ item.size }}</span>
           {% if root and root.capabilities and root.capabilities.can_download %}
           <button
             type="button"
@@ -49,9 +61,9 @@
             ↓
           </button>
           {% endif %}
-          {% endif %}
         </div>
       </div>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

@@ -17,16 +17,52 @@
     return { ok: response.ok, status: response.status, text, headers: response.headers };
   }
 
+  function normalizePath(path) {
+    const raw = String(path || "").trim();
+    if (!raw) {
+      return "";
+    }
+    return raw.split("/").filter(Boolean).join("/");
+  }
+
+  function parentPath(path) {
+    const normalized = normalizePath(path);
+    if (!normalized) {
+      return "";
+    }
+    const parts = normalized.split("/");
+    parts.pop();
+    return parts.join("/");
+  }
+
+  function pathChain(path) {
+    const normalized = normalizePath(path);
+    if (!normalized) {
+      return [];
+    }
+    const parts = normalized.split("/");
+    const chain = [];
+    let current = "";
+    parts.forEach((part) => {
+      current = current ? `${current}/${part}` : part;
+      chain.push(current);
+    });
+    return chain;
+  }
+
   window.fileBrowserPage = function fileBrowserPage(initial) {
     return {
       routePrefix: initial.routePrefix || "/app/files",
       rootId: initial.rootId || "",
-      relPath: initial.relPath || "",
-      activePath: initial.relPath || "",
+      relPath: normalizePath(initial.relPath || ""),
+      activePath: normalizePath(initial.relPath || ""),
+      expandedDirs: {},
+      listRequestId: 0,
 
       init() {
+        this.seedExpandedDirs();
         this.bindDelegatedEvents();
-        this.syncActiveNode();
+        this.refreshList();
       },
 
       bindDelegatedEvents() {
@@ -42,9 +78,12 @@
           if (action === "noop") {
             event.preventDefault();
             return;
+          } else if (action === "toggle-dir") {
+            event.preventDefault();
+            this.toggleDirectory(path);
           } else if (action === "open-dir") {
             event.preventDefault();
-            this.goToPath(path);
+            this.focusDirectory(path);
           } else if (action === "open-file") {
             event.preventDefault();
             this.openFile(path);
@@ -80,11 +119,71 @@
         });
       },
 
+      seedExpandedDirs() {
+        pathChain(this.relPath).forEach((dirPath) => {
+          this.expandedDirs[dirPath] = true;
+        });
+      },
+
+      findByData(attribute, value) {
+        const nodes = document.querySelectorAll(`[${attribute}]`);
+        for (const node of nodes) {
+          if ((node.getAttribute(attribute) || "") === value) {
+            return node;
+          }
+        }
+        return null;
+      },
+
+      findChildrenContainer(path) {
+        return this.findByData("data-fb-children-for", path);
+      },
+
+      findChevron(path) {
+        return this.findByData("data-fb-chevron", path);
+      },
+
+      findToggle(path) {
+        const buttons = document.querySelectorAll("[data-fb-action='toggle-dir'][data-path]");
+        for (const button of buttons) {
+          if ((button.getAttribute("data-path") || "") === path) {
+            return button;
+          }
+        }
+        return null;
+      },
+
+      setDirectoryVisualState(path, expanded, loading) {
+        const chevron = this.findChevron(path);
+        if (chevron) {
+          chevron.textContent = loading ? "..." : (expanded ? "▾" : "▸");
+        }
+        const toggle = this.findToggle(path);
+        if (toggle) {
+          toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+          toggle.setAttribute("aria-busy", loading ? "true" : "false");
+        }
+      },
+
+      clearExpandedSubtree(path) {
+        Object.keys(this.expandedDirs).forEach((key) => {
+          if (key === path || key.startsWith(`${path}/`)) {
+            this.expandedDirs[key] = false;
+          }
+        });
+      },
+
       showFlash(html) {
         const target = q("#fb-flash");
         if (target) {
           target.innerHTML = html;
         }
+      },
+
+      async fetchList(path) {
+        const query = toQuery({ path: normalizePath(path || "") });
+        const url = `${this.routePrefix}/list/${encodeURIComponent(this.rootId)}?${query}`;
+        return fetchText(url);
       },
 
       async refreshList() {
@@ -96,10 +195,22 @@
           return;
         }
 
-        const query = toQuery({ path: this.relPath || "" });
-        const url = `${this.routePrefix}/list/${encodeURIComponent(this.rootId)}?${query}`;
-        const result = await fetchText(url);
+        pathChain(this.relPath).forEach((dirPath) => {
+          this.expandedDirs[dirPath] = true;
+        });
+        const activeParent = parentPath(this.activePath);
+        pathChain(activeParent).forEach((dirPath) => {
+          this.expandedDirs[dirPath] = true;
+        });
+
+        const requestId = this.listRequestId + 1;
+        this.listRequestId = requestId;
+        const result = await this.fetchList("");
+        if (requestId !== this.listRequestId) {
+          return;
+        }
         target.innerHTML = result.text;
+        await this.restoreExpandedDirs("");
         this.syncActiveNode();
       },
 
@@ -112,18 +223,118 @@
           return;
         }
 
-        const query = toQuery({ path: path || "" });
+        const normalizedPath = normalizePath(path || "");
+        const query = toQuery({ path: normalizedPath });
         const url = `${this.routePrefix}/open/${encodeURIComponent(this.rootId)}?${query}`;
         const result = await fetchText(url);
         target.innerHTML = result.text;
-        this.activePath = path || "";
+        this.activePath = normalizedPath;
+        this.relPath = parentPath(normalizedPath);
+        pathChain(this.relPath).forEach((dirPath) => {
+          this.expandedDirs[dirPath] = true;
+        });
+        await this.restoreExpandedDirs("");
+        this.syncActiveNode();
+      },
+
+      async loadDirectoryChildren(path, container, shouldRestoreDescendants) {
+        if (!container) {
+          return false;
+        }
+
+        this.setDirectoryVisualState(path, true, true);
+        const result = await this.fetchList(path);
+        container.innerHTML = result.text;
+        container.setAttribute("data-loaded", result.ok ? "1" : "0");
+        this.setDirectoryVisualState(path, true, false);
+
+        if (result.ok && shouldRestoreDescendants) {
+          await this.restoreExpandedDirs(path);
+        }
+        return result.ok;
+      },
+
+      async expandDirectory(path, trackState, shouldRestoreDescendants) {
+        const normalizedPath = normalizePath(path);
+        if (!normalizedPath) {
+          return false;
+        }
+        const container = this.findChildrenContainer(normalizedPath);
+        if (!container) {
+          return false;
+        }
+
+        if (trackState) {
+          this.expandedDirs[normalizedPath] = true;
+        }
+
+        container.classList.remove("hidden");
+        this.setDirectoryVisualState(normalizedPath, true, false);
+
+        if (container.getAttribute("data-loaded") !== "1") {
+          return this.loadDirectoryChildren(normalizedPath, container, shouldRestoreDescendants);
+        }
+        return true;
+      },
+
+      collapseDirectory(path) {
+        const normalizedPath = normalizePath(path);
+        if (!normalizedPath) {
+          return;
+        }
+
+        const container = this.findChildrenContainer(normalizedPath);
+        if (container) {
+          container.classList.add("hidden");
+        }
+
+        this.clearExpandedSubtree(normalizedPath);
+        this.setDirectoryVisualState(normalizedPath, false, false);
+      },
+
+      async toggleDirectory(path) {
+        const normalizedPath = normalizePath(path);
+        if (!normalizedPath) {
+          return;
+        }
+
+        const isExpanded = this.expandedDirs[normalizedPath] === true;
+        if (isExpanded) {
+          this.collapseDirectory(normalizedPath);
+        } else {
+          this.expandedDirs[normalizedPath] = true;
+          await this.expandDirectory(normalizedPath, true, true);
+        }
+
+        this.relPath = normalizedPath;
+        this.activePath = normalizedPath;
+        this.syncActiveNode();
+      },
+
+      async ensureDirectoryChain(path) {
+        const chain = pathChain(path);
+        for (const dirPath of chain) {
+          this.expandedDirs[dirPath] = true;
+          await this.expandDirectory(dirPath, true, false);
+        }
+      },
+
+      async focusDirectory(path) {
+        const normalizedPath = normalizePath(path || "");
+        this.relPath = normalizedPath;
+        this.activePath = normalizedPath;
+
+        if (!normalizedPath) {
+          await this.refreshList();
+          return;
+        }
+
+        await this.ensureDirectoryChain(normalizedPath);
         this.syncActiveNode();
       },
 
       goToPath(path) {
-        this.relPath = path || "";
-        this.activePath = path || "";
-        this.refreshList();
+        this.focusDirectory(path);
       },
 
       switchRoot() {
@@ -147,11 +358,24 @@
         if (!this.relPath) {
           return;
         }
-        const parts = this.relPath.split("/").filter(Boolean);
-        parts.pop();
-        this.relPath = parts.join("/");
-        this.activePath = this.relPath;
-        this.refreshList();
+        this.focusDirectory(parentPath(this.relPath));
+      },
+
+      async restoreExpandedDirs(scopePath) {
+        const scope = normalizePath(scopePath || "");
+        const expandedPaths = Object.keys(this.expandedDirs)
+          .filter((path) => this.expandedDirs[path] === true)
+          .filter((path) => {
+            if (!scope) {
+              return true;
+            }
+            return path !== scope && path.startsWith(`${scope}/`);
+          })
+          .sort((a, b) => a.split("/").length - b.split("/").length);
+
+        for (const path of expandedPaths) {
+          await this.expandDirectory(path, false, false);
+        }
       },
 
       async createText(event) {
@@ -296,7 +520,7 @@
         const nodes = document.querySelectorAll("[data-fb-node='1'][data-path]");
         nodes.forEach((node) => {
           const path = node.getAttribute("data-path") || "";
-          const selected = path === (this.activePath || "");
+          const selected = path === normalizePath(this.activePath || "");
           node.classList.toggle("bg-blue-100", selected);
           node.classList.toggle("border-l-2", selected);
           node.classList.toggle("border-blue-500", selected);

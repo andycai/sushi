@@ -193,6 +193,17 @@ async fn file_browser_public_routes_support_core_operations() {
     .await;
     assert!(download_payload.contains("\"__sushi_file_download\":true"));
 
+    let frontend_script =
+        std::fs::read_to_string(plugin_root.join("web/static/file_browser.js")).expect("read web script");
+    assert!(
+        frontend_script.contains("toggle-dir"),
+        "file browser frontend should support directory toggle action"
+    );
+    assert!(
+        frontend_script.contains("data-fb-children-for"),
+        "file browser frontend should support lazy tree children containers"
+    );
+
     let saved = std::fs::read_to_string(docs_root.join("notes").join("todo.txt"))
         .expect("read saved file");
     assert_eq!(saved, "updated content");
