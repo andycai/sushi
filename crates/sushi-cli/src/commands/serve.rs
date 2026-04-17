@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use std::path::PathBuf;
-use sushi_core::auth::middleware::require_auth;
 
 #[derive(Args)]
 pub struct ServeArgs {
@@ -46,24 +45,19 @@ pub async fn run(args: ServeArgs) -> Result<()> {
 
     let plugin_api_state = sushi_api::router::PluginApiState {
         plugins: ctx.plugins.clone(),
+        auth_state: ctx.auth_state(),
         logs: ctx.logs.clone(),
         body_size_limit,
         route_map: vec![],
     };
 
-    let auth_state = ctx.auth_state();
-
     let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
         .await
-        .with_state(plugin_api_state)
-        .layer(axum::middleware::from_fn_with_state(
-            auth_state.clone(),
-            require_auth,
-        ));
+        .with_state(plugin_api_state);
 
     let app = if args.api_only {
         // API-only: Rust API routes + plugin routes, no admin UI
-        // Auth middleware is applied by build_app and the protected plugin router above.
+        // Core API auth stays in build_app; plugin auth is now handled in plugin dispatch.
         sushi_api::router::build_app(&ctx).merge(plugin_api_router)
     } else if args.admin_only {
         // Admin-only: admin UI + login page, no API or plugin API routes

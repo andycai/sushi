@@ -4,7 +4,8 @@ use axum::response::IntoResponse;
 use axum::Router;
 use serde_json::Value;
 use std::sync::Arc;
-use sushi_core::auth::middleware::require_auth;
+use sushi_core::auth::middleware::{require_auth, AuthState};
+use sushi_core::auth::model::UserRole;
 use sushi_core::context::SushiContext;
 use sushi_core::logs::LogService;
 use sushi_core::plugin::manager::PluginManager;
@@ -47,6 +48,7 @@ pub fn build_app(ctx: &SushiContext) -> Router {
 #[derive(Clone)]
 pub struct PluginApiState {
     pub plugins: PluginManager,
+    pub auth_state: AuthState,
     pub logs: Arc<LogService>,
     pub body_size_limit: usize,
     pub route_map: Vec<(String, String)>, // (method, path) pairs
@@ -94,6 +96,78 @@ async fn plugin_api_dispatch(
         Some(query) if !query.is_empty() => format!("{path}?{query}"),
         _ => path.clone(),
     };
+
+    if !state.plugins.is_api_route_public(&method, &path).await {
+        let auth_header = req
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok());
+
+        let token = match auth_header {
+            Some(h) if h.starts_with("Bearer ") => &h[7..],
+            _ => match extract_token_from_cookie(
+                req.headers().get("cookie").and_then(|v| v.to_str().ok()),
+            ) {
+                Some(token) => token,
+                None => {
+                    return (
+                        axum::http::StatusCode::UNAUTHORIZED,
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        "{\"error\":\"Missing authorization credentials\"}".to_string(),
+                    )
+                        .into_response();
+                }
+            },
+        };
+
+        let claims = match state.auth_state.jwt_service.verify_token(token) {
+            Ok(claims) => claims,
+            Err(_) => {
+                return (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    "{\"error\":\"Invalid token\"}".to_string(),
+                )
+                    .into_response();
+            }
+        };
+
+        if claims.token_type != "access" {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                "{\"error\":\"Invalid token type. Use access token for API access.\"}".to_string(),
+            )
+                .into_response();
+        }
+
+        let role = UserRole::from_slug(&claims.role);
+        let role_slug = role.as_str().to_string();
+
+        if state
+            .auth_state
+            .authorizer
+            .check_http(&role_slug, "api", &method, &path)
+            .await
+            .is_err()
+        {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                "{\"error\":\"Insufficient permissions for this API route\"}".to_string(),
+            )
+                .into_response();
+        }
+
+        if path.starts_with("/admin/partials/") && !role.is_admin() {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                "{\"error\":\"Admin role required for admin partial routes\"}".to_string(),
+            )
+                .into_response();
+        }
+    }
 
     // Extract body for non-GET requests
     let body = if method == "GET" {
@@ -155,6 +229,13 @@ async fn plugin_api_dispatch(
     }
 }
 
+fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
+    let cookie = cookie_header?;
+    cookie
+        .split(';')
+        .find_map(|part| part.trim().strip_prefix("sushi_token="))
+}
+
 fn parse_status_envelope(body: &str) -> Option<(axum::http::StatusCode, String)> {
     let parsed: Value = serde_json::from_str(body).ok()?;
     let obj = parsed.as_object()?;
@@ -180,6 +261,7 @@ mod tests {
     use serde_json::Value;
     use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
     use sushi_core::auth::jwt::JwtService;
+    use sushi_core::auth::middleware::AuthState;
     use sushi_core::config::{ConfigStore, SushiConfig};
     use sushi_core::context::SushiContext;
     use sushi_core::lua::vm::create_sandboxed_vm;
@@ -220,6 +302,19 @@ mod tests {
                 policy_key: "api.auth.me".to_string(),
             },
         ]
+    }
+
+    fn test_auth_state() -> AuthState {
+        AuthState {
+            jwt_service: Arc::new(JwtService::new(
+                "test-secret-key-at-least-32-chars-long!",
+                3600,
+                604800,
+            )),
+            authorizer: Arc::new(sushi_core::auth::authorizer::Authorizer::new(
+                CompiledPolicySnapshot::default(),
+            )),
+        }
     }
 
     async fn refresh_api_authorizer(ctx: &SushiContext) {
@@ -290,11 +385,19 @@ mod tests {
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
         manager
-            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/test",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
             .await;
 
         let state = PluginApiState {
             plugins: manager,
+            auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
             route_map: Vec::new(),
@@ -335,11 +438,19 @@ mod tests {
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
         manager
-            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/test",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
             .await;
 
         let state = PluginApiState {
             plugins: manager,
+            auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
             route_map: Vec::new(),
@@ -383,11 +494,19 @@ end
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
         manager
-            .register_api_handler("GET", "/app/files/list/docs", "plugin", handler_key)
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/app/files/list/docs",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
             .await;
 
         let state = PluginApiState {
             plugins: manager,
+            auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
             route_map: Vec::new(),
@@ -429,11 +548,19 @@ end
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
         manager
-            .register_api_handler("POST", "/api/upload", "plugin", handler_key)
+            .register_api_handler_with_policy_and_public(
+                "POST",
+                "/api/upload",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
             .await;
 
         let state = PluginApiState {
             plugins: manager,
+            auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
             route_map: Vec::new(),
@@ -471,12 +598,20 @@ end
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
         manager
-            .register_api_handler("GET", "/api/test", "plugin", handler_key)
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/test",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
             .await;
 
         let logs = Arc::new(LogService::new());
         let state = PluginApiState {
             plugins: manager,
+            auth_state: test_auth_state(),
             logs: logs.clone(),
             body_size_limit: 1024,
             route_map: Vec::new(),
@@ -607,6 +742,101 @@ end
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_public_plugin_route_is_accessible_without_token() {
+        let ctx = test_context().await;
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_public";
+        let handler = lua
+            .create_async_function(|_, ()| async { Ok(r#"{"ok":true}"#.to_string()) })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        ctx.plugins.register_vm("plugin", lua).await;
+        ctx.plugins
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/plugin/public",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
+            .await;
+
+        let app = build_plugin_api_routes(&ctx)
+            .await
+            .with_state(PluginApiState {
+                plugins: ctx.plugins.clone(),
+                auth_state: ctx.auth_state(),
+                logs: Arc::new(LogService::new()),
+                body_size_limit: 1024,
+                route_map: Vec::new(),
+            });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/plugin/public")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_non_public_plugin_route_requires_auth_without_token() {
+        let ctx = test_context().await;
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_private";
+        let handler = lua
+            .create_async_function(|_, ()| async { Ok(r#"{"ok":true}"#.to_string()) })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        ctx.plugins.register_vm("plugin", lua).await;
+        ctx.plugins
+            .register_api_handler("GET", "/api/plugin/private", "plugin", handler_key)
+            .await;
+
+        let app = build_plugin_api_routes(&ctx)
+            .await
+            .with_state(PluginApiState {
+                plugins: ctx.plugins.clone(),
+                auth_state: ctx.auth_state(),
+                logs: Arc::new(LogService::new()),
+                body_size_limit: 1024,
+                route_map: Vec::new(),
+            });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/plugin/private")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
