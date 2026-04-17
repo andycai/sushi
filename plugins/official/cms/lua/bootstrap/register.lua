@@ -21,15 +21,12 @@ function M.register(deps)
     sushi.api.route("GET", "/app/posts/*", deps.api.public_post_detail, { policy = "api.cms.public.read" })
     sushi.api.route("GET", "/app/categories/*", deps.api.public_category_detail, { policy = "api.cms.public.read" })
 
-    sushi.api.route("GET", "/admin/partials/cms/pages/table", deps.admin.pages_table_partial, { policy = "admin.cms.read" })
-    sushi.api.route("POST", "/admin/partials/cms/pages/upsert", deps.admin.pages_upsert_partial, { policy = "admin.cms.write" })
-    sushi.api.route("POST", "/admin/partials/cms/pages/delete", deps.admin.pages_delete_partial, { policy = "admin.cms.write" })
-    sushi.api.route("GET", "/admin/partials/cms/posts/table", deps.admin.posts_table_partial, { policy = "admin.cms.read" })
-    sushi.api.route("POST", "/admin/partials/cms/posts/upsert", deps.admin.posts_upsert_partial, { policy = "admin.cms.write" })
-    sushi.api.route("POST", "/admin/partials/cms/posts/delete", deps.admin.posts_delete_partial, { policy = "admin.cms.write" })
-    sushi.api.route("GET", "/admin/partials/cms/categories/table", deps.admin.categories_table_partial, { policy = "admin.cms.read" })
-    sushi.api.route("POST", "/admin/partials/cms/categories/upsert", deps.admin.categories_upsert_partial, { policy = "admin.cms.write" })
-    sushi.api.route("POST", "/admin/partials/cms/categories/delete", deps.admin.categories_delete_partial, { policy = "admin.cms.write" })
+    sushi.api.route("GET", "/admin/partials/cms/overview", deps.admin.overview_partial, { policy = "admin.cms.read" })
+    sushi.api.route("GET", "/admin/partials/cms/library/*", deps.admin.library_partial, { policy = "admin.cms.read" })
+    sushi.api.route("GET", "/admin/partials/cms/editor/*", deps.admin.editor_partial, { policy = "admin.cms.read" })
+    sushi.api.route("POST", "/admin/partials/cms/editor/save", deps.admin.editor_save_partial, { policy = "admin.cms.write" })
+    sushi.api.route("POST", "/admin/partials/cms/status/transition", deps.admin.status_transition_partial, { policy = "admin.cms.write" })
+    sushi.api.route("GET", "/admin/partials/cms/commands", deps.admin.commands_partial, { policy = "admin.cms.read" })
 
     sushi.web.page("/admin/cms", "plugins/official/cms/cms.html", {
         title = "CMS",

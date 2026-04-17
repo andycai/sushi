@@ -1166,6 +1166,24 @@ end)
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
         assert!(source.contains("sushi.web.page(\"/admin/cms\""));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/overview\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/library/*\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/editor/*\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/admin/partials/cms/editor/save\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/admin/partials/cms/status/transition\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/commands\""
+        ));
         assert!(source.contains("sushi.api.route(\"GET\", \"/app/posts\""));
         assert!(source.contains("sushi.cli.command(\"cms\""));
     }
