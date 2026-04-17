@@ -992,6 +992,19 @@ fn admin_cms_template_uses_top_nav_and_panel_mounts() {
     assert!(source.contains("data-cms-panel=\"editor\""));
 }
 
+#[test]
+fn cms_js_defines_shortcuts_and_command_palette_hooks() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/static/cms.js"),
+    )
+    .expect("failed to read cms.js");
+
+    assert!(source.contains("Cmd/Ctrl+K"));
+    assert!(source.contains("switchPanel"));
+    assert!(source.contains("openCommandPalette"));
+    assert!(source.contains("handleGlobalShortcut"));
+}
+
 #[tokio::test]
 async fn role_permission_updates_refresh_authorizer_for_workspace_asset_checks() {
     let (app, _ctx) = build_app_with_context(None).await;
