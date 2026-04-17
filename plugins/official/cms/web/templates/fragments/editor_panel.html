@@ -1,0 +1,101 @@
+<article class="ui-card cms-editor-single-column" data-cms-editor data-cms-editor-resource="{{ resource }}" data-cms-editor-slug="{{ item.slug | default(value="new") }}">
+  <header class="ui-card-header">
+    <div>
+      <h2 class="text-lg font-semibold">{{ editor_title }}</h2>
+      <p class="ui-subtitle">Single-column writing mode with policy-safe save and publish actions.</p>
+    </div>
+
+    <div class="cms-editor-actions">
+      <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="{{ resource }}">Back to Library</button>
+      {% if resource == "pages" or resource == "posts" %}
+        <form id="cms-transition-form" class="cms-transition-inline" hx-post="/admin/partials/cms/status/transition" hx-target="#cms-feedback" hx-swap="innerHTML">
+          <input type="hidden" name="resource" value="{{ resource }}">
+          <input type="hidden" name="slug" value="{{ item.slug | default(value="") }}">
+          <select name="next_status" class="ui-select">
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button type="submit" class="ui-btn ui-btn-secondary" {% if mode != "edit" %}disabled{% endif %}>Change status</button>
+        </form>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="ui-card-body">
+    <form id="cms-editor-form" class="cms-editor-form" hx-post="/admin/partials/cms/editor/save" hx-target="#cms-feedback" hx-swap="innerHTML">
+      <input type="hidden" name="resource" value="{{ resource }}">
+      {% if resource == "pages" %}
+        <input type="hidden" name="kind" value="page">
+        <input type="hidden" name="content_type" value="page">
+      {% elif resource == "categories" %}
+        <input type="hidden" name="kind" value="category">
+        <input type="hidden" name="content_type" value="category">
+      {% else %}
+        <input type="hidden" name="kind" value="post">
+        <input type="hidden" name="content_type" value="post">
+      {% endif %}
+      <input type="hidden" name="original_slug" value="{{ item.slug | default(value="") }}">
+
+      {% if resource == "categories" %}
+        <label class="ui-label" for="cms-category-name">Name</label>
+        <input id="cms-category-name" type="text" name="name" class="ui-input" value="{{ item.name | default(value="") }}" required>
+
+        <label class="ui-label" for="cms-category-slug">Slug</label>
+        <input id="cms-category-slug" type="text" name="slug" class="ui-input ui-mono" value="{{ item.slug | default(value="") }}" required>
+
+        <label class="ui-label" for="cms-category-description">Description</label>
+        <textarea id="cms-category-description" name="description" class="ui-input ui-textarea" rows="4">{{ item.description | default(value="") }}</textarea>
+      {% else %}
+        <label class="ui-label" for="cms-title">Title</label>
+        <input id="cms-title" type="text" name="title" class="ui-input" value="{{ item.title | default(value="") }}" required>
+
+        <label class="ui-label" for="cms-slug">Slug</label>
+        <input id="cms-slug" type="text" name="slug" class="ui-input ui-mono" value="{{ item.slug | default(value="") }}" required>
+
+        <label class="ui-label" for="cms-status">Status</label>
+        <select id="cms-status" name="status" class="ui-select">
+          {% set current_status = item.status | default(value="draft") %}
+          <option value="draft" {% if current_status == "draft" %}selected{% endif %}>Draft</option>
+          <option value="published" {% if current_status == "published" %}selected{% endif %}>Published</option>
+          <option value="archived" {% if current_status == "archived" %}selected{% endif %}>Archived</option>
+        </select>
+
+        {% if resource == "posts" %}
+          <label class="ui-label" for="cms-category">Category</label>
+          <select id="cms-category" name="category_slug" class="ui-select" required>
+            <option value="">Choose category</option>
+            {% for option in categories %}
+              <option value="{{ option.slug }}" {% if item.category_slug == option.slug %}selected{% endif %}>{{ option.name }}</option>
+            {% endfor %}
+          </select>
+
+          <label class="ui-label" for="cms-excerpt">Excerpt</label>
+          <textarea id="cms-excerpt" name="excerpt" class="ui-input ui-textarea" rows="3">{{ item.excerpt | default(value="") }}</textarea>
+        {% endif %}
+
+        <label class="ui-label" for="cms-body">Body (Markdown)</label>
+        <textarea id="cms-body" name="markdown_body" class="ui-input ui-textarea cms-editor-body" rows="18" required>{{ item.markdown_body | default(value="") }}</textarea>
+      {% endif %}
+
+      <div class="cms-editor-footer">
+        <button type="submit" class="ui-btn ui-btn-primary">Save</button>
+      </div>
+    </form>
+
+    {% if mode == "edit" %}
+      <form class="cms-delete-form" hx-post="/admin/partials/cms/{{ resource }}/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
+        <input type="hidden" name="slug" value="{{ item.slug }}">
+        <button type="submit" class="ui-btn ui-btn-danger" data-confirm="Delete this item?">
+          {% if resource == "pages" %}
+            Delete Page
+          {% elif resource == "categories" %}
+            Delete Category
+          {% else %}
+            Delete Post
+          {% endif %}
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</article>

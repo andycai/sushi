@@ -1,11 +1,31 @@
 {% for item in items %}
-  <tr>
+  <tr data-cms-row data-resource="pages" data-slug="{{ item.slug }}">
     <td class="ui-mono">{{ item.slug }}</td>
     <td>{{ item.title }}</td>
-    <td>{{ item.status }}</td>
+    <td>
+      <form class="cms-inline-form" hx-post="/admin/partials/cms/status/transition" hx-target="#cms-feedback" hx-swap="innerHTML">
+        <input type="hidden" name="resource" value="pages">
+        <input type="hidden" name="slug" value="{{ item.slug }}">
+        <select name="next_status" class="ui-select">
+          <option value="draft" {% if item.status == "draft" %}selected{% endif %}>Draft</option>
+          <option value="published" {% if item.status == "published" %}selected{% endif %}>Published</option>
+          <option value="archived" {% if item.status == "archived" %}selected{% endif %}>Archived</option>
+        </select>
+        <button type="submit" class="ui-btn ui-btn-ghost">Apply</button>
+      </form>
+    </td>
+    <td class="text-right">
+      <div class="cms-row-actions">
+        <button type="button" class="ui-btn ui-btn-secondary" data-cms-open-editor data-resource="pages" data-slug="{{ item.slug }}">Edit</button>
+        <form hx-post="/admin/partials/cms/pages/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
+          <input type="hidden" name="slug" value="{{ item.slug }}">
+          <button type="submit" class="ui-btn ui-btn-danger" data-confirm="Delete this page?">Delete</button>
+        </form>
+      </div>
+    </td>
   </tr>
 {% else %}
   <tr>
-    <td colspan="3" class="ui-empty">No pages found.</td>
+    <td colspan="4" class="ui-empty">No pages found.</td>
   </tr>
 {% endfor %}

@@ -65,30 +65,32 @@ function M.new(deps)
         return normalize_resource(form.resource or form.content_type or form.kind or form.type)
     end
 
-    local function dispatch_table_partial(resource)
-        if resource == "pages" then
-            return admin.pages_table_partial()
+    local function parse_query_params(path)
+        local out = {}
+        local query = tostring(path or ""):match("%?(.*)$")
+        if not query then
+            return out
         end
-        if resource == "posts" then
-            return admin.posts_table_partial()
+        for pair in query:gmatch("[^&]+") do
+            local key, value = pair:match("([^=]+)=(.*)")
+            if key then
+                out[url_decode(key)] = url_decode(value)
+            end
         end
-        if resource == "categories" then
-            return admin.categories_table_partial()
-        end
-        return flash("error", "Unknown CMS resource")
+        return out
     end
 
-    local function dispatch_upsert_partial(resource, args)
+    local function list_scope_rows(resource)
         if resource == "pages" then
-            return admin.pages_upsert_partial(args)
+            return page.list()
         end
         if resource == "posts" then
-            return admin.posts_upsert_partial(args)
+            return post.list({ only_published = false })
         end
         if resource == "categories" then
-            return admin.categories_upsert_partial(args)
+            return category.list()
         end
-        return flash("error", "Unknown CMS resource")
+        return nil, "invalid_resource", "Unknown CMS resource"
     end
 
     local function count_summary(rows)
@@ -113,35 +115,17 @@ function M.new(deps)
         return summary
     end
 
-    local function render_rows_for_scope(scope)
-        if scope == "pages" then
-            local rows, kind, msg = page.list()
-            if not rows then
-                return flash("error", tostring(msg or kind or "failed to load pages"))
-            end
-            return sushi.web.render("plugins/official/cms/fragments/page_rows.html", {
-                items = rows or {},
-            })
+    local function render_library_panel(scope, path)
+        local rows, kind, msg = list_scope_rows(scope)
+        if not rows then
+            return flash("error", tostring(msg or kind or "failed to load library"))
         end
-        if scope == "posts" then
-            local rows, kind, msg = post.list({ only_published = false })
-            if not rows then
-                return flash("error", tostring(msg or kind or "failed to load posts"))
-            end
-            return sushi.web.render("plugins/official/cms/fragments/post_rows.html", {
-                items = rows or {},
-            })
-        end
-        if scope == "categories" then
-            local rows, kind, msg = category.list()
-            if not rows then
-                return flash("error", tostring(msg or kind or "failed to load categories"))
-            end
-            return sushi.web.render("plugins/official/cms/fragments/category_rows.html", {
-                items = rows or {},
-            })
-        end
-        return flash("error", "Unknown CMS resource")
+        local params = parse_query_params(path)
+        return sushi.web.render("plugins/official/cms/fragments/library_panel.html", {
+            scope = scope,
+            items = rows,
+            query = params.q or "",
+        })
     end
 
     local function resolve_editor_resource(args, form)
@@ -162,6 +146,105 @@ function M.new(deps)
         end
 
         return normalize_resource(kind) or normalize_resource(resource)
+    end
+
+    local function resolve_editor_slug(args, form)
+        local path = request_path(args)
+        local from_path = path:match("^/admin/partials/cms/editor/[^/?]+/([^/?]+)")
+        if from_path and from_path ~= "" then
+            return from_path
+        end
+        local from_form = tostring(form.slug or form.target_slug or form.original_slug or "")
+        if from_form ~= "" then
+            return from_form
+        end
+        return "new"
+    end
+
+    local function editor_item_defaults(resource)
+        if resource == "categories" then
+            return {
+                slug = "",
+                name = "",
+                description = "",
+            }
+        end
+        if resource == "pages" then
+            return {
+                slug = "",
+                title = "",
+                status = "draft",
+                markdown_body = "",
+            }
+        end
+        return {
+            slug = "",
+            title = "",
+            status = "draft",
+            excerpt = "",
+            markdown_body = "",
+            category_slug = "",
+        }
+    end
+
+    local function load_editor_item(resource, slug_value)
+        if slug_value == "new" then
+            return editor_item_defaults(resource), "create"
+        end
+        if resource == "pages" then
+            local item, kind, msg = page.get_by_slug(slug_value, { only_published = false })
+            if not item then
+                return nil, nil, kind, msg
+            end
+            return item, "edit"
+        end
+        if resource == "posts" then
+            local item, kind, msg = post.get_by_slug(slug_value, { only_published = false })
+            if not item then
+                return nil, nil, kind, msg
+            end
+            return item, "edit"
+        end
+        if resource == "categories" then
+            local item, kind, msg = category.get_by_slug(slug_value)
+            if not item then
+                return nil, nil, kind, msg
+            end
+            return item, "edit"
+        end
+        return nil, nil, "invalid_resource", "Unknown CMS resource"
+    end
+
+    local function editor_title(resource, mode)
+        if resource == "pages" then
+            return mode == "edit" and "Edit Page" or "New Page"
+        end
+        if resource == "categories" then
+            return mode == "edit" and "Edit Category" or "New Category"
+        end
+        return mode == "edit" and "Edit Post" or "New Post"
+    end
+
+    local function render_editor_panel(resource, slug_value)
+        local item, mode, kind, msg = load_editor_item(resource, slug_value)
+        if not item then
+            return flash("error", tostring(msg or kind or "failed to load editor"))
+        end
+        local categories = {}
+        if resource == "posts" then
+            local rows, cat_kind, cat_msg = category.list()
+            if not rows then
+                return flash("error", tostring(cat_msg or cat_kind or "failed to load categories"))
+            end
+            categories = rows
+        end
+        return sushi.web.render("plugins/official/cms/fragments/editor_panel.html", {
+            resource = resource,
+            item = item,
+            categories = categories,
+            mode = mode,
+            editor_title = editor_title(resource, mode),
+        })
     end
 
     local function save_from_editor(resource, form)
@@ -343,20 +426,25 @@ function M.new(deps)
         local path = request_path(args)
         local scope = path:match("^/admin/partials/cms/library/([^/?]+)")
         if scope then
-            return render_rows_for_scope(normalize_resource(scope))
+            local normalized = normalize_resource(scope)
+            if normalized then
+                return render_library_panel(normalized, path)
+            end
+            return flash("error", "Unknown CMS resource")
         end
         local resource = resolve_resource(args, "/admin/partials/cms/library")
         if resource then
-            return render_rows_for_scope(resource)
+            return render_library_panel(resource, path)
         end
-        return render_rows_for_scope("pages")
+        return render_library_panel("posts", path)
     end
 
     function admin.editor_partial(args)
         local form = parse_urlencoded((args and args[2]) or "")
         local resource = resolve_editor_resource(args, form)
         if resource then
-            return render_rows_for_scope(resource)
+            local slug_value = resolve_editor_slug(args, form)
+            return render_editor_panel(resource, slug_value)
         end
         return flash("info", "Workbench editor is ready; select pages, posts, or categories.")
     end

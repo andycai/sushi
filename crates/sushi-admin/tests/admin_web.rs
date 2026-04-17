@@ -979,6 +979,19 @@ fn admin_cms_category_delete_returns_flash_on_conflict() {
     assert!(source.contains("plugins/official/cms/fragments/flash.html"));
 }
 
+#[test]
+fn admin_cms_template_uses_top_nav_and_panel_mounts() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/cms.html"),
+    )
+    .expect("failed to read cms template");
+
+    assert!(source.contains("data-cms-top-nav"));
+    assert!(source.contains("data-cms-panel=\"overview\""));
+    assert!(source.contains("data-cms-panel=\"library\""));
+    assert!(source.contains("data-cms-panel=\"editor\""));
+}
+
 #[tokio::test]
 async fn role_permission_updates_refresh_authorizer_for_workspace_asset_checks() {
     let (app, _ctx) = build_app_with_context(None).await;
