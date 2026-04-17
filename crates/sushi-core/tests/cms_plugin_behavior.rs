@@ -29,3 +29,27 @@ fn cms_category_delete_conflicts_when_posts_exist() {
     assert!(source.contains("SELECT id FROM cms_posts"));
     assert!(source.contains("conflict_has_posts"));
 }
+
+#[test]
+fn cms_public_page_route_hides_draft_content() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/interfaces/api.lua"),
+    )
+    .expect("failed to read api interface");
+
+    assert!(source.contains("function api.public_page_detail"));
+    assert!(source.contains("page.get_by_slug(slug, { only_published = true })"));
+    assert!(source.contains("return json_error(kind, msg)"));
+}
+
+#[test]
+fn cms_post_list_category_query_filters_rows() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/interfaces/api.lua"),
+    )
+    .expect("failed to read api interface");
+
+    assert!(source.contains("function api.public_post_list"));
+    assert!(source.contains("path:match(\"[?&]category=([^&]+)\")"));
+    assert!(source.contains("post.list({ only_published = true, category_slug = category_slug })"));
+}
