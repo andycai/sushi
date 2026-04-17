@@ -1,7 +1,7 @@
 # Graph Report - .  (2026-04-18)
 
 ## Corpus Check
-- 114 files · ~127,208 words
+- 114 files · ~127,351 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -609,11 +609,11 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `add()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 17`, `Community 26`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
-- **Why does `ae()` connect `Community 0` to `Community 1`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Why does `v()` connect `Community 3` to `Community 1`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+- **Why does `dismissToast()` connect `Community 1` to `Community 2`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **Why does `createDataTable()` connect `Community 1` to `Community 2`?**
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `He()` (e.g. with `set()` and `keys()`) actually correct?**
   _`He()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
