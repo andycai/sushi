@@ -2,6 +2,7 @@ pub mod auth;
 pub mod config;
 pub mod context;
 pub mod db;
+pub mod fs;
 pub mod logs;
 pub mod lua;
 pub mod plugin;

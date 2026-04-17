@@ -1,6 +1,7 @@
 use crate::auth::policy_repository::PolicyRepository;
 use crate::context::SushiContext;
-use crate::lua::bindings::inject_sushi_api;
+use crate::fs::FileBrowserFsService;
+use crate::lua::bindings::{inject_sushi_api, inject_sushi_fs};
 use crate::lua::module_loader::install_plugin_require;
 use crate::lua::vm::create_sandboxed_vm;
 use crate::plugin::manager::PageResolvedAssets;
@@ -540,10 +541,27 @@ impl Plugin for LuaPlugin {
             ))
         })?;
 
+        let file_browser_fs = self
+            .manifest
+            .file_browser
+            .as_ref()
+            .map(FileBrowserFsService::from_manifest)
+            .transpose()
+            .map_err(|e| {
+                PluginError::InitFailed(format!(
+                    "{}: failed to build file_browser fs service: {e}",
+                    self.manifest.plugin.name
+                ))
+            })?;
+
         // Inject sushi.* API into the Lua VM
         inject_sushi_api(lua, ctx, &self.effective_permissions)
             .await
             .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
+        if let Some(service) = file_browser_fs {
+            inject_sushi_fs(lua, Arc::new(service))
+                .map_err(|e| PluginError::LuaError(format!("inject sushi.fs API: {e}")))?;
+        }
 
         install_plugin_require(lua, &self.plugin_dir)
             .map_err(|e| PluginError::LuaError(format!("install plugin module loader: {e}")))?;

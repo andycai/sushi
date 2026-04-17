@@ -4,6 +4,7 @@ use std::{path::Component, path::Path};
 
 use crate::context::SushiContext;
 use crate::db::{DbGatewayError, DbPermission};
+use crate::fs::{FileBrowserFsService, FsError};
 use crate::plugin::Permissions;
 use mlua::{Lua, LuaSerdeExt};
 
@@ -39,6 +40,10 @@ fn map_db_gateway_error(err: DbGatewayError) -> mlua::Error {
             mlua::Error::ExternalError(Arc::new(other) as Arc<dyn std::error::Error + Send + Sync>)
         }
     }
+}
+
+fn map_fs_error(err: FsError) -> mlua::Error {
+    mlua::Error::RuntimeError(format!("{}: {err}", err.code()))
 }
 
 fn build_web_context(
@@ -666,6 +671,133 @@ pub async fn inject_sushi_api(
     }
 
     lua.globals().set("sushi", sushi)?;
+    Ok(())
+}
+
+/// Inject `sushi.fs` for file-browser capable plugins.
+pub fn inject_sushi_fs(lua: &Lua, fs_service: Arc<FileBrowserFsService>) -> Result<(), mlua::Error> {
+    let sushi: mlua::Table = lua.globals().get("sushi")?;
+    let fs_table = lua.create_table()?;
+
+    let list_service = fs_service.clone();
+    fs_table.set(
+        "list",
+        lua.create_async_function(move |lua, (root_id, rel_path): (String, String)| {
+            let service = list_service.clone();
+            async move {
+                let entries = service.list(&root_id, &rel_path).await.map_err(map_fs_error)?;
+                lua.to_value(&entries)
+            }
+        })?,
+    )?;
+
+    let read_text_service = fs_service.clone();
+    fs_table.set(
+        "read_text",
+        lua.create_async_function(move |_lua, (root_id, rel_path): (String, String)| {
+            let service = read_text_service.clone();
+            async move { service.read_text(&root_id, &rel_path).await.map_err(map_fs_error) }
+        })?,
+    )?;
+
+    let write_text_service = fs_service.clone();
+    fs_table.set(
+        "write_text",
+        lua.create_async_function(
+            move |_lua, (root_id, rel_path, content): (String, String, String)| {
+                let service = write_text_service.clone();
+                async move {
+                    service
+                        .write_text(&root_id, &rel_path, &content)
+                        .await
+                        .map_err(map_fs_error)
+                }
+            },
+        )?,
+    )?;
+
+    let create_text_service = fs_service.clone();
+    fs_table.set(
+        "create_text",
+        lua.create_async_function(
+            move |_lua, (root_id, rel_path, content): (String, String, Option<String>)| {
+                let service = create_text_service.clone();
+                async move {
+                    service
+                        .create_text(&root_id, &rel_path, content.as_deref())
+                        .await
+                        .map_err(map_fs_error)
+                }
+            },
+        )?,
+    )?;
+
+    let mkdir_service = fs_service.clone();
+    fs_table.set(
+        "mkdir",
+        lua.create_async_function(move |_lua, (root_id, rel_path): (String, String)| {
+            let service = mkdir_service.clone();
+            async move { service.mkdir(&root_id, &rel_path).await.map_err(map_fs_error) }
+        })?,
+    )?;
+
+    let rename_service = fs_service.clone();
+    fs_table.set(
+        "rename",
+        lua.create_async_function(
+            move |_lua, (root_id, from_path, to_path): (String, String, String)| {
+                let service = rename_service.clone();
+                async move {
+                    service
+                        .rename(&root_id, &from_path, &to_path)
+                        .await
+                        .map_err(map_fs_error)
+                }
+            },
+        )?,
+    )?;
+
+    let delete_service = fs_service.clone();
+    fs_table.set(
+        "delete",
+        lua.create_async_function(move |_lua, (root_id, rel_path): (String, String)| {
+            let service = delete_service.clone();
+            async move { service.delete(&root_id, &rel_path).await.map_err(map_fs_error) }
+        })?,
+    )?;
+
+    let upload_service = fs_service.clone();
+    fs_table.set(
+        "write_upload",
+        lua.create_async_function(
+            move |_lua, (root_id, rel_path, content): (String, String, mlua::String)| {
+                let service = upload_service.clone();
+                async move {
+                    service
+                        .write_upload(&root_id, &rel_path, content.as_bytes().as_ref())
+                        .await
+                        .map_err(map_fs_error)
+                }
+            },
+        )?,
+    )?;
+
+    let download_service = fs_service.clone();
+    fs_table.set(
+        "prepare_download",
+        lua.create_async_function(move |lua, (root_id, rel_path): (String, String)| {
+            let service = download_service.clone();
+            async move {
+                let ticket = service
+                    .prepare_download(&root_id, &rel_path)
+                    .await
+                    .map_err(map_fs_error)?;
+                lua.to_value(&ticket)
+            }
+        })?,
+    )?;
+
+    sushi.set("fs", fs_table)?;
     Ok(())
 }
 
