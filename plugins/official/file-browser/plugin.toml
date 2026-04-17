@@ -40,19 +40,35 @@ text_extensions = [
 ]
 
 # Configure one or more roots in deployment environments.
-#
-# [[file_browser.roots]]
-# id = "docs"
-# title = "Documents"
-# path = "/srv/docs"
-#
-# [file_browser.roots.capabilities]
-# can_list = true
-# can_view_text = true
-# can_edit_text = true
-# can_create_text = true
-# can_create_dir = true
-# can_rename = true
-# can_delete = true
-# can_upload = true
-# can_download = true
+
+[[file_browser.roots]]
+id = "docs"
+title = "Documents"
+path = "/Users/andy/Workspace/httpshared"
+
+[file_browser.roots.capabilities]
+can_list = true
+can_view_text = true
+can_edit_text = true
+can_create_text = true
+can_create_dir = true
+can_rename = true
+can_delete = true
+can_upload = true
+can_download = true
+
+[[file_browser.roots]]
+id = "temp"
+title = "Temporary Documents"
+path = "/Users/andy/Workspace/temp"
+
+[file_browser.roots.capabilities]
+can_list = true
+can_view_text = true
+can_edit_text = true
+can_create_text = true
+can_create_dir = true
+can_rename = true
+can_delete = true
+can_upload = true
+can_download = true
