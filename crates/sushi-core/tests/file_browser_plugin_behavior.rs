@@ -133,6 +133,7 @@ async fn file_browser_public_routes_support_core_operations() {
     assert!(html.contains("ctx-upload"));
     assert!(html.contains("quick-create-text"));
     assert!(html.contains("data-fb-toolbar=\"1\""));
+    assert!(!html.contains("x-text=\"relPath === '' ? '/' : relPath\""));
     assert!(!html.contains("@submit.prevent=\"uploadFile($event)\""));
 
     let create_dir_body = b"root_id=docs&parent_path=&name=notes".to_vec();
@@ -220,6 +221,10 @@ async fn file_browser_public_routes_support_core_operations() {
     assert!(
         frontend_script.contains("ctx-upload"),
         "file browser frontend should expose context-menu upload action"
+    );
+    assert!(
+        frontend_script.contains("select-dir"),
+        "file browser frontend should support row-click directory selection action"
     );
     assert!(
         frontend_script.contains("rotate-90"),

@@ -93,6 +93,9 @@
           if (action === "noop") {
             event.preventDefault();
             return;
+          } else if (action === "select-dir") {
+            event.preventDefault();
+            this.selectDirectory(path);
           } else if (action === "toggle-dir") {
             event.preventDefault();
             this.toggleDirectory(path);
@@ -479,6 +482,30 @@
           await this.expandDirectory(normalizedPath, true, true);
         }
 
+        this.relPath = normalizedPath;
+        this.activePath = normalizedPath;
+        this.syncActiveNode();
+      },
+
+      async selectDirectory(path) {
+        const normalizedPath = normalizePath(path || "");
+        if (!normalizedPath) {
+          await this.focusDirectory("");
+          return;
+        }
+
+        const isExpanded = this.expandedDirs[normalizedPath] === true;
+        const isActive = normalizePath(this.activePath || "") === normalizedPath;
+        if (isExpanded && isActive) {
+          this.collapseDirectory(normalizedPath);
+          this.relPath = normalizedPath;
+          this.activePath = normalizedPath;
+          this.syncActiveNode();
+          return;
+        }
+
+        this.expandedDirs[normalizedPath] = true;
+        await this.expandDirectory(normalizedPath, true, true);
         this.relPath = normalizedPath;
         this.activePath = normalizedPath;
         this.syncActiveNode();
