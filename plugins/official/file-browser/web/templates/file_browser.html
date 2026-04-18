@@ -64,51 +64,57 @@
             </div>
             <div class="min-h-0 flex flex-1 flex-col">
           <div class="space-y-2 border-b border-slate-300 px-3 py-2.5">
-            <div class="flex items-center gap-1 overflow-x-auto">
+            <div class="flex items-center gap-0.5 overflow-x-auto rounded-md border border-slate-300/90 bg-[#eceff4] px-1 py-1" data-fb-toolbar="1">
               {% if root and root.capabilities and root.capabilities.can_create_text %}
               <button
                 type="button"
-                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded text-[13px] text-slate-600 transition hover:bg-[#d7dce5] hover:text-slate-900"
                 title="New text file"
+                aria-label="New text file"
                 data-fb-action="quick-create-text"
               >📄+</button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_create_dir %}
               <button
                 type="button"
-                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded text-[13px] text-slate-600 transition hover:bg-[#d7dce5] hover:text-slate-900"
                 title="New folder"
+                aria-label="New folder"
                 data-fb-action="quick-create-dir"
               >📁+</button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_rename %}
               <button
                 type="button"
-                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded text-[13px] text-slate-600 transition hover:bg-[#d7dce5] hover:text-slate-900"
                 title="Rename selected node"
+                aria-label="Rename selected node"
                 data-fb-action="quick-rename"
               >✏️</button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_delete %}
               <button
                 type="button"
-                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-rose-700 hover:bg-rose-50"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded text-[13px] text-rose-700 transition hover:bg-rose-100"
                 title="Delete selected node"
+                aria-label="Delete selected node"
                 data-fb-action="quick-delete"
               >🗑️</button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_upload %}
               <button
                 type="button"
-                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded text-[13px] text-slate-600 transition hover:bg-[#d7dce5] hover:text-slate-900"
                 title="Upload to current folder"
+                aria-label="Upload to current folder"
                 data-fb-action="quick-upload"
               >⤴️</button>
               {% endif %}
               <button
                 type="button"
-                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                class="ml-1 grid h-7 w-7 shrink-0 place-items-center rounded border-l border-slate-300 text-[13px] text-slate-600 transition hover:bg-[#d7dce5] hover:text-slate-900"
                 title="Refresh tree"
+                aria-label="Refresh tree"
                 data-fb-action="refresh-list"
               >🔄</button>
             </div>
