@@ -415,9 +415,6 @@
           return;
         }
 
-        pathChain(this.relPath).forEach((dirPath) => {
-          this.expandedDirs[dirPath] = true;
-        });
         const activeParent = parentPath(this.activePath);
         pathChain(activeParent).forEach((dirPath) => {
           this.expandedDirs[dirPath] = true;
@@ -524,19 +521,14 @@
           : this.expandedDirs[normalizedPath] === true;
 
         if (isVisible) {
-          this.collapseDirectory(normalizedPath, actionEl);
+          this.clearExpandedSubtree(normalizedPath);
         } else {
           this.expandedDirs[normalizedPath] = true;
-          const expanded = await this.expandDirectory(normalizedPath, true, true, actionEl);
-          if (!expanded) {
-            await this.refreshList();
-            return;
-          }
         }
 
         this.relPath = normalizedPath;
         this.activePath = normalizedPath;
-        this.syncActiveNode();
+        await this.refreshList();
       },
 
       async selectDirectory(path) {
