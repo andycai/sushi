@@ -59,8 +59,17 @@
         <aside class="w-full border-b border-slate-300 bg-[#f3f3f3] lg:w-[404px] lg:border-b-0 lg:border-r">
           <div class="flex h-full min-h-0">
             <div class="hidden w-11 flex-col items-center gap-2 border-r border-slate-300 bg-[#e5e7eb] py-3 lg:flex">
-              <span class="rounded border border-slate-400 bg-[#d9dde3] px-1.5 py-1 text-[10px]">📂</span>
-              <span class="rounded border border-slate-300 bg-[#eef1f5] px-1.5 py-1 text-[10px] text-slate-500">🔎</span>
+              <span class="grid h-6 w-6 place-items-center rounded border border-slate-400 bg-[#d9dde3] text-slate-700">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M1.75 4.25h3.75l1.25 1.5h5.5v5.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>
+                </svg>
+              </span>
+              <span class="grid h-6 w-6 place-items-center rounded border border-slate-300 bg-[#eef1f5] text-slate-500">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <circle cx="6.25" cy="6.25" r="2.75"/>
+                  <path d="M8.5 8.5l2.75 2.75"/>
+                </svg>
+              </span>
             </div>
             <div class="min-h-0 flex flex-1 flex-col">
           <div class="space-y-2 border-b border-slate-300 px-3 py-2.5">
@@ -72,7 +81,14 @@
                 title="New text file"
                 aria-label="New text file"
                 data-fb-action="quick-create-text"
-              >📄+</button>
+              >
+                <svg class="h-4 w-4" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M4 1.75h3.25l2.5 2.5v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/>
+                  <path d="M7.25 1.75v2.5h2.5"/>
+                  <path d="M5.5 7.25h2.5"/>
+                  <path d="M6.75 6v2.5"/>
+                </svg>
+              </button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_create_dir %}
               <button
@@ -81,7 +97,13 @@
                 title="New folder"
                 aria-label="New folder"
                 data-fb-action="quick-create-dir"
-              >📁+</button>
+              >
+                <svg class="h-4 w-4" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M1.75 4.25h3.75l1.25 1.5h5.5v5.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>
+                  <path d="M7.75 8h2.5"/>
+                  <path d="M9 6.75v2.5"/>
+                </svg>
+              </button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_rename %}
               <button
@@ -90,7 +112,12 @@
                 title="Rename selected node"
                 aria-label="Rename selected node"
                 data-fb-action="quick-rename"
-              >✏️</button>
+              >
+                <svg class="h-4 w-4" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M3 11l2.25-.5 4.75-4.75a1 1 0 0 0 0-1.5l-.5-.5a1 1 0 0 0-1.5 0L3.25 8.5z"/>
+                  <path d="M7.5 4.5l2 2"/>
+                </svg>
+              </button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_delete %}
               <button
@@ -99,7 +126,15 @@
                 title="Delete selected node"
                 aria-label="Delete selected node"
                 data-fb-action="quick-delete"
-              >🗑️</button>
+              >
+                <svg class="h-4 w-4" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M3.25 4.5h7.5"/>
+                  <path d="M5 4.5v-1a.75.75 0 0 1 .75-.75h2.5A.75.75 0 0 1 9 3.5v1"/>
+                  <path d="M4.25 4.5l.5 6.75a1 1 0 0 0 1 .75h2.5a1 1 0 0 0 1-.75l.5-6.75"/>
+                  <path d="M6 6.25v4"/>
+                  <path d="M8 6.25v4"/>
+                </svg>
+              </button>
               {% endif %}
               {% if root and root.capabilities and root.capabilities.can_upload %}
               <button
@@ -108,7 +143,13 @@
                 title="Upload to current folder"
                 aria-label="Upload to current folder"
                 data-fb-action="quick-upload"
-              >⤴️</button>
+              >
+                <svg class="h-4 w-4" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M7 9.5v-5"/>
+                  <path d="M5 6.5l2-2 2 2"/>
+                  <path d="M2.75 9.5v1.75a1 1 0 0 0 1 1h6.5a1 1 0 0 0 1-1V9.5"/>
+                </svg>
+              </button>
               {% endif %}
               <button
                 type="button"
@@ -116,7 +157,12 @@
                 title="Refresh tree"
                 aria-label="Refresh tree"
                 data-fb-action="refresh-list"
-              >🔄</button>
+              >
+                <svg class="h-4 w-4" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M11.25 6.25A4.25 4.25 0 1 0 7 11.25"/>
+                  <path d="M10.25 3.5v2.75H7.5"/>
+                </svg>
+              </button>
             </div>
             <p class="fb-code-font truncate rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700" x-text="relPath === '' ? '/' : relPath"></p>
           </div>
