@@ -2045,6 +2045,30 @@ async fn workspace_users_module_loads_for_authenticated_admin() {
 }
 
 #[tokio::test]
+async fn workspace_cms_module_loads_for_authenticated_admin() {
+    let app = build_app_with_plugin_admin_page("/admin/cms").await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/cms")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("CMS workspace"), "html: {html}");
+}
+
+#[tokio::test]
 async fn workspace_unknown_module_returns_not_found() {
     let app = build_app(None).await;
     let token = admin_bearer_token();
