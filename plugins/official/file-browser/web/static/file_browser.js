@@ -128,6 +128,21 @@
             event.preventDefault();
             this.closeContextMenu();
             this.promptUploadToContext();
+          } else if (action === "quick-create-text") {
+            event.preventDefault();
+            this.triggerQuickCreateText();
+          } else if (action === "quick-create-dir") {
+            event.preventDefault();
+            this.triggerQuickCreateDir();
+          } else if (action === "quick-rename") {
+            event.preventDefault();
+            this.triggerQuickRename();
+          } else if (action === "quick-delete") {
+            event.preventDefault();
+            this.triggerQuickDelete();
+          } else if (action === "quick-upload") {
+            event.preventDefault();
+            this.triggerQuickUpload();
           }
         });
 
@@ -199,6 +214,20 @@
         return null;
       },
 
+      findNodeByPath(path) {
+        const normalizedPath = normalizePath(path || "");
+        if (!normalizedPath) {
+          return null;
+        }
+        const nodes = document.querySelectorAll("[data-fb-node='1'][data-path]");
+        for (const node of nodes) {
+          if ((node.getAttribute("data-path") || "") === normalizedPath) {
+            return node;
+          }
+        }
+        return null;
+      },
+
       findChildrenContainer(path) {
         return this.findByData("data-fb-children-for", path);
       },
@@ -244,6 +273,10 @@
         }
       },
 
+      showActionError(message) {
+        this.showFlash(`<div class="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">${message}</div>`);
+      },
+
       can(capabilityKey) {
         return this.capabilities[capabilityKey] === true;
       },
@@ -276,6 +309,23 @@
           return;
         }
         menu.classList.add("hidden");
+      },
+
+      resolveCurrentDirectoryPath() {
+        const active = normalizePath(this.activePath || "");
+        if (!active) {
+          return normalizePath(this.relPath || "");
+        }
+
+        const node = this.findNodeByPath(active);
+        const kind = node ? (node.getAttribute("data-kind") || "") : "";
+        if (kind === "dir") {
+          return active;
+        }
+        if (kind === "file") {
+          return parentPath(active);
+        }
+        return normalizePath(this.relPath || "");
       },
 
       openContextMenu(path, x, y) {
@@ -680,6 +730,41 @@
         const file = input.files[0];
         input.value = "";
         this.uploadFileToDirectory(file, targetPath);
+      },
+
+      triggerQuickCreateText() {
+        this.contextPath = this.resolveCurrentDirectoryPath();
+        this.promptCreateText();
+      },
+
+      triggerQuickCreateDir() {
+        this.contextPath = this.resolveCurrentDirectoryPath();
+        this.promptCreateDir();
+      },
+
+      triggerQuickRename() {
+        const targetPath = normalizePath(this.activePath || "");
+        if (!targetPath) {
+          this.showActionError("Select a file or folder first");
+          return;
+        }
+        this.contextPath = targetPath;
+        this.promptRename();
+      },
+
+      triggerQuickDelete() {
+        const targetPath = normalizePath(this.activePath || "");
+        if (!targetPath) {
+          this.showActionError("Select a file or folder first");
+          return;
+        }
+        this.contextPath = targetPath;
+        this.promptDelete();
+      },
+
+      triggerQuickUpload() {
+        this.contextPath = this.resolveCurrentDirectoryPath();
+        this.promptUploadToContext();
       },
 
       async createText(event) {

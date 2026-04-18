@@ -62,10 +62,57 @@
               <span class="rounded border border-slate-400 bg-[#d9dde3] px-1.5 py-1 text-[10px]">📂</span>
               <span class="rounded border border-slate-300 bg-[#eef1f5] px-1.5 py-1 text-[10px] text-slate-500">🔎</span>
             </div>
-            <div class="min-h-0 flex-1">
-          <div class="border-b border-slate-300 px-4 py-3">
-            <p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Explorer</p>
-            <p class="fb-code-font mt-1 truncate rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700" x-text="relPath === '' ? '/' : relPath"></p>
+            <div class="min-h-0 flex flex-1 flex-col">
+          <div class="space-y-2 border-b border-slate-300 px-3 py-2.5">
+            <div class="flex items-center gap-1 overflow-x-auto">
+              {% if root and root.capabilities and root.capabilities.can_create_text %}
+              <button
+                type="button"
+                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                title="New text file"
+                data-fb-action="quick-create-text"
+              >📄+</button>
+              {% endif %}
+              {% if root and root.capabilities and root.capabilities.can_create_dir %}
+              <button
+                type="button"
+                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                title="New folder"
+                data-fb-action="quick-create-dir"
+              >📁+</button>
+              {% endif %}
+              {% if root and root.capabilities and root.capabilities.can_rename %}
+              <button
+                type="button"
+                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                title="Rename selected node"
+                data-fb-action="quick-rename"
+              >✏️</button>
+              {% endif %}
+              {% if root and root.capabilities and root.capabilities.can_delete %}
+              <button
+                type="button"
+                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-rose-700 hover:bg-rose-50"
+                title="Delete selected node"
+                data-fb-action="quick-delete"
+              >🗑️</button>
+              {% endif %}
+              {% if root and root.capabilities and root.capabilities.can_upload %}
+              <button
+                type="button"
+                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                title="Upload to current folder"
+                data-fb-action="quick-upload"
+              >⤴️</button>
+              {% endif %}
+              <button
+                type="button"
+                class="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100"
+                title="Refresh tree"
+                data-fb-action="refresh-list"
+              >🔄</button>
+            </div>
+            <p class="fb-code-font truncate rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700" x-text="relPath === '' ? '/' : relPath"></p>
           </div>
 
           <div id="fb-list" class="min-h-0 flex-1 overflow-y-auto">
@@ -76,7 +123,7 @@
             <div class="rounded border border-slate-300 bg-white px-3 py-2.5">
               <p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">Explorer Actions</p>
               <p class="mt-1 text-xs leading-5 text-slate-500">
-                Right click a folder in Explorer to create files/folders, rename, delete, or upload files (subject to root permissions).
+                Right click a folder in tree to create files/folders, rename, delete, or upload files (subject to root permissions).
               </p>
             </div>
           </div>
