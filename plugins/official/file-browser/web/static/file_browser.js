@@ -590,8 +590,17 @@
       },
 
       switchRoot() {
-        const query = toQuery({ root: this.rootId || "", path: this.relPath || "" });
-        window.location.href = `${this.routePrefix}?${query}`;
+        this.relPath = "";
+        this.activePath = "";
+        this.contextPath = "";
+        this.expandedDirs = {};
+
+        const query = new URLSearchParams();
+        if (this.rootId) {
+          query.set("root", this.rootId);
+        }
+        const suffix = query.toString();
+        window.location.href = suffix ? `${this.routePrefix}?${suffix}` : this.routePrefix;
       },
 
       breadcrumbs() {

@@ -224,6 +224,14 @@ async fn file_browser_public_routes_support_core_operations() {
         "file browser frontend should expose context-menu upload action"
     );
     assert!(
+        frontend_script.contains("query.set(\"root\", this.rootId)"),
+        "root switch should include selected root in query"
+    );
+    assert!(
+        !frontend_script.contains("path: this.relPath || \"\""),
+        "root switch should not carry previous root path into another root"
+    );
+    assert!(
         frontend_script.contains("select-dir"),
         "file browser frontend should support row-click directory selection action"
     );
