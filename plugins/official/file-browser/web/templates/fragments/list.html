@@ -8,7 +8,7 @@
     <li>
       {% if item.is_dir %}
       <div class="group">
-        <div class="flex items-center justify-between rounded-sm border-l-2 border-transparent px-2 py-1.5 transition-colors hover:bg-[#e5e9f1]" data-fb-node="1" data-kind="dir" data-path="{{ item.path }}" data-fb-action="select-dir">
+        <div class="flex items-center justify-between rounded-sm border-l-2 border-transparent px-2 py-1.5 transition-colors hover:bg-[#e5e9f1]" data-fb-node="1" data-kind="dir" data-path="{{ item.path }}" data-fb-action="toggle-dir">
           <div class="min-w-0 flex flex-1 items-center gap-1.5">
             <button
               type="button"
@@ -28,7 +28,7 @@
             <button
               type="button"
               class="min-w-0 flex flex-1 items-center gap-2 text-left text-slate-700"
-              data-fb-action="select-dir"
+              data-fb-action="toggle-dir"
               data-path="{{ item.path }}"
             >
               <span class="grid h-3.5 w-3.5 shrink-0 place-items-center text-slate-600">
