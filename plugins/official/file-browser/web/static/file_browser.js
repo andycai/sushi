@@ -495,8 +495,7 @@
         }
 
         const isExpanded = this.expandedDirs[normalizedPath] === true;
-        const isActive = normalizePath(this.activePath || "") === normalizedPath;
-        if (isExpanded && isActive) {
+        if (isExpanded) {
           this.collapseDirectory(normalizedPath);
           this.relPath = normalizedPath;
           this.activePath = normalizedPath;
