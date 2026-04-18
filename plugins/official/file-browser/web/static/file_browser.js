@@ -103,7 +103,7 @@
             this.selectDirectory(path);
           } else if (action === "toggle-dir") {
             event.preventDefault();
-            this.toggleDirectory(path);
+            this.toggleDirectory(path, actionEl);
           } else if (action === "open-dir") {
             event.preventDefault();
             this.focusDirectory(path);
@@ -243,6 +243,26 @@
 
       findChildrenContainer(path) {
         return this.findByData("data-fb-children-for", path);
+      },
+
+      resolveChildrenContainer(path, actionEl) {
+        const byPath = this.findChildrenContainer(path);
+        if (byPath) {
+          return byPath;
+        }
+        if (!(actionEl instanceof Element)) {
+          return null;
+        }
+        const node = actionEl.closest("[data-fb-node='1'][data-kind='dir'][data-path]");
+        if (!node) {
+          return null;
+        }
+        const group = node.closest(".group");
+        if (!group) {
+          return null;
+        }
+        const fallback = group.querySelector("[data-fb-children-for]");
+        return fallback instanceof Element ? fallback : null;
       },
 
       findChevron(path) {
@@ -440,12 +460,12 @@
         return result.ok;
       },
 
-      async expandDirectory(path, trackState, shouldRestoreDescendants) {
+      async expandDirectory(path, trackState, shouldRestoreDescendants, actionEl) {
         const normalizedPath = normalizePath(path);
         if (!normalizedPath) {
           return false;
         }
-        const container = this.findChildrenContainer(normalizedPath);
+        const container = this.resolveChildrenContainer(normalizedPath, actionEl);
         if (!container) {
           return false;
         }
@@ -463,13 +483,13 @@
         return true;
       },
 
-      collapseDirectory(path) {
+      collapseDirectory(path, actionEl) {
         const normalizedPath = normalizePath(path);
         if (!normalizedPath) {
           return;
         }
 
-        const container = this.findChildrenContainer(normalizedPath);
+        const container = this.resolveChildrenContainer(normalizedPath, actionEl);
         if (container) {
           container.classList.add("hidden");
         }
@@ -478,7 +498,7 @@
         this.setDirectoryVisualState(normalizedPath, false, false);
       },
 
-      async toggleDirectory(path) {
+      async toggleDirectory(path, actionEl) {
         const normalizedPath = normalizePath(path);
         if (!normalizedPath) {
           return;
@@ -486,10 +506,10 @@
 
         const isExpanded = this.expandedDirs[normalizedPath] === true;
         if (isExpanded) {
-          this.collapseDirectory(normalizedPath);
+          this.collapseDirectory(normalizedPath, actionEl);
         } else {
           this.expandedDirs[normalizedPath] = true;
-          await this.expandDirectory(normalizedPath, true, true);
+          await this.expandDirectory(normalizedPath, true, true, actionEl);
         }
 
         this.relPath = normalizedPath;
