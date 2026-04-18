@@ -151,3 +151,25 @@ fn cms_admin_interface_exposes_workbench_handlers() {
     assert!(source.contains("cms_overview_template_fallback_marker"));
     assert!(source.contains("pcall(sushi.web.render, \"plugins/official/cms/fragments/overview_panel.html\", data)"));
 }
+
+#[test]
+fn cms_register_uses_v2_policy_key_shape_and_public_app_routes() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/bootstrap/register.lua"),
+    )
+    .expect("failed to read cms bootstrap register");
+
+    assert!(source.contains("policy = \"api.cms.read\""));
+    assert!(source.contains("policy = \"api.cms.write\""));
+    assert!(source.contains("policy = \"api.cms.delete\""));
+    assert!(!source.contains("api.cms.pages.read"));
+    assert!(!source.contains("api.cms.posts.read"));
+    assert!(!source.contains("api.cms.categories.read"));
+    assert!(!source.contains("api.cms.public.read"));
+    assert!(source.contains("/app/pages/*\", deps.api.public_page_detail, { public = true }"));
+    assert!(source.contains("/app/posts\", deps.api.public_post_list, { public = true }"));
+    assert!(source.contains("/app/posts/*\", deps.api.public_post_detail, { public = true }"));
+    assert!(source.contains(
+        "/app/categories/*\", deps.api.public_category_detail, { public = true }"
+    ));
+}

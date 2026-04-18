@@ -12,8 +12,10 @@ use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
+use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::manager::PageResolvedAssets;
+use sushi_core::plugin::Plugin;
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
 use sushi_core::web::template_service::TemplateService;
@@ -624,6 +626,103 @@ async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Route
 async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
     let (app, _ctx) = build_app_with_context(static_url_prefix).await;
     app
+}
+
+async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> axum::Router {
+    let templates_dir = templates_root();
+    let static_dir = static_root();
+    let plugins_dir = workspace_root().join("plugins");
+
+    let mut config = SushiConfig::default();
+    config.web.templates_dir = templates_dir.to_string_lossy().to_string();
+    config.web.static_dir = static_dir.to_string_lossy().to_string();
+    if let Some(prefix) = static_url_prefix {
+        config.web.static_url_prefix = prefix.to_string();
+    }
+
+    let config = ConfigStore::new(config);
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .run_migrations(KV_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 004_menu");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
+    storage
+        .run_migrations(CMS_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 007_cms");
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+
+    let mut plugins = LuaPlugin::scan_dir(&plugins_dir)
+        .await
+        .expect("failed to scan plugins")
+        .into_iter()
+        .filter(|plugin| plugin.name() == "cms")
+        .collect::<Vec<_>>();
+    assert_eq!(plugins.len(), 1, "expected exactly one cms plugin");
+
+    let cms_template_roots = plugins
+        .iter()
+        .filter_map(|plugin| {
+            let root = plugin.web_templates_dir();
+            if root.is_dir() {
+                Some((plugin.path_id().to_string(), root))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let templates = TemplateService::new_with_plugin_roots(&templates_dir, cms_template_roots)
+        .expect("failed to init template service");
+    let ctx = SushiContext::new(config, storage, jwt, templates);
+
+    for plugin in &plugins {
+        let static_root = plugin.web_static_dir();
+        if static_root.is_dir() {
+            ctx.plugins
+                .register_plugin_static_root(plugin.path_id(), static_root)
+                .await;
+        }
+    }
+
+    for plugin in plugins.drain(..) {
+        let plugin_name = plugin.name().to_string();
+        ctx.plugins
+            .register_plugin_manifest_with_permissions(plugin.manifest(), plugin.effective_permissions())
+            .await;
+        plugin
+            .init(&ctx)
+            .await
+            .unwrap_or_else(|err| panic!("failed to init cms plugin: {err}"));
+        if let Some(lua) = plugin.into_vm() {
+            ctx.plugins.register_vm(&plugin_name, lua).await;
+        }
+    }
+
+    refresh_admin_authorizer(&ctx).await;
+    build_admin_router(&ctx).await
 }
 
 async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Path) -> axum::Router {
@@ -2046,7 +2145,7 @@ async fn workspace_users_module_loads_for_authenticated_admin() {
 
 #[tokio::test]
 async fn workspace_cms_module_loads_for_authenticated_admin() {
-    let app = build_app_with_plugin_admin_page("/admin/cms").await;
+    let app = build_app_with_cms_plugin_loaded(None).await;
     let token = admin_bearer_token();
 
     let response = app
@@ -2065,7 +2164,11 @@ async fn workspace_cms_module_loads_for_authenticated_admin() {
         .await
         .expect("failed to read body");
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("CMS workspace"), "html: {html}");
+    assert!(
+        html.contains("data-admin-workspace-module=\"cms\""),
+        "html: {html}"
+    );
+    assert!(html.contains("data-cms-top-nav"), "html: {html}");
 }
 
 #[tokio::test]
