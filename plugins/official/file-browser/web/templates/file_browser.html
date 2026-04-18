@@ -215,19 +215,56 @@
       <div id="fb-context-path" class="fb-code-font truncate border-b border-slate-300 bg-[#ebedf1] px-2.5 py-1.5 text-[11px] text-slate-600">/</div>
       <div class="p-1.5">
         {% if root and root.capabilities and root.capabilities.can_create_text %}
-        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-create-text">New Text File...</button>
+        <button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-create-text">
+          <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+            <path d="M4 1.75h3.25l2.5 2.5v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/>
+            <path d="M7.25 1.75v2.5h2.5"/>
+            <path d="M5.5 7.25h2.5"/>
+            <path d="M6.75 6v2.5"/>
+          </svg>
+          <span>New Text File...</span>
+        </button>
         {% endif %}
         {% if root and root.capabilities and root.capabilities.can_create_dir %}
-        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-create-dir">New Folder...</button>
+        <button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-create-dir">
+          <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+            <path d="M1.75 4.25h3.75l1.25 1.5h5.5v5.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>
+            <path d="M7.75 8h2.5"/>
+            <path d="M9 6.75v2.5"/>
+          </svg>
+          <span>New Folder...</span>
+        </button>
         {% endif %}
         {% if root and root.capabilities and root.capabilities.can_rename %}
-        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-rename">Rename...</button>
+        <button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-rename">
+          <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+            <path d="M3 11l2.25-.5 4.75-4.75a1 1 0 0 0 0-1.5l-.5-.5a1 1 0 0 0-1.5 0L3.25 8.5z"/>
+            <path d="M7.5 4.5l2 2"/>
+          </svg>
+          <span>Rename...</span>
+        </button>
         {% endif %}
         {% if root and root.capabilities and root.capabilities.can_delete %}
-        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-100" data-fb-action="ctx-delete">Delete</button>
+        <button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-rose-700 hover:bg-rose-100" data-fb-action="ctx-delete">
+          <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+            <path d="M3.25 4.5h7.5"/>
+            <path d="M5 4.5v-1a.75.75 0 0 1 .75-.75h2.5A.75.75 0 0 1 9 3.5v1"/>
+            <path d="M4.25 4.5l.5 6.75a1 1 0 0 0 1 .75h2.5a1 1 0 0 0 1-.75l.5-6.75"/>
+            <path d="M6 6.25v4"/>
+            <path d="M8 6.25v4"/>
+          </svg>
+          <span>Delete</span>
+        </button>
         {% endif %}
         {% if root and root.capabilities and root.capabilities.can_upload %}
-        <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-upload">Upload File...</button>
+        <button type="button" class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-200" data-fb-action="ctx-upload">
+          <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+            <path d="M7 9.5v-5"/>
+            <path d="M5 6.5l2-2 2 2"/>
+            <path d="M2.75 9.5v1.75a1 1 0 0 0 1 1h6.5a1 1 0 0 0 1-1V9.5"/>
+          </svg>
+          <span>Upload File...</span>
+        </button>
         {% endif %}
       </div>
     </div>
