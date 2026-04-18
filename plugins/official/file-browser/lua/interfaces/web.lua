@@ -126,6 +126,7 @@ function M.new(deps)
 
         return sushi.web.render("plugins/official/file-browser/file_browser.html", {
             route_prefix = browser.route_prefix(),
+            asset_version = tostring(os.time()),
             roots = roots,
             has_roots = #roots > 0,
             root = root,
