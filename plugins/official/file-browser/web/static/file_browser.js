@@ -227,6 +227,18 @@
         return null;
       },
 
+      findByDataPath(attribute, path) {
+        const normalizedPath = normalizePath(path || "");
+        const nodes = document.querySelectorAll(`[${attribute}]`);
+        for (const node of nodes) {
+          const nodePath = normalizePath(node.getAttribute(attribute) || "");
+          if (nodePath === normalizedPath) {
+            return node;
+          }
+        }
+        return null;
+      },
+
       findNodeByPath(path) {
         const normalizedPath = normalizePath(path || "");
         if (!normalizedPath) {
@@ -242,7 +254,7 @@
       },
 
       findChildrenContainer(path) {
-        return this.findByData("data-fb-children-for", path);
+        return this.findByDataPath("data-fb-children-for", path);
       },
 
       resolveChildrenContainer(path, actionEl) {
@@ -266,13 +278,15 @@
       },
 
       findChevron(path) {
-        return this.findByData("data-fb-chevron", path);
+        return this.findByDataPath("data-fb-chevron", path);
       },
 
       findToggle(path) {
+        const normalizedPath = normalizePath(path || "");
         const buttons = document.querySelectorAll("[data-fb-action='toggle-dir'][data-path]");
         for (const button of buttons) {
-          if ((button.getAttribute("data-path") || "") === path) {
+          const buttonPath = normalizePath(button.getAttribute("data-path") || "");
+          if (buttonPath === normalizedPath) {
             return button;
           }
         }
@@ -504,12 +518,20 @@
           return;
         }
 
-        const isExpanded = this.expandedDirs[normalizedPath] === true;
-        if (isExpanded) {
+        const container = this.resolveChildrenContainer(normalizedPath, actionEl);
+        const isVisible = container
+          ? !container.classList.contains("hidden")
+          : this.expandedDirs[normalizedPath] === true;
+
+        if (isVisible) {
           this.collapseDirectory(normalizedPath, actionEl);
         } else {
           this.expandedDirs[normalizedPath] = true;
-          await this.expandDirectory(normalizedPath, true, true, actionEl);
+          const expanded = await this.expandDirectory(normalizedPath, true, true, actionEl);
+          if (!expanded) {
+            await this.refreshList();
+            return;
+          }
         }
 
         this.relPath = normalizedPath;
