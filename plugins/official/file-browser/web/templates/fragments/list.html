@@ -27,7 +27,11 @@
               data-fb-action="open-dir"
               data-path="{{ item.path }}"
             >
-              <span class="shrink-0 text-[11px]">📁</span>
+              <span class="grid h-3.5 w-3.5 shrink-0 place-items-center text-slate-600">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <path d="M1.75 4.25h3.75l1.25 1.5h5.5v5.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>
+                </svg>
+              </span>
               <span class="truncate text-sm text-slate-800">{{ item.name }}</span>
             </button>
           </div>
@@ -46,7 +50,12 @@
           data-fb-action="{% if root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}"
           data-path="{{ item.path }}"
         >
-          <span class="ml-6 shrink-0 text-[11px]">📄</span>
+          <span class="ml-6 grid h-3.5 w-3.5 shrink-0 place-items-center text-slate-600">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+              <path d="M4 1.75h3.25l2.5 2.5v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/>
+              <path d="M7.25 1.75v2.5h2.5"/>
+            </svg>
+          </span>
           <span class="truncate text-sm text-slate-800">{{ item.name }}</span>
         </button>
         <div class="ml-3 flex shrink-0 items-center gap-1">
