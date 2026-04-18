@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-04-18)
 
 ## Corpus Check
-- 114 files · ~133,925 words
+- 114 files · ~133,981 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1775 nodes · 3778 edges · 102 communities detected
+- 1776 nodes · 3781 edges · 102 communities detected
 - Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 260 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -148,24 +148,24 @@
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.02
-Nodes (154): _(), A(), ai(), an(), ao(), ar(), At(), be() (+146 more)
+Cohesion: 0.03
+Nodes (156): _(), A(), ae(), ai(), an(), ao(), ar(), At() (+148 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (83): ae(), init(), closeDeleteConfirm(), closeModal(), isErrorFeedback(), isSuccessfulKvRequest(), notifyFeedback(), onDeleteAfterRequest() (+75 more)
+Nodes (81): init(), closeDeleteConfirm(), closeModal(), isErrorFeedback(), isSuccessfulKvRequest(), notifyFeedback(), onDeleteAfterRequest(), onUpsertAfterRequest() (+73 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.05
-Nodes (113): D(), ownKeys(), raw(), r(), $(), a(), add(), addKeyframes() (+105 more)
+Nodes (111): ownKeys(), raw(), $(), a(), add(), addKeyframes(), ae(), Ar() (+103 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.1
-Nodes (104): closest(), $(), a(), Ae(), an(), at(), B(), be() (+96 more)
+Cohesion: 0.09
+Nodes (106): closest(), $(), a(), Ae(), an(), at(), B(), be() (+98 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.07
-Nodes (73): admin_bearer_token(), admin_can_crud_permissions_via_partials(), admin_can_crud_roles_and_assign_permissions(), admin_cms_category_delete_returns_flash_on_conflict(), admin_cms_template_uses_top_nav_and_panel_mounts(), admin_cms_workspace_page_renders(), admin_http_bindings(), admin_prefix_is_rejected_for_static() (+65 more)
+Nodes (74): admin_bearer_token(), admin_can_crud_permissions_via_partials(), admin_can_crud_roles_and_assign_permissions(), admin_cms_category_delete_returns_flash_on_conflict(), admin_cms_template_uses_top_nav_and_panel_mounts(), admin_cms_workspace_page_renders(), admin_http_bindings(), admin_prefix_is_rejected_for_static() (+66 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.06
@@ -493,11 +493,11 @@ Nodes (0):
 
 ### Community 86 - "Community 86"
 Cohesion: 1.0
-Nodes (2): Su Shi (苏轼) - Project Namesake, Sushi Platform
+Nodes (2): Database Migration Tables, RBAC Data Model (SQL)
 
 ### Community 87 - "Community 87"
 Cohesion: 1.0
-Nodes (2): Database Migration Tables, RBAC Data Model (SQL)
+Nodes (2): Su Shi (苏轼) - Project Namesake, Sushi Platform
 
 ### Community 88 - "Community 88"
 Cohesion: 1.0
@@ -572,9 +572,9 @@ Nodes (0):
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 85`** (2 nodes): `M.new()`, `page.lua`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (2 nodes): `Su Shi (苏轼) - Project Namesake`, `Sushi Platform`
+- **Thin community `Community 86`** (2 nodes): `Database Migration Tables`, `RBAC Data Model (SQL)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (2 nodes): `Database Migration Tables`, `RBAC Data Model (SQL)`
+- **Thin community `Community 87`** (2 nodes): `Su Shi (苏轼) - Project Namesake`, `Sushi Platform`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 88`** (2 nodes): `Sushi Favicon Su Shi Minimal Ink Design`, `Su Shi Minimal Ink Favicon Implementation Plan`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -609,16 +609,16 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `add()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 18`, `Community 26`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
-- **Why does `v()` connect `Community 3` to `Community 1`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Why does `ae()` connect `Community 0` to `Community 1`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Why does `dismissToast()` connect `Community 1` to `Community 2`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `He()` (e.g. with `set()` and `keys()`) actually correct?**
   _`He()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
   _119 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.02 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.03 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
   _Cohesion score 0.02 - nodes in this community are weakly interconnected._
