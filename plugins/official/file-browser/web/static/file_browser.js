@@ -526,14 +526,18 @@
           : this.expandedDirs[normalizedPath] === true;
 
         if (isVisible) {
-          this.clearExpandedSubtree(normalizedPath);
+          this.collapseDirectory(normalizedPath, actionEl);
         } else {
-          this.expandedDirs[normalizedPath] = true;
+          const expanded = await this.expandDirectory(normalizedPath, true, true, actionEl);
+          if (!expanded) {
+            await this.refreshList();
+            return;
+          }
         }
 
         this.relPath = normalizedPath;
         this.activePath = normalizedPath;
-        await this.refreshList();
+        this.syncActiveNode();
       },
 
       async selectDirectory(path) {
