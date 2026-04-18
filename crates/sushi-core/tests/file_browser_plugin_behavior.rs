@@ -130,6 +130,8 @@ async fn file_browser_public_routes_support_core_operations() {
     assert!(html.contains("Official File Browser"));
     assert!(html.contains("fb-context-menu"));
     assert!(html.contains("Right click a folder in Explorer"));
+    assert!(html.contains("ctx-upload"));
+    assert!(!html.contains("@submit.prevent=\"uploadFile($event)\""));
 
     let create_dir_body = b"root_id=docs&parent_path=&name=notes".to_vec();
     let flash = dispatch(
@@ -212,6 +214,10 @@ async fn file_browser_public_routes_support_core_operations() {
     assert!(
         frontend_script.contains("ctx-create-dir"),
         "file browser frontend should handle explorer context-menu actions"
+    );
+    assert!(
+        frontend_script.contains("ctx-upload"),
+        "file browser frontend should expose context-menu upload action"
     );
 
     let saved = std::fs::read_to_string(docs_root.join("notes").join("todo.txt"))

@@ -124,6 +124,10 @@
             event.preventDefault();
             this.closeContextMenu();
             this.promptDelete();
+          } else if (action === "ctx-upload") {
+            event.preventDefault();
+            this.closeContextMenu();
+            this.promptUploadToContext();
           }
         });
 
@@ -150,6 +154,17 @@
             event.preventDefault();
             this.saveText(form);
           }
+        });
+
+        document.addEventListener("change", (event) => {
+          const input = event.target;
+          if (!(input instanceof HTMLInputElement)) {
+            return;
+          }
+          if (input.id !== "fb-context-upload-input") {
+            return;
+          }
+          this.handleContextUploadInput(input);
         });
 
         document.addEventListener("keydown", (event) => {
@@ -239,6 +254,10 @@
 
       contextMenu() {
         return q("#fb-context-menu");
+      },
+
+      contextUploadInput() {
+        return q("#fb-context-upload-input");
       },
 
       isContextMenuOpen() {
@@ -557,6 +576,32 @@
         }
       },
 
+      async uploadFileToDirectory(file, dirPath) {
+        if (!file) {
+          return;
+        }
+        const normalizedDir = normalizePath(dirPath || "");
+        const bytes = await file.arrayBuffer();
+        const query = toQuery({ dir: normalizedDir, name: file.name || "upload.bin" });
+        const url = `${this.routePrefix}/upload/${encodeURIComponent(this.rootId)}?${query}`;
+
+        const result = await fetchText(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: bytes,
+        });
+
+        this.showFlash(result.text);
+        if (result.ok) {
+          this.relPath = normalizedDir;
+          this.activePath = normalizedDir;
+          pathChain(normalizedDir).forEach((entryPath) => {
+            this.expandedDirs[entryPath] = true;
+          });
+          await this.refreshList();
+        }
+      },
+
       promptCreateText() {
         if (!this.can("canCreateText")) {
           return;
@@ -612,6 +657,31 @@
         this.deletePath(targetPath);
       },
 
+      promptUploadToContext() {
+        if (!this.can("canUpload")) {
+          return;
+        }
+        const input = this.contextUploadInput();
+        if (!(input instanceof HTMLInputElement)) {
+          return;
+        }
+        input.value = "";
+        input.click();
+      },
+
+      handleContextUploadInput(input) {
+        if (!(input instanceof HTMLInputElement)) {
+          return;
+        }
+        if (!input.files || input.files.length === 0) {
+          return;
+        }
+        const targetPath = this.contextPath || this.relPath || "";
+        const file = input.files[0];
+        input.value = "";
+        this.uploadFileToDirectory(file, targetPath);
+      },
+
       async createText(event) {
         const form = event.target;
         const formData = new FormData(form);
@@ -661,31 +731,6 @@
         const form = document.querySelector("#fb-editor form[data-fb-action='save-form']");
         if (form instanceof HTMLFormElement) {
           this.saveText(form);
-        }
-      },
-
-      async uploadFile(event) {
-        const form = event.target;
-        const input = form.querySelector("input[type='file']");
-        if (!input || !input.files || input.files.length === 0) {
-          return;
-        }
-
-        const file = input.files[0];
-        const bytes = await file.arrayBuffer();
-        const query = toQuery({ dir: this.relPath || "", name: file.name || "upload.bin" });
-        const url = `${this.routePrefix}/upload/${encodeURIComponent(this.rootId)}?${query}`;
-
-        const result = await fetchText(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: bytes,
-        });
-
-        this.showFlash(result.text);
-        if (result.ok) {
-          form.reset();
-          this.refreshList();
         }
       },
 
