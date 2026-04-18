@@ -221,6 +221,10 @@ async fn file_browser_public_routes_support_core_operations() {
         frontend_script.contains("ctx-upload"),
         "file browser frontend should expose context-menu upload action"
     );
+    assert!(
+        frontend_script.contains("rotate-90"),
+        "file browser frontend should rotate chevrons instead of text glyph swapping"
+    );
 
     let saved = std::fs::read_to_string(docs_root.join("notes").join("todo.txt"))
         .expect("read saved file");

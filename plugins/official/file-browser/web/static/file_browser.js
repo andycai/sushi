@@ -249,7 +249,9 @@
       setDirectoryVisualState(path, expanded, loading) {
         const chevron = this.findChevron(path);
         if (chevron) {
-          chevron.textContent = loading ? "..." : (expanded ? "▾" : "▸");
+          chevron.classList.toggle("rotate-90", expanded);
+          chevron.classList.toggle("opacity-50", loading);
+          chevron.classList.toggle("animate-pulse", loading);
         }
         const toggle = this.findToggle(path);
         if (toggle) {

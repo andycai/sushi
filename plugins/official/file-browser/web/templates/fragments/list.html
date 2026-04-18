@@ -19,7 +19,11 @@
               aria-expanded="false"
               aria-busy="false"
             >
-              <span data-fb-chevron="{{ item.path }}">▸</span>
+              <span class="grid h-3.5 w-3.5 place-items-center transition-transform duration-150" data-fb-chevron="{{ item.path }}">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" aria-hidden="true">
+                  <path d="M5.25 3.5L8.75 7L5.25 10.5"/>
+                </svg>
+              </span>
             </button>
             <button
               type="button"
