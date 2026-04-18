@@ -79,9 +79,14 @@
 
       bindDelegatedEvents() {
         document.addEventListener("click", (event) => {
-          const actionEl = event.target.closest("[data-fb-action]");
+          const eventTarget = event.target instanceof Element ? event.target : event.target && event.target.parentElement;
+          if (!(eventTarget instanceof Element)) {
+            return;
+          }
+
+          const actionEl = eventTarget.closest("[data-fb-action]");
           if (!actionEl) {
-            if (!this.isContextMenuClick(event.target)) {
+            if (!this.isContextMenuClick(eventTarget)) {
               this.closeContextMenu();
             }
             return;
@@ -150,7 +155,12 @@
         });
 
         document.addEventListener("contextmenu", (event) => {
-          const node = event.target.closest("[data-fb-node='1'][data-kind='dir'][data-path]");
+          const eventTarget = event.target instanceof Element ? event.target : event.target && event.target.parentElement;
+          if (!(eventTarget instanceof Element)) {
+            return;
+          }
+
+          const node = eventTarget.closest("[data-fb-node='1'][data-kind='dir'][data-path]");
           if (!node || !this.hasContextActions()) {
             this.closeContextMenu();
             return;
