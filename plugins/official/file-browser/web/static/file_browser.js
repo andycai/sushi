@@ -66,12 +66,17 @@
       relPath: normalizePath(initial.relPath || ""),
       activePath: normalizePath(initial.relPath || ""),
       capabilities: initial.capabilities || {},
+      initialized: false,
       expandedDirs: {},
       listRequestId: 0,
       contextPath: "",
       activeNodeScrollPath: "",
 
       init() {
+        if (this.initialized) {
+          return;
+        }
+        this.initialized = true;
         this.seedExpandedDirs();
         this.bindDelegatedEvents();
         this.refreshList();
