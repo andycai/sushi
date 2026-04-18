@@ -836,9 +836,9 @@
         nodes.forEach((node) => {
           const path = node.getAttribute("data-path") || "";
           const selected = path === activePath;
-          node.classList.toggle("bg-blue-100", selected);
-          node.classList.toggle("border-l-2", selected);
-          node.classList.toggle("border-blue-500", selected);
+          node.classList.toggle("bg-[#dbe7ff]", selected);
+          node.classList.toggle("border-[#4f7cff]", selected);
+          node.classList.toggle("shadow-[inset_0_0_0_1px_rgba(79,124,255,0.18)]", selected);
           if (selected) {
             activeNode = node;
           }
