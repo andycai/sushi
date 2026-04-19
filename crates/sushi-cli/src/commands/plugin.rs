@@ -11,6 +11,27 @@ pub struct PluginArgs {
 pub enum PluginCommand {
     /// List all discovered plugins
     List,
+    /// Show plugin status
+    Status {
+        /// Plugin name (optional)
+        plugin: Option<String>,
+    },
+    /// Enable plugin runtime dispatch
+    Enable {
+        /// Plugin name
+        plugin: String,
+        /// Optional reason
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Disable plugin runtime dispatch
+    Disable {
+        /// Plugin name
+        plugin: String,
+        /// Optional reason
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
@@ -36,6 +57,57 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
             for page in &pages {
                 println!("  {}", page);
             }
+        }
+        PluginCommand::Status { plugin } => {
+            crate::commands::authorization::ensure_command_authorized(
+                &ctx,
+                role,
+                "plugin:status",
+            )
+            .await?;
+
+            let plugins = ctx.plugins.list_plugins().await;
+            for item in plugins.into_iter().filter(|p| {
+                plugin
+                    .as_ref()
+                    .map(|name| p.name == *name)
+                    .unwrap_or(true)
+            }) {
+                println!(
+                    "{}\t{}\tenabled={}\tloaded={}\tsource_kind={}",
+                    item.name, item.version, item.enabled, item.loaded, item.source_kind
+                );
+            }
+        }
+        PluginCommand::Enable { plugin, reason } => {
+            crate::commands::authorization::ensure_command_authorized(
+                &ctx,
+                role,
+                "plugin:enable",
+            )
+            .await?;
+
+            let state = ctx
+                .plugins
+                .set_plugin_enabled(&plugin, true, Some(role), reason.as_deref())
+                .await
+                .map_err(anyhow::Error::msg)?;
+            println!("enabled {} (loaded={})", state.name, state.loaded);
+        }
+        PluginCommand::Disable { plugin, reason } => {
+            crate::commands::authorization::ensure_command_authorized(
+                &ctx,
+                role,
+                "plugin:disable",
+            )
+            .await?;
+
+            let state = ctx
+                .plugins
+                .set_plugin_enabled(&plugin, false, Some(role), reason.as_deref())
+                .await
+                .map_err(anyhow::Error::msg)?;
+            println!("disabled {} (loaded={})", state.name, state.loaded);
         }
     }
     Ok(())
