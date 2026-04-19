@@ -40,3 +40,24 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(subcommand)]
+        command: PluginCommand,
+    }
+
+    #[test]
+    fn parse_enable_subcommand() {
+        let cli = TestCli::try_parse_from(["plugin", "enable", "kv-store"]).unwrap();
+        match cli.command {
+            PluginCommand::Enable { plugin, .. } => assert_eq!(plugin, "kv-store"),
+            _ => panic!("expected enable command"),
+        }
+    }
+}
