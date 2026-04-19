@@ -144,8 +144,7 @@ impl PluginStateRepository {
             .await?
             .ok_or_else(|| format!("plugin state row missing after update: {name}"))?;
 
-        let event_insert = self
-            .storage
+        self.storage
             .execute(
                 r#"
                 INSERT INTO plugin_state_events (
@@ -156,11 +155,12 @@ impl PluginStateRepository {
                     next_enabled,
                     reason
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                SELECT plugin_id, source_kind, ?2, ?3, ?4, ?5
+                FROM plugin_state
+                WHERE name = ?1
                 "#,
                 vec![
-                    Value::String(after.plugin_id.clone()),
-                    Value::String(after.source_kind.clone()),
+                    Value::String(name.to_string()),
                     Value::String(actor_value),
                     Value::Bool(before.enabled),
                     Value::Bool(after.enabled),
@@ -168,39 +168,9 @@ impl PluginStateRepository {
                 ],
             )
             .await
-            .map_err(|err| err.to_string());
-
-        if let Err(event_err) = event_insert {
-            let rollback_result = self
-                .storage
-                .execute(
-                    r#"
-                    UPDATE plugin_state
-                    SET enabled = ?2,
-                        updated_by = ?3,
-                        reason = ?4,
-                        updated_at = datetime('now')
-                    WHERE name = ?1
-                    "#,
-                    vec![
-                        Value::String(name.to_string()),
-                        Value::Bool(before.enabled),
-                        Value::String(before.updated_by.clone().unwrap_or_default()),
-                        Value::String(before.reason.clone()),
-                    ],
-                )
-                .await
-                .map_err(|err| err.to_string());
-
-            return match rollback_result {
-                Ok(()) => Err(format!(
-                    "failed to insert plugin_state_events row for {name}; state rolled back: {event_err}"
-                )),
-                Err(rollback_err) => Err(format!(
-                    "failed to insert plugin_state_events row for {name}; rollback failed: {rollback_err}; original error: {event_err}"
-                )),
-            };
-        }
+            .map_err(|err| {
+                format!("failed to insert plugin_state_events row for {name}: {err}")
+            })?;
 
         Ok(after)
     }
