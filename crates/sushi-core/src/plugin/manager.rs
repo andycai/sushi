@@ -673,9 +673,18 @@ impl PluginManager {
     async fn guard_plugin_enabled(&self, plugin_name: &str) -> Result<(), String> {
         if let Some(repo) = &self.state_repo {
             if let Some(state) = repo.get_by_name(plugin_name).await? {
+                let mut plugin_info = self.plugin_info.write().await;
+                if let Some(plugin) = plugin_info.get_mut(plugin_name) {
+                    plugin.plugin_id = state.plugin_id.clone();
+                    plugin.source_kind = state.source_kind.clone();
+                    plugin.enabled = state.enabled;
+                    plugin.loaded = state.loaded;
+                }
+
                 if !state.enabled {
                     return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
                 }
+                return Ok(());
             }
         }
 
