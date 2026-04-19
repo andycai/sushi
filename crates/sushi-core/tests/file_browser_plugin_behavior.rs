@@ -128,6 +128,8 @@ async fn file_browser_public_routes_support_core_operations() {
 
     let html = dispatch(&ctx, "GET", "/app/files", "/app/files", None).await;
     assert!(html.contains("Official File Browser"));
+    assert!(html.contains("file_browser.css?v="));
+    assert!(!html.contains("tailwindcss-4.2.2.js"));
     assert!(html.contains("fb-context-menu"));
     assert!(html.contains("Right click a folder in tree"));
     assert!(html.contains("ctx-upload"));
