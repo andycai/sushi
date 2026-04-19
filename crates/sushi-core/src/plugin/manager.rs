@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 use super::state_repository::PluginStateRepository;
 use super::{DatabasePermission, Permissions, PluginKind, PluginManifest};
@@ -73,6 +73,7 @@ pub struct PluginManager {
     plugin_info: Arc<RwLock<HashMap<String, PluginInfo>>>,
     plugin_static_roots: Arc<RwLock<HashMap<String, PathBuf>>>,
     state_repo: Option<Arc<PluginStateRepository>>,
+    plugin_runtime_locks: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 fn match_api_handler_binding(
@@ -639,6 +640,7 @@ impl PluginManager {
         actor: Option<&str>,
         reason: Option<&str>,
     ) -> Result<PluginInfo, String> {
+        let _runtime_guard = self.acquire_plugin_runtime_lock(plugin_name).await;
         let known_plugin = self
             .plugin_info
             .read()
@@ -680,6 +682,20 @@ impl PluginManager {
         fallback.enabled = enabled;
         info.insert(plugin_name.to_string(), fallback.clone());
         Ok(fallback)
+    }
+
+    pub async fn acquire_plugin_runtime_lock(
+        &self,
+        plugin_name: &str,
+    ) -> OwnedMutexGuard<()> {
+        let lock = {
+            let mut locks = self.plugin_runtime_locks.write().await;
+            locks
+                .entry(plugin_name.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        lock.lock_owned().await
     }
 
     pub async fn plugin_runtime_enabled(&self, plugin_name: &str) -> Result<bool, String> {

@@ -248,6 +248,7 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
                 plugin_kind,
             )
             .await;
+        let _runtime_guard = ctx.plugins.acquire_plugin_runtime_lock(&plugin_name).await;
 
         let enabled_before_init = match ctx.plugins.plugin_runtime_enabled(&plugin_name).await {
             Ok(enabled) => enabled,
