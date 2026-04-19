@@ -282,5 +282,17 @@ mod tests {
             .await
             .unwrap();
         assert!(!disabled.enabled);
+
+        let latest_event = repo
+            .get_latest_event_by_plugin_id("official/kv-store")
+            .await
+            .unwrap()
+            .expect("expected audit event");
+        assert_eq!(latest_event.plugin_id, "official/kv-store");
+        assert_eq!(latest_event.source_kind, "official");
+        assert_eq!(latest_event.changed_by, "admin");
+        assert_eq!(latest_event.previous_enabled, Some(true));
+        assert_eq!(latest_event.next_enabled, Some(false));
+        assert_eq!(latest_event.reason, "incident response");
     }
 }
