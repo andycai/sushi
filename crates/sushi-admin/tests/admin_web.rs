@@ -574,6 +574,22 @@ async fn refresh_admin_authorizer(ctx: &SushiContext) {
     ctx.authorizer.replace_snapshot(snapshot).await;
 }
 
+async fn run_plugin_governance_migration_if_needed(storage: &SqliteStorage) {
+    let rows = storage
+        .query(
+            "SELECT 1 AS found FROM _sushi_migrations WHERE name = ?1 LIMIT 1",
+            vec![Value::String("008_plugin_governance_v1".to_string())],
+        )
+        .await
+        .expect("failed to query migration 008_plugin_governance_v1 state");
+    if rows.is_empty() {
+        storage
+            .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
+            .await
+            .expect("failed to run migration 008_plugin_governance_v1");
+    }
+}
+
 async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Router, SushiContext) {
     let templates_dir = templates_root();
     let static_dir = static_root();
@@ -617,10 +633,7 @@ async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Route
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .expect("failed to run migration 007_cms");
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-        .expect("failed to run migration 008_plugin_governance_v1");
+    run_plugin_governance_migration_if_needed(&storage).await;
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -678,10 +691,7 @@ async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> ax
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .expect("failed to run migration 007_cms");
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-        .expect("failed to run migration 008_plugin_governance_v1");
+    run_plugin_governance_migration_if_needed(&storage).await;
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
 
     let mut plugins = LuaPlugin::scan_dir(&plugins_dir)
@@ -778,10 +788,7 @@ async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Pat
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .expect("failed to run migration 007_cms");
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-        .expect("failed to run migration 008_plugin_governance_v1");
+    run_plugin_governance_migration_if_needed(&storage).await;
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -837,10 +844,7 @@ async fn build_app_with_plugin_page_assets(
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .expect("failed to run migration 007_cms");
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-        .expect("failed to run migration 008_plugin_governance_v1");
+    run_plugin_governance_migration_if_needed(&storage).await;
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -898,10 +902,7 @@ async fn build_app_with_plugin_admin_page(page_path: &str) -> axum::Router {
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .expect("failed to run migration 007_cms");
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-        .expect("failed to run migration 008_plugin_governance_v1");
+    run_plugin_governance_migration_if_needed(&storage).await;
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 
@@ -981,10 +982,7 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .expect("failed to run migration 007_cms");
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-        .expect("failed to run migration 008_plugin_governance_v1");
+    run_plugin_governance_migration_if_needed(&storage).await;
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
 

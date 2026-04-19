@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde_json::Value;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -76,10 +77,15 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .context("failed to run cms migrations")?;
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
+    if !migration_applied(&storage, "008_plugin_governance_v1")
         .await
-        .context("failed to run plugin governance migrations")?;
+        .context("failed to check plugin governance migration state")?
+    {
+        storage
+            .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
+            .await
+            .context("failed to run plugin governance migrations")?;
+    }
 
     let jwt = {
         let guard = config.get().await;
@@ -226,4 +232,15 @@ async fn hydrate_authorizer_snapshot(ctx: &SushiContext) -> Result<()> {
         .context("failed to compile policy snapshot from database")?;
     ctx.authorizer.replace_snapshot(snapshot).await;
     Ok(())
+}
+
+async fn migration_applied(storage: &SqliteStorage, migration_name: &str) -> Result<bool> {
+    let rows = storage
+        .query(
+            "SELECT 1 AS found FROM _sushi_migrations WHERE name = ?1 LIMIT 1",
+            vec![Value::String(migration_name.to_string())],
+        )
+        .await
+        .context("failed to query migration history")?;
+    Ok(!rows.is_empty())
 }
