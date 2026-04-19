@@ -21,6 +21,14 @@
       {% endif %}
     </td>
     <td class="actions">
+      <button
+        type="button"
+        class="ui-action-link {% if p.enabled %}danger{% endif %}"
+        :disabled="isPluginBusy('{{ p.name }}')"
+        @click="togglePlugin('{{ p.name }}', {{ p.enabled }})"
+      >
+        {% if p.enabled %}Disable{% else %}Enable{% endif %}
+      </button>
       <a
         class="ui-action-link"
         href="/admin/plugins/{{ p.name }}"

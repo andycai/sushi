@@ -6,7 +6,7 @@ use axum::{
     extract::State,
     middleware::Next,
     response::IntoResponse,
-    routing::{delete, get, get_service, post},
+    routing::{delete, get, get_service, patch, post},
     Router,
 };
 use std::collections::HashSet;
@@ -171,6 +171,10 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         .route(
             "/admin/api/plugins/{plugin}/pages",
             get(plugins::plugin_pages_api),
+        )
+        .route(
+            "/admin/api/plugins/{plugin}/state",
+            patch(plugins::plugin_state_api),
         );
 
     let reserved_paths: HashSet<&str> = HashSet::from([
@@ -206,6 +210,7 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
         "/admin/partials/permissions/{id}",
         "/admin/partials/plugins/table",
         "/admin/api/plugins/{plugin}/pages",
+        "/admin/api/plugins/{plugin}/state",
         "/admin/partials/menus/table",
         "/admin/partials/menus/create",
         "/admin/partials/menus/{id}/update",

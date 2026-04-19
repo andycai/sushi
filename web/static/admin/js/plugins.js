@@ -36,6 +36,7 @@
         storageKey: 'admin.plugins.table.v1',
       }),
       lastUpdated: '',
+      pendingToggles: {},
       init() {},
       applySearch() {
         this.table.page = 1;
@@ -58,6 +59,83 @@
       },
       nextPage() {
         this.table.nextPage('#plugins-table-body');
+      },
+      isPluginBusy(pluginName) {
+        return Boolean(this.pendingToggles[String(pluginName || '').trim()]);
+      },
+      async togglePlugin(pluginName, currentlyEnabled) {
+        const targetName = String(pluginName || '').trim();
+        if (!targetName || this.isPluginBusy(targetName)) {
+          return;
+        }
+
+        const nextEnabled = !Boolean(currentlyEnabled);
+        this.pendingToggles = {
+          ...this.pendingToggles,
+          [targetName]: true,
+        };
+
+        try {
+          const response = await fetch(
+            `/admin/api/plugins/${encodeURIComponent(targetName)}/state`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                enabled: nextEnabled,
+                reason: nextEnabled ? 'enabled from admin plugins page' : 'disabled from admin plugins page',
+              }),
+            },
+          );
+
+          let payload = null;
+          try {
+            payload = await response.json();
+          } catch (_) {
+            payload = null;
+          }
+
+          if (!response.ok) {
+            const message =
+              payload && typeof payload.error === 'string'
+                ? payload.error
+                : `Failed to update plugin state (${response.status})`;
+            throw new Error(message);
+          }
+
+          if (window.AdminUI && typeof window.AdminUI.notify === 'function') {
+            window.AdminUI.notify({
+              tone: 'success',
+              title: 'Plugin state updated',
+              message: nextEnabled
+                ? `${targetName} has been enabled.`
+                : `${targetName} has been disabled.`,
+            });
+          }
+
+          if (window.AdminUI && typeof window.AdminUI.trigger === 'function') {
+            window.AdminUI.trigger('plugins:refresh', true);
+          } else {
+            document.body.dispatchEvent(new CustomEvent('plugins:refresh', { bubbles: true }));
+          }
+        } catch (error) {
+          if (window.AdminUI && typeof window.AdminUI.notify === 'function') {
+            window.AdminUI.notify({
+              tone: 'danger',
+              title: 'Plugin update failed',
+              message:
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Unable to change plugin state.',
+            });
+          }
+        } finally {
+          const nextPending = { ...this.pendingToggles };
+          delete nextPending[targetName];
+          this.pendingToggles = nextPending;
+        }
       },
       openWorkspace(path, title) {
         const targetPath = typeof path === 'string' ? path.trim() : '';

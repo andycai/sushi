@@ -1,14 +1,22 @@
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::{PluginAdminPageInfo, PluginInfo};
+
+use crate::router::AdminAuthContext;
 
 #[derive(Debug, Serialize)]
 struct PluginWorkspaceResponse {
     plugin: PluginInfo,
     pages: Vec<PluginAdminPageInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PluginStateMutationRequest {
+    pub enabled: bool,
+    pub reason: Option<String>,
 }
 
 pub async fn plugins_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
@@ -79,6 +87,42 @@ pub async fn plugin_pages_api(
     };
 
     (StatusCode::OK, axum::Json(payload)).into_response()
+}
+
+pub async fn plugin_state_api(
+    Path(plugin): Path<String>,
+    State(ctx): State<SushiContext>,
+    auth: Option<Extension<AdminAuthContext>>,
+    axum::Json(payload): axum::Json<PluginStateMutationRequest>,
+) -> impl IntoResponse {
+    let actor = auth.as_ref().map(|Extension(ctx)| ctx.role.as_str());
+    let reason = payload
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match ctx
+        .plugins
+        .set_plugin_enabled(&plugin, payload.enabled, actor, reason)
+        .await
+    {
+        Ok(plugin_info) => (StatusCode::OK, axum::Json(plugin_info)).into_response(),
+        Err(err) if err.starts_with("plugin not found:") => (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({
+                "error": "plugin not found"
+            })),
+        )
+            .into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "error": err
+            })),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn render_plugin_workspace_partial(ctx: &SushiContext, plugin_name: &str) -> Response {
