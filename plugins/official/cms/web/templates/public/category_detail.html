@@ -1,21 +1,48 @@
-{% extends "base.html" %}
+{% extends "plugins/official/cms/public/base_public.html" %}
 {% block title %}{{ category.name }}{% endblock %}
 {% block content %}
-  <section class="max-w-4xl mx-auto py-8">
-    <header class="mb-4">
-      <h1 class="text-3xl font-semibold">{{ category.name }}</h1>
-      {% if category.description %}
-        <p class="text-sm text-slate-600">{{ category.description }}</p>
-      {% endif %}
+  <section class="cms-surface p-6 sm:p-8">
+    <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <p class="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700">
+          Category
+        </p>
+        <h1 class="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl" style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;">{{ category.name }}</h1>
+        {% if category.description %}
+          <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{{ category.description }}</p>
+        {% else %}
+          <p class="mt-2 text-sm text-slate-500">{{ total }} published posts</p>
+        {% endif %}
+      </div>
+      <div class="flex gap-2">
+        <a href="/app/posts?category={{ category.slug }}" class="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
+          Open in Posts
+        </a>
+        <button
+          type="button"
+          class="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+          hx-get="/app/partials/cms/posts?show_category=0&category={{ category.slug }}"
+          hx-target="#cms-category-post-feed"
+          hx-swap="innerHTML"
+          hx-indicator="#cms-category-loading"
+        >
+          Refresh
+        </button>
+      </div>
     </header>
-    <ul class="space-y-4">
-      {% for item in items %}
-        <li class="p-4 border rounded-lg border-slate-200">
-          <a class="font-semibold text-slate-900" href="/app/posts/{{ item.slug }}">{{ item.title }}</a>
-        </li>
-      {% else %}
-        <li class="text-sm text-slate-500">No published posts in this category.</li>
-      {% endfor %}
-    </ul>
+
+    <div class="mt-5 flex items-center justify-end">
+      <span id="cms-category-loading" class="htmx-indicator inline-flex items-center gap-2 text-xs text-slate-500">
+        <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>
+        Refreshing...
+      </span>
+    </div>
+
+    <div id="cms-category-post-feed" class="mt-2 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
+      {% set compact = false %}
+      {% set show_category = false %}
+      {% set empty_message = "No published posts in this category." %}
+      {% include "plugins/official/cms/public/partials/post_feed.html" %}
+    </div>
   </section>
 {% endblock %}

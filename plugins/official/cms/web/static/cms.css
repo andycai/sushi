@@ -110,6 +110,21 @@
   background: #e9f2ff;
 }
 
+.cms-library-table tbody tr.cms-row-flash {
+  animation: cms-row-flash 1.1s ease;
+}
+
+@keyframes cms-row-flash {
+  0% {
+    background: #fff6dc;
+    box-shadow: inset 0 0 0 1px rgba(209, 141, 0, 0.22);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+
 .cms-row-actions {
   display: inline-flex;
   align-items: center;
@@ -165,6 +180,54 @@
   min-height: 320px;
 }
 
+.cms-markdown-helper {
+  display: grid;
+  gap: 10px;
+}
+
+.cms-markdown-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.cms-markdown-toolbar .ui-btn {
+  min-height: 30px;
+}
+
+.cms-markdown-toolbar .ui-btn.is-active {
+  background: linear-gradient(145deg, var(--brand-soft), var(--brand-strong));
+  color: #fff;
+  border-color: transparent;
+}
+
+.cms-markdown-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.cms-markdown-preview {
+  min-height: 320px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px 16px;
+  color: #1e293b;
+}
+
+.cms-markdown-preview p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.cms-markdown-preview p:last-child {
+  margin-bottom: 0;
+}
+
 .cms-editor-footer {
   margin-top: 6px;
   display: flex;
@@ -200,6 +263,41 @@
 
 .cms-command-shell .ui-empty {
   padding: 16px;
+}
+
+.cms-toast-stack {
+  position: fixed;
+  top: 88px;
+  right: 24px;
+  z-index: 80;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.cms-toast {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  box-shadow: var(--shadow-hard);
+  background: #fff;
+  color: #0f172a;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+.cms-toast-success {
+  border-left: 4px solid #0f9d58;
+}
+
+.cms-toast-info {
+  border-left: 4px solid #0c6ccf;
+}
+
+.cms-toast-danger {
+  border-left: 4px solid #c62828;
 }
 
 [x-cloak] {

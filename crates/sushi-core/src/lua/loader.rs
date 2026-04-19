@@ -1152,11 +1152,15 @@ end)
         assert!(repo_root
             .join("plugins/official/cms/web/static/cms.js")
             .is_file());
-        assert!(repo_root.join("plugins/official/cms/lua/interfaces/api.lua").is_file());
+        assert!(repo_root
+            .join("plugins/official/cms/lua/interfaces/api.lua")
+            .is_file());
         assert!(repo_root
             .join("plugins/official/cms/lua/interfaces/admin.lua")
             .is_file());
-        assert!(repo_root.join("plugins/official/cms/lua/interfaces/cli.lua").is_file());
+        assert!(repo_root
+            .join("plugins/official/cms/lua/interfaces/cli.lua")
+            .is_file());
     }
 
     #[test]
@@ -1166,24 +1170,14 @@ end)
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
         assert!(source.contains("sushi.web.page(\"/admin/cms\""));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/admin/partials/cms/overview\""
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/admin/partials/cms/library/*\""
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/admin/partials/cms/editor/*\""
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/admin/partials/cms/editor/save\""
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/admin/partials/cms/status/transition\""
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/admin/partials/cms/commands\""
-        ));
+        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/overview\""));
+        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/library/*\""));
+        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/editor/*\""));
+        assert!(source.contains("sushi.api.route(\"POST\", \"/admin/partials/cms/editor/save\""));
+        assert!(
+            source.contains("sushi.api.route(\"POST\", \"/admin/partials/cms/status/transition\"")
+        );
+        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/commands\""));
         assert!(source.contains("sushi.api.route(\"GET\", \"/app/posts\""));
         assert!(source.contains("sushi.cli.command(\"cms\""));
     }
@@ -1202,8 +1196,8 @@ end)
     #[test]
     fn cms_utils_contract_is_stable() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
-        let slug = std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/slug.lua"))
-            .unwrap();
+        let slug =
+            std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/slug.lua")).unwrap();
         let validate =
             std::fs::read_to_string(root.join("plugins/official/cms/lua/utils/validate.lua"))
                 .unwrap();

@@ -41,8 +41,10 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let env_role = std::env::var("SUSHI_CLI_ROLE").ok();
-    let role =
-        sushi_cli::commands::authorization::resolve_cli_role(cli.role.as_deref(), env_role.as_deref());
+    let role = sushi_cli::commands::authorization::resolve_cli_role(
+        cli.role.as_deref(),
+        env_role.as_deref(),
+    );
 
     match cli.command {
         Commands::Serve(args) => sushi_cli::commands::serve::run(args).await,

@@ -33,6 +33,7 @@ function M.new(deps)
     local page = deps.page
     local post = deps.post
     local category = deps.category
+    local markdown = deps.markdown
 
     local function flash(level, message)
         return sushi.web.render("plugins/official/cms/fragments/flash.html", {
@@ -132,7 +133,10 @@ function M.new(deps)
         local path = request_path(args)
         local from_path = path:match("^/admin/partials/cms/editor/([^/?]+)")
         if from_path then
-            return normalize_resource(from_path)
+            local normalized = normalize_resource(from_path)
+            if normalized then
+                return normalized
+            end
         end
 
         local kind = tostring(form.kind or ""):lower()
@@ -286,6 +290,36 @@ function M.new(deps)
             return flash("success", "Category saved")
         end
         return flash("error", "Missing CMS resource for editor save")
+    end
+
+    local function render_page_preview(slug_value)
+        local item, kind, msg = page.get_by_slug(slug_value, { only_published = false })
+        if not item then
+            return flash("error", tostring(msg or kind or "page not found"))
+        end
+        return sushi.web.render("plugins/official/cms/public/page_detail.html", {
+            title = item.title,
+            slug = item.slug,
+            content_html = markdown.to_html(item.markdown_body),
+            preview_mode = true,
+            status = item.status or "draft",
+        })
+    end
+
+    local function render_post_preview(slug_value)
+        local item, kind, msg = post.get_by_slug(slug_value, { only_published = false })
+        if not item then
+            return flash("error", tostring(msg or kind or "post not found"))
+        end
+        return sushi.web.render("plugins/official/cms/public/post_detail.html", {
+            title = item.title,
+            slug = item.slug,
+            category_name = item.category_name or "",
+            category_slug = item.category_slug or "",
+            content_html = markdown.to_html(item.markdown_body),
+            preview_mode = true,
+            status = item.status or "draft",
+        })
     end
 
     local function render_overview_panel(data)
@@ -461,7 +495,17 @@ function M.new(deps)
     function admin.status_transition_partial(args)
         local form = parse_urlencoded((args and args[2]) or "")
         local path = request_path(args)
-        local resource = normalize_resource(path:match("^/admin/partials/cms/status/([^/?]+)") or form.resource or form.content_type or form.kind or form.type)
+        local from_path = path:match("^/admin/partials/cms/status/([^/?]+)")
+        local resource
+        if from_path then
+            local normalized = normalize_resource(from_path)
+            if normalized then
+                resource = normalized
+            end
+        end
+        if not resource then
+            resource = normalize_resource(form.resource or form.content_type or form.kind or form.type)
+        end
         local slug_value = form.slug or form.target_slug
         local next_status = form.status or form.next_status
 
@@ -489,6 +533,24 @@ function M.new(deps)
         return sushi.web.render("plugins/official/cms/fragments/rows.html", {
             label = "Use `sushi cms page list` or `sushi cms post list` to inspect content from CLI.",
         })
+    end
+
+    function admin.preview_page_detail(args)
+        local path = request_path(args)
+        local raw_slug = path:match("^/admin/preview/cms/pages/(.+)$")
+        if not raw_slug or raw_slug == "" then
+            return flash("error", "missing page slug for preview")
+        end
+        return render_page_preview(url_decode(raw_slug))
+    end
+
+    function admin.preview_post_detail(args)
+        local path = request_path(args)
+        local raw_slug = path:match("^/admin/preview/cms/posts/(.+)$")
+        if not raw_slug or raw_slug == "" then
+            return flash("error", "missing post slug for preview")
+        end
+        return render_post_preview(url_decode(raw_slug))
     end
 
     return admin

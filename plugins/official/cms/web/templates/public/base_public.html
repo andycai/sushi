@@ -1,0 +1,208 @@
+{% set static_prefix = static_url_prefix | default(value="/static") %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Sushi CMS{% endblock %}</title>
+  <script>
+    window.cmsPublicShell = function cmsPublicShell() {
+      return {
+        navOpen: false,
+        activeCategory: '',
+        currentPath: window.location.pathname || '/',
+        linkCopied: false,
+        setCategory(value) {
+          this.activeCategory = String(value || '');
+        },
+        isNavActive(prefix) {
+          const path = String(this.currentPath || '/');
+          if (prefix === '/app/cms') {
+            return path === '/app/cms';
+          }
+          if (prefix === '/app/pages') {
+            return path === '/app/pages' || path.startsWith('/app/pages/');
+          }
+          if (prefix === '/app/posts') {
+            return path === '/app/posts' || path.startsWith('/app/posts/');
+          }
+          return false;
+        },
+        async copyCurrentUrl() {
+          try {
+            await navigator.clipboard.writeText(window.location.href);
+            this.linkCopied = true;
+            window.setTimeout(() => {
+              this.linkCopied = false;
+            }, 1500);
+          } catch (_err) {
+            this.linkCopied = false;
+          }
+        },
+      };
+    };
+
+    window.cmsReadingProgress = function cmsReadingProgress() {
+      return {
+        progress: 0,
+        init() {
+          const update = () => {
+            const top = window.scrollY || 0;
+            const max = Math.max(document.body.scrollHeight - window.innerHeight, 1);
+            this.progress = Math.min(100, Math.max(0, Math.round((top / max) * 100)));
+          };
+          update();
+          window.addEventListener('scroll', update, { passive: true });
+        },
+      };
+    };
+
+    window.cmsToc = function cmsToc() {
+      return {
+        items: [],
+        init() {
+          const root = document.querySelector('[data-cms-article]');
+          if (!root) {
+            return;
+          }
+          const headings = root.querySelectorAll('h2, h3');
+          const next = [];
+          headings.forEach((heading, index) => {
+            const text = (heading.textContent || '').trim();
+            if (text === '') {
+              return;
+            }
+            if (!heading.id) {
+              const seed = text
+                .toLowerCase()
+                .replace(/[^a-z0-9\\s-]/g, '')
+                .trim()
+                .replace(/\\s+/g, '-');
+              heading.id = `section-${seed || 'item'}-${index + 1}`;
+            }
+            next.push({
+              id: heading.id,
+              text,
+              level: heading.tagName.toLowerCase(),
+            });
+          });
+          this.items = next;
+        },
+      };
+    };
+  </script>
+  <script src="{{ static_prefix }}/js/tailwindcss-4.2.2.js"></script>
+  <script defer src="{{ static_prefix }}/js/alpine-3.15.11.js"></script>
+  <script defer src="{{ static_prefix }}/js/htmx.min-2.0.8.js"></script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .cms-surface {
+        @apply rounded-[26px] border border-white/40 bg-white/82 shadow-[0_20px_55px_-28px_rgba(13,30,58,0.5)] backdrop-blur-md;
+      }
+      .cms-prose {
+        @apply text-slate-700 leading-8;
+      }
+      .cms-prose > *:first-child {
+        margin-top: 0;
+      }
+      .cms-prose h1, .cms-prose h2, .cms-prose h3 {
+        @apply mt-9 mb-4 text-slate-900 font-semibold tracking-tight;
+      }
+      .cms-prose h2 {
+        @apply text-3xl;
+      }
+      .cms-prose h3 {
+        @apply text-2xl;
+      }
+      .cms-prose p, .cms-prose ul, .cms-prose ol, .cms-prose blockquote {
+        @apply my-5;
+      }
+      .cms-prose a {
+        @apply text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800;
+      }
+      .cms-prose blockquote {
+        @apply border-l-4 border-blue-200 pl-4 text-slate-600;
+      }
+      .cms-prose code {
+        @apply rounded bg-slate-100 px-1.5 py-0.5 text-sm text-slate-900;
+      }
+      .cms-prose pre {
+        @apply overflow-x-auto rounded-xl bg-slate-900 p-4 text-slate-100;
+      }
+      .cms-clamp-2 {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+      }
+      .cms-clamp-3 {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        overflow: hidden;
+      }
+    }
+    .htmx-indicator {
+      display: none;
+    }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator {
+      display: inline-flex;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body x-data="cmsPublicShell()" class="min-h-screen bg-[radial-gradient(circle_at_15%_9%,#dbeafe_0,transparent_36%),radial-gradient(circle_at_88%_16%,#ccfbf1_0,transparent_38%),linear-gradient(180deg,#f8fbff_0,#eef3f8_58%,#e9eff6_100%)] text-slate-900">
+  <div class="pointer-events-none fixed left-[-84px] top-16 h-72 w-72 rounded-full bg-gradient-to-br from-blue-200/80 to-indigo-200/50 blur-2xl"></div>
+  <div class="pointer-events-none fixed right-[-64px] top-56 h-64 w-64 rounded-full bg-gradient-to-br from-emerald-200/75 to-cyan-200/50 blur-2xl"></div>
+  <div class="pointer-events-none fixed inset-x-0 top-0 h-28 bg-gradient-to-b from-white/30 to-transparent"></div>
+
+  <header class="relative z-10">
+    <div class="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
+      <a href="/app/cms" class="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/75 px-4 py-2 text-sm font-semibold tracking-wide text-slate-800 shadow-[0_8px_20px_-16px_rgba(15,23,42,0.65)] transition hover:border-slate-400 hover:bg-white">
+        <span class="inline-block h-2.5 w-2.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500"></span>
+        Sushi CMS
+      </a>
+
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 px-3 py-1.5 text-sm font-medium text-slate-700 sm:hidden"
+        @click="navOpen = !navOpen"
+      >
+        Menu
+      </button>
+
+      <nav class="hidden items-center gap-2 sm:inline-flex">
+        <a
+          href="/app/cms"
+          :class="isNavActive('/app/cms') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/75 hover:text-slate-900'"
+          class="rounded-full px-4 py-2 text-sm font-medium transition"
+        >Home</a>
+        <a
+          href="/app/pages"
+          :class="isNavActive('/app/pages') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/75 hover:text-slate-900'"
+          class="rounded-full px-4 py-2 text-sm font-medium transition"
+        >Pages</a>
+        <a
+          href="/app/posts"
+          :class="isNavActive('/app/posts') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/75 hover:text-slate-900'"
+          class="rounded-full px-4 py-2 text-sm font-medium transition"
+        >Posts</a>
+      </nav>
+    </div>
+
+    <div class="mx-auto w-full max-w-6xl px-4 sm:hidden sm:px-6" x-show="navOpen" x-transition.opacity.duration.200ms>
+      <nav class="cms-surface mb-4 grid gap-2 p-3">
+        <a href="/app/cms" :class="isNavActive('/app/cms') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'" class="rounded-xl px-3 py-2 text-sm font-medium">Home</a>
+        <a href="/app/pages" :class="isNavActive('/app/pages') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'" class="rounded-xl px-3 py-2 text-sm font-medium">Pages</a>
+        <a href="/app/posts" :class="isNavActive('/app/posts') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'" class="rounded-xl px-3 py-2 text-sm font-medium">Posts</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="relative z-10 mx-auto w-full max-w-6xl px-4 pb-10 sm:px-6">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

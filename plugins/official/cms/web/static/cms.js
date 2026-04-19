@@ -33,6 +33,20 @@
     return el.closest(selector);
   }
 
+  function escapeHtml(value) {
+    return String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function markdownToHtml(markdown) {
+    const escaped = escapeHtml(markdown).replaceAll('\r\n', '\n');
+    return `<p>${escaped.replace(/\n\n+/g, '</p><p>')}</p>`;
+  }
+
   window.cmsPage = function cmsPage() {
     return {
       panel: OVERVIEW,
@@ -42,6 +56,7 @@
       pendingGotoPrefix: false,
       selectedRowIndex: 0,
       libraryRows: [],
+      pendingLibraryHighlightSlug: '',
 
       init() {
         this.bindEvents();
@@ -49,6 +64,8 @@
 
       bindEvents() {
         window.addEventListener('keydown', (event) => this.handleGlobalShortcut(event));
+        this.initMarkdownEditors(document);
+        this.ensureToastStack();
 
         document.body.addEventListener('click', (event) => {
           const openLibraryTrigger = closest(event.target, '[data-cms-open-library]');
@@ -74,6 +91,279 @@
           }
           this.filterRows(event.target.value || '');
         });
+
+        document.body.addEventListener('htmx:afterSwap', (event) => {
+          const target = event && event.target;
+          if (!target || !target.id) {
+            return;
+          }
+
+          if (target.id === 'cms-editor-panel') {
+            this.initMarkdownEditors(target);
+            return;
+          }
+
+          if (target.id === 'cms-library-panel') {
+            this.selectedRowIndex = 0;
+            this.highlightLibrarySelection();
+            this.applyPendingLibraryHighlight();
+          }
+        });
+
+        document.body.addEventListener('htmx:afterRequest', (event) => {
+          this.handleFeedbackResponse(event);
+        });
+      },
+
+      initMarkdownEditors(root) {
+        const container = root && typeof root.querySelectorAll === 'function' ? root : document;
+        const helpers = container.querySelectorAll('[data-cms-markdown-helper]');
+        helpers.forEach((helper) => {
+          if (helper.dataset.cmsMdBound === 'true') {
+            return;
+          }
+          const input = helper.querySelector('[data-cms-markdown-input]');
+          const preview = helper.querySelector('[data-cms-markdown-preview]');
+          if (!input || !preview) {
+            return;
+          }
+
+          helper.dataset.cmsMdBound = 'true';
+          this.setMarkdownMode(helper, 'write');
+          this.renderMarkdownPreview(input, preview);
+
+          helper.addEventListener('click', (event) => {
+            const trigger = closest(event.target, '[data-cms-md-action]');
+            if (!trigger) {
+              return;
+            }
+            event.preventDefault();
+            this.applyMarkdownAction(
+              trigger.dataset.cmsMdAction || '',
+              input,
+              helper,
+              preview,
+            );
+          });
+
+          input.addEventListener('input', () => {
+            this.renderMarkdownPreview(input, preview);
+          });
+        });
+      },
+
+      setMarkdownMode(helper, mode) {
+        const input = helper.querySelector('[data-cms-markdown-input]');
+        const preview = helper.querySelector('[data-cms-markdown-preview]');
+        const isPreview = mode === 'preview';
+        if (input) {
+          input.hidden = isPreview;
+        }
+        if (preview) {
+          preview.hidden = !isPreview;
+        }
+        const toggles = helper.querySelectorAll('[data-cms-md-action="write"], [data-cms-md-action="preview"]');
+        toggles.forEach((toggle) => {
+          toggle.classList.toggle('is-active', toggle.dataset.cmsMdAction === mode);
+        });
+      },
+
+      renderMarkdownPreview(input, preview) {
+        if (!input || !preview) {
+          return;
+        }
+        preview.innerHTML = markdownToHtml(input.value || '');
+      },
+
+      surroundSelection(input, prefix, suffix, placeholder) {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        const current = input.value.slice(start, end);
+        const content = current !== '' ? current : placeholder;
+        input.setRangeText(`${prefix}${content}${suffix}`, start, end, 'end');
+        input.focus();
+      },
+
+      prefixSelectionLines(input, prefix) {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        const lineStart = input.value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+        const lineEndIndex = input.value.indexOf('\n', end);
+        const lineEnd = lineEndIndex === -1 ? input.value.length : lineEndIndex;
+        const selected = input.value.slice(lineStart, lineEnd);
+        const updated = selected
+          .split('\n')
+          .map((line) => {
+            if (line.startsWith(prefix)) {
+              return line;
+            }
+            return `${prefix}${line}`;
+          })
+          .join('\n');
+        input.setRangeText(updated, lineStart, lineEnd, 'end');
+        input.focus();
+      },
+
+      insertCodeFence(input) {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        const current = input.value.slice(start, end).trim();
+        const block = current !== '' ? `\`\`\`\n${current}\n\`\`\`` : '```\ncode\n```';
+        input.setRangeText(block, start, end, 'end');
+        input.focus();
+      },
+
+      applyMarkdownAction(action, input, helper, preview) {
+        if (action === 'write' || action === 'preview') {
+          if (action === 'preview') {
+            this.renderMarkdownPreview(input, preview);
+          }
+          this.setMarkdownMode(helper, action);
+          return;
+        }
+
+        this.setMarkdownMode(helper, 'write');
+        if (action === 'h2') {
+          this.prefixSelectionLines(input, '## ');
+        } else if (action === 'h3') {
+          this.prefixSelectionLines(input, '### ');
+        } else if (action === 'bold') {
+          this.surroundSelection(input, '**', '**', 'bold text');
+        } else if (action === 'italic') {
+          this.surroundSelection(input, '*', '*', 'italic text');
+        } else if (action === 'link') {
+          this.surroundSelection(input, '[', '](https://example.com)', 'link text');
+        } else if (action === 'quote') {
+          this.prefixSelectionLines(input, '> ');
+        } else if (action === 'ul') {
+          this.prefixSelectionLines(input, '- ');
+        } else if (action === 'code') {
+          this.insertCodeFence(input);
+        } else {
+          return;
+        }
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+
+      parseFlashPayload(html) {
+        if (!html || typeof html !== 'string' || !html.includes('data-ui-flash')) {
+          return null;
+        }
+        const host = document.createElement('div');
+        host.innerHTML = html;
+        const flash = host.querySelector('[data-ui-flash]');
+        if (!flash) {
+          return null;
+        }
+        const level = String(flash.dataset.level || 'info').toLowerCase();
+        const message = String(flash.dataset.message || flash.textContent || '').trim();
+        if (message === '') {
+          return null;
+        }
+        return { level, message };
+      },
+
+      ensureToastStack() {
+        const existing = document.getElementById('cms-toast-stack');
+        if (existing) {
+          return existing;
+        }
+        const created = document.createElement('div');
+        created.id = 'cms-toast-stack';
+        created.className = 'cms-toast-stack';
+        created.setAttribute('aria-live', 'polite');
+        created.setAttribute('aria-atomic', 'true');
+        document.body.appendChild(created);
+        return created;
+      },
+
+      showToast(level, message) {
+        const stack = this.ensureToastStack();
+        if (!stack || !message) {
+          return;
+        }
+        const tone = level === 'error' ? 'danger' : level === 'success' ? 'success' : 'info';
+        const toast = document.createElement('div');
+        toast.className = `cms-toast cms-toast-${tone}`;
+        toast.textContent = message;
+        stack.appendChild(toast);
+        window.setTimeout(() => {
+          toast.remove();
+        }, 3200);
+      },
+
+      refreshLibrary(scope) {
+        const resolvedScope = toScope(scope || this.libraryScope);
+        this.libraryScope = resolvedScope;
+        this.loadPanel('#cms-library-panel', `/admin/partials/cms/library/${resolvedScope}`);
+      },
+
+      handleFeedbackResponse(event) {
+        const detail = event && event.detail ? event.detail : null;
+        const form = detail && detail.elt;
+        if (!form || !detail || !detail.successful) {
+          return;
+        }
+
+        const responseText =
+          detail.xhr && typeof detail.xhr.responseText === 'string' ? detail.xhr.responseText : '';
+        const flash = this.parseFlashPayload(responseText);
+        if (!flash) {
+          return;
+        }
+
+        this.showToast(flash.level, flash.message);
+        if (flash.level === 'error') {
+          return;
+        }
+
+        if (form.id === 'cms-editor-form') {
+          const resourceField = form.querySelector('input[name="resource"]');
+          const slugField = form.querySelector('input[name="slug"]');
+          const originalField = form.querySelector('input[name="original_slug"]');
+          if (!resourceField || !slugField || !originalField) {
+            return;
+          }
+
+          const resource = toScope(resourceField.value || '');
+          const nextSlug = String(slugField.value || '').trim();
+          if (nextSlug === '') {
+            return;
+          }
+
+          const previousSlug = String(originalField.value || '').trim();
+          originalField.value = nextSlug;
+
+          this.queueLibraryHighlight(nextSlug);
+          this.refreshLibrary(resource);
+
+          // On first create (or after slug rename), reopen editor in edit mode to prevent duplicate-create saves.
+          if (previousSlug === '' || previousSlug !== nextSlug) {
+            this.openEditor(resource, nextSlug);
+          }
+          return;
+        }
+
+        if (form.id === 'cms-transition-form' || form.classList.contains('cms-inline-form')) {
+          const resourceField = form.querySelector('input[name="resource"]');
+          const slugField = form.querySelector(
+            'input[name="slug"], input[name="target_slug"], input[name="original_slug"]',
+          );
+          const slugValue = String((slugField && slugField.value) || '').trim();
+          if (slugValue !== '') {
+            this.queueLibraryHighlight(slugValue);
+          }
+          this.refreshLibrary(resourceField ? resourceField.value : this.libraryScope);
+          return;
+        }
+
+        if (form.classList.contains('cms-delete-form')) {
+          const action = String(form.getAttribute('hx-post') || form.getAttribute('action') || '');
+          const resourceFromPath = action.match(/\/cms\/(pages|posts|categories)\//);
+          if (resourceFromPath) {
+            this.goLibrary(resourceFromPath[1]);
+          }
+        }
       },
 
       switchPanel(next) {
@@ -162,6 +452,32 @@
         const rows = Array.from(document.querySelectorAll('#cms-library-table-body [data-cms-row]'));
         this.libraryRows = rows;
         return rows;
+      },
+
+      queueLibraryHighlight(slug) {
+        this.pendingLibraryHighlightSlug = String(slug || '').trim();
+      },
+
+      applyPendingLibraryHighlight() {
+        const slug = String(this.pendingLibraryHighlightSlug || '').trim();
+        this.pendingLibraryHighlightSlug = '';
+        if (slug === '') {
+          return;
+        }
+        const rows = this.collectLibraryRows();
+        let target = null;
+        rows.forEach((row) => {
+          if (String(row.dataset.slug || '') === slug) {
+            target = row;
+          }
+        });
+        if (!target) {
+          return;
+        }
+        target.classList.add('cms-row-flash');
+        window.setTimeout(() => {
+          target.classList.remove('cms-row-flash');
+        }, 1100);
       },
 
       highlightLibrarySelection() {
@@ -297,6 +613,7 @@
       handleGlobalShortcut(event) {
         const cmd = event.metaKey || event.ctrlKey;
         const key = String(event.key || '').toLowerCase();
+        const typingTarget = isTypingTarget(event.target);
 
         if (key === 'escape' && this.commandOpen) {
           event.preventDefault();
@@ -329,12 +646,12 @@
           return;
         }
 
-        if (this.handleGotoSequence(event)) {
+        if (!typingTarget && this.handleGotoSequence(event)) {
           event.preventDefault();
           return;
         }
 
-        if (isTypingTarget(event.target) && key !== '/') {
+        if (typingTarget && key !== '/') {
           return;
         }
 

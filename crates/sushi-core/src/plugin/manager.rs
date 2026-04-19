@@ -205,7 +205,12 @@ impl PluginManager {
         policy_key: Option<&str>,
     ) {
         self.register_api_handler_with_policy_and_public(
-            method, path, plugin_name, handler_key, policy_key, false,
+            method,
+            path,
+            plugin_name,
+            handler_key,
+            policy_key,
+            false,
         )
         .await;
     }
@@ -343,13 +348,8 @@ impl PluginManager {
         path: &str,
         body: Option<String>,
     ) -> Option<Result<String, String>> {
-        self.dispatch_api_handler(
-            method,
-            path,
-            path,
-            body.map(|value| value.into_bytes()),
-        )
-        .await
+        self.dispatch_api_handler(method, path, path, body.map(|value| value.into_bytes()))
+            .await
     }
 
     /// Dispatch an API route handler using a dispatch path and optional binary request body.
@@ -970,9 +970,7 @@ mod tests {
         sushi
             .set("__handlers", handlers.clone())
             .expect("set handlers table");
-        lua.globals()
-            .set("sushi", sushi)
-            .expect("set sushi global");
+        lua.globals().set("sushi", sushi).expect("set sushi global");
         lua.load(
             r#"
             sushi.__handlers["h_wildcard"] = function(args)

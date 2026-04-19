@@ -7,7 +7,7 @@ function M.query(sql, params)
     if not ok then
         return nil, "storage_error", tostring(rows_or_err)
     end
-    return rows_or_err
+    return rows_or_err, nil, nil
 end
 
 function M.execute(sql, params)
@@ -17,7 +17,7 @@ function M.execute(sql, params)
     if not ok then
         return nil, "storage_error", tostring(result_or_err)
     end
-    return result_or_err
+    return true, nil, nil
 end
 
 return M

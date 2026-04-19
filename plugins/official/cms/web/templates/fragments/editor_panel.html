@@ -7,6 +7,21 @@
 
     <div class="cms-editor-actions">
       <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="{{ resource }}">Back to Library</button>
+      {% if mode == "edit" and (resource == "pages" or resource == "posts") %}
+        {% if resource == "pages" %}
+          {% if item.status == "published" %}
+            <a class="ui-btn ui-btn-ghost" href="/app/pages/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
+          {% else %}
+            <a class="ui-btn ui-btn-ghost" href="/admin/preview/cms/pages/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
+          {% endif %}
+        {% else %}
+          {% if item.status == "published" %}
+            <a class="ui-btn ui-btn-ghost" href="/app/posts/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
+          {% else %}
+            <a class="ui-btn ui-btn-ghost" href="/admin/preview/cms/posts/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
+          {% endif %}
+        {% endif %}
+      {% endif %}
       {% if resource == "pages" or resource == "posts" %}
         <form id="cms-transition-form" class="cms-transition-inline" hx-post="/admin/partials/cms/status/transition" hx-target="#cms-feedback" hx-swap="innerHTML">
           <input type="hidden" name="resource" value="{{ resource }}">
@@ -75,7 +90,23 @@
         {% endif %}
 
         <label class="ui-label" for="cms-body">Body (Markdown)</label>
-        <textarea id="cms-body" name="markdown_body" class="ui-input ui-textarea cms-editor-body" rows="18" required>{{ item.markdown_body | default(value="") }}</textarea>
+        <div class="cms-markdown-helper" data-cms-markdown-helper>
+          <div class="cms-markdown-toolbar" role="toolbar" aria-label="Markdown helper toolbar">
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="h2">H2</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="h3">H3</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="bold">Bold</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="italic">Italic</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="link">Link</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="quote">Quote</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="ul">List</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="code">Code</button>
+            <div class="cms-markdown-toolbar-spacer"></div>
+            <button type="button" class="ui-btn ui-btn-ghost is-active" data-cms-md-action="write">Write</button>
+            <button type="button" class="ui-btn ui-btn-ghost" data-cms-md-action="preview">Preview</button>
+          </div>
+          <textarea id="cms-body" name="markdown_body" data-cms-markdown-input class="ui-input ui-textarea cms-editor-body" rows="18" required>{{ item.markdown_body | default(value="") }}</textarea>
+          <div class="cms-markdown-preview" data-cms-markdown-preview hidden></div>
+        </div>
       {% endif %}
 
       <div class="cms-editor-footer">

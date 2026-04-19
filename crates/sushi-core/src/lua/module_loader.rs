@@ -69,12 +69,14 @@ pub fn install_plugin_require(lua: &Lua, plugin_root: &Path) -> Result<(), mlua:
         }
 
         let relative = PathBuf::from(module.replace('.', "/") + ".lua");
-        let module_path = safe_module_join(&modules_root, &relative).ok_or_else(|| {
-            mlua::Error::RuntimeError(format!("unsafe module path: {module}"))
-        })?;
+        let module_path = safe_module_join(&modules_root, &relative)
+            .ok_or_else(|| mlua::Error::RuntimeError(format!("unsafe module path: {module}")))?;
 
         let source = std::fs::read_to_string(&module_path).map_err(|err| {
-            mlua::Error::RuntimeError(format!("read module {} failed: {err}", module_path.display()))
+            mlua::Error::RuntimeError(format!(
+                "read module {} failed: {err}",
+                module_path.display()
+            ))
         })?;
 
         let chunk_name = format!("@{}", module_path.display());

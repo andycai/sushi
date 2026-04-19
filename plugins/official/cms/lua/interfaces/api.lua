@@ -20,6 +20,96 @@ local function strip_query(path)
     return (path or ""):match("^([^%?]+)") or ""
 end
 
+local function request_path(args)
+    return (args and args.dispatch_path) or (args and args[1]) or ""
+end
+
+local function url_decode(text)
+    local value = tostring(text or "")
+    value = value:gsub("+", " ")
+    value = value:gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
+    return value
+end
+
+local function parse_query_params(path)
+    local params = {}
+    local query = tostring(path or ""):match("%?(.*)$")
+    if not query then
+        return params
+    end
+    for pair in query:gmatch("[^&]+") do
+        local key, value = pair:match("([^=]+)=(.*)")
+        if key then
+            params[url_decode(key)] = url_decode(value)
+        else
+            params[url_decode(pair)] = ""
+        end
+    end
+    return params
+end
+
+local function take_limit(rows, limit)
+    local out = {}
+    if type(rows) ~= "table" then
+        return out
+    end
+    local max = tonumber(limit) or 0
+    if max < 1 then
+        return out
+    end
+    for i, row in ipairs(rows) do
+        if i > max then
+            break
+        end
+        out[#out + 1] = row
+    end
+    return out
+end
+
+local function published_pages_only(rows)
+    local out = {}
+    for _, row in ipairs(rows or {}) do
+        if tostring(row.status or "") == "published" then
+            out[#out + 1] = row
+        end
+    end
+    return out
+end
+
+local function parse_positive_limit(raw, hard_max)
+    local value = tostring(raw or "")
+    if value == "" then
+        return nil
+    end
+    if not value:match("^%d+$") then
+        return nil
+    end
+    local parsed = tonumber(value)
+    if not parsed or parsed < 1 then
+        return nil
+    end
+    if hard_max and parsed > hard_max then
+        return hard_max
+    end
+    return parsed
+end
+
+local function without_slug(rows, excluded_slug)
+    local slug = tostring(excluded_slug or "")
+    if slug == "" then
+        return rows
+    end
+    local out = {}
+    for _, row in ipairs(rows or {}) do
+        if tostring(row.slug or "") ~= slug then
+            out[#out + 1] = row
+        end
+    end
+    return out
+end
+
 local function decode_body(body)
     if not body or body == "" then
         return {}
@@ -190,6 +280,18 @@ function M.new(deps)
         return json_ok(200, { ok = true })
     end
 
+    function api.public_page_list()
+        local rows, kind, msg = page.list()
+        if not rows then
+            return json_error(kind, msg)
+        end
+        local published_pages = published_pages_only(rows)
+        return sushi.web.render("plugins/official/cms/public/page_list.html", {
+            items = published_pages,
+            total = #published_pages,
+        })
+    end
+
     function api.public_page_detail(args)
         local path = strip_query(args[1] or "")
         local slug = path:match("^/app/pages/([^%?]+)$")
@@ -202,20 +304,85 @@ function M.new(deps)
         end
         return sushi.web.render("plugins/official/cms/public/page_detail.html", {
             title = item.title,
+            slug = item.slug,
             content_html = markdown.to_html(item.markdown_body),
         })
     end
 
+    function api.public_home()
+        local post_rows, post_kind, post_msg = post.list({ only_published = true })
+        if not post_rows then
+            return json_error(post_kind, post_msg)
+        end
+        local page_rows, page_kind, page_msg = page.list()
+        if not page_rows then
+            return json_error(page_kind, page_msg)
+        end
+        local category_rows, category_kind, category_msg = category.list()
+        if not category_rows then
+            return json_error(category_kind, category_msg)
+        end
+
+        local published_pages = published_pages_only(page_rows)
+        local featured_post = post_rows[1]
+        local featured_page = published_pages[1]
+
+        return sushi.web.render("plugins/official/cms/public/home.html", {
+            featured_post = featured_post,
+            featured_page = featured_page,
+            recent_posts = take_limit(post_rows, 6),
+            published_pages = take_limit(published_pages, 6),
+            categories = take_limit(category_rows, 8),
+            total_posts = #post_rows,
+            total_pages = #published_pages,
+            total_categories = #category_rows,
+        })
+    end
+
     function api.public_post_list(args)
-        local path = (args and args.dispatch_path) or (args[1] or "")
-        local category_slug = path:match("[?&]category=([^&]+)")
+        local path = request_path(args)
+        local params = parse_query_params(path)
+        local category_slug = tostring(params.category or "")
+        if category_slug == "" then
+            category_slug = nil
+        end
         local rows, kind, msg = post.list({ only_published = true, category_slug = category_slug })
         if not rows then
             return json_error(kind, msg)
         end
+        local category_rows, category_kind, category_msg = category.list()
+        if not category_rows then
+            return json_error(category_kind, category_msg)
+        end
         return sushi.web.render("plugins/official/cms/public/post_list.html", {
             items = rows,
-            category = category_slug,
+            category = category_slug or "",
+            categories = category_rows,
+            total = #rows,
+        })
+    end
+
+    function api.public_posts_partial(args)
+        local path = request_path(args)
+        local params = parse_query_params(path)
+        local category_slug = tostring(params.category or "")
+        if category_slug == "" then
+            category_slug = nil
+        end
+        local rows, kind, msg = post.list({ only_published = true, category_slug = category_slug })
+        if not rows then
+            return json_error(kind, msg)
+        end
+        rows = without_slug(rows, params.exclude)
+        local limit = parse_positive_limit(params.limit, 24)
+        if limit then
+            rows = take_limit(rows, limit)
+        end
+        return sushi.web.render("plugins/official/cms/public/partials/post_feed.html", {
+            items = rows,
+            compact = tostring(params.compact or "") == "1",
+            show_category = tostring(params.show_category or "") == "1",
+            empty_message = "No posts found.",
         })
     end
 
@@ -231,7 +398,9 @@ function M.new(deps)
         end
         return sushi.web.render("plugins/official/cms/public/post_detail.html", {
             title = item.title,
+            slug = item.slug,
             category_name = item.category_name or "",
+            category_slug = item.category_slug or "",
             content_html = markdown.to_html(item.markdown_body),
         })
     end
@@ -254,6 +423,7 @@ function M.new(deps)
         return sushi.web.render("plugins/official/cms/public/category_detail.html", {
             category = item,
             items = rows,
+            total = #rows,
         })
     end
 

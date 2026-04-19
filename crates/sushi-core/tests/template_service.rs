@@ -146,7 +146,10 @@ fn render_plugin_template_from_tiered_plugin_template_root() {
 
     let svc = TemplateService::new_with_plugin_roots(
         root.path(),
-        vec![("official/kv-store".to_string(), plugin_templates.path().to_path_buf())],
+        vec![(
+            "official/kv-store".to_string(),
+            plugin_templates.path().to_path_buf(),
+        )],
     )
     .unwrap();
 

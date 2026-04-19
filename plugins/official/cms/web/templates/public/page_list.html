@@ -1,0 +1,111 @@
+{% extends "plugins/official/cms/public/base_public.html" %}
+{% block title %}Pages{% endblock %}
+{% block content %}
+  <section class="cms-surface p-6 sm:p-8">
+    <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <p class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+          Editorial Pages
+        </p>
+        <h1 class="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl" style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;">
+          The Pages Desk
+        </h1>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+          Long-form pages for evergreen narratives, documentation, and polished campaign storytelling.
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="/app/posts" class="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
+          Browse Posts
+        </a>
+        <a href="/app/cms" class="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
+          Back to CMS Home
+        </a>
+      </div>
+    </header>
+
+    <div class="mt-6 grid gap-3 sm:grid-cols-3">
+      <div class="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3">
+        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Total Pages</p>
+        <p class="mt-1 text-2xl font-semibold text-slate-900">{{ total }}</p>
+      </div>
+      <div class="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3">
+        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Collection Type</p>
+        <p class="mt-1 text-sm font-medium text-slate-700">Published only</p>
+      </div>
+      <div class="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3">
+        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Output Path</p>
+        <p class="mt-1 truncate font-mono text-xs text-slate-600">/app/pages/:slug</p>
+      </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 lg:items-start lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div class="grid gap-4">
+        {% for item in items %}
+          {% if loop.first %}
+            <article class="rounded-3xl border border-slate-200 bg-white/92 p-6 shadow-[0_16px_44px_-30px_rgba(15,23,42,0.55)] sm:p-7">
+              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">Featured Page</p>
+              <h2 class="mt-3 text-3xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-4xl" style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;">
+                <a href="/app/pages/{{ item.slug }}" class="transition hover:text-blue-700">{{ item.title }}</a>
+              </h2>
+              <p class="cms-clamp-3 mt-4 text-sm leading-7 text-slate-600">{{ item.markdown_body }}</p>
+              <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+                <span class="rounded-full bg-slate-100 px-3 py-1 font-mono text-[11px] text-slate-500">{{ item.slug }}</span>
+                <a href="/app/pages/{{ item.slug }}" class="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">
+                  Read page
+                </a>
+              </div>
+            </article>
+          {% else %}
+            <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.55)]">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <h3 class="text-xl font-semibold leading-tight tracking-tight text-slate-900" style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;">
+                  <a href="/app/pages/{{ item.slug }}" class="transition hover:text-blue-700">{{ item.title }}</a>
+                </h3>
+                <span class="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-500">{{ item.slug }}</span>
+              </div>
+              <p class="cms-clamp-2 mt-3 text-sm leading-6 text-slate-600">{{ item.markdown_body }}</p>
+            </article>
+          {% endif %}
+        {% else %}
+          <p class="rounded-2xl border border-dashed border-slate-300 bg-white/80 p-6 text-sm text-slate-500">
+            No published pages found.
+          </p>
+        {% endfor %}
+      </div>
+
+      <aside class="rounded-3xl border border-slate-200 bg-white/90 p-5">
+        <h2 class="text-lg font-semibold tracking-tight text-slate-900">Reading Shelf</h2>
+        <p class="mt-2 text-sm text-slate-600">Recently published posts to pair with your pages.</p>
+
+        <div class="mt-3 flex justify-end">
+          <span id="cms-pages-shelf-loading" class="htmx-indicator inline-flex items-center gap-2 text-xs text-slate-500">
+            <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>
+            Loading...
+          </span>
+        </div>
+
+        <div
+          id="cms-pages-shelf"
+          class="mt-2 grid gap-3"
+          hx-get="/app/partials/cms/posts?limit=4&compact=1&show_category=1"
+          hx-trigger="load"
+          hx-swap="innerHTML"
+          hx-indicator="#cms-pages-shelf-loading"
+        >
+          <p class="rounded-xl border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
+            Loading shelf...
+          </p>
+        </div>
+
+        <div class="mt-4 border-t border-slate-200 pt-4">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Quick Links</p>
+          <div class="mt-2 grid gap-2">
+            <a href="/app/cms" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900">CMS Home</a>
+            <a href="/app/posts" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900">All Posts</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+{% endblock %}

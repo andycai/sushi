@@ -98,7 +98,11 @@ async fn plugin_api_dispatch(
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| match_path.clone());
 
-    if !state.plugins.is_api_route_public(&method, &match_path).await {
+    if !state
+        .plugins
+        .is_api_route_public(&method, &match_path)
+        .await
+    {
         let auth_header = req
             .headers()
             .get("authorization")

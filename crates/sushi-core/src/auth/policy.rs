@@ -74,7 +74,8 @@ mod tests {
 
     #[test]
     fn rejects_policy_key_with_invalid_characters() {
-        let err = PolicyKey::parse("admin.users.re/ad").expect_err("invalid characters should fail");
+        let err =
+            PolicyKey::parse("admin.users.re/ad").expect_err("invalid characters should fail");
         assert!(err.contains("segments"));
     }
 }

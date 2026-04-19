@@ -37,6 +37,49 @@ fn module_to_admin_path(module: &str) -> Option<String> {
     Some(format!("/admin/{module}"))
 }
 
+fn extract_workspace_module_fragment(html: &str) -> Option<String> {
+    let lowered = html.to_ascii_lowercase();
+    let marker_idx = lowered.find("data-admin-workspace-module")?;
+    let section_start = lowered[..marker_idx].rfind("<section")?;
+
+    let mut cursor = section_start;
+    let mut depth = 0usize;
+
+    loop {
+        let next_open = lowered[cursor..].find("<section").map(|idx| cursor + idx);
+        let next_close = lowered[cursor..].find("</section").map(|idx| cursor + idx);
+
+        let (is_open, token_idx) = match (next_open, next_close) {
+            (Some(open_idx), Some(close_idx)) => {
+                if open_idx < close_idx {
+                    (true, open_idx)
+                } else {
+                    (false, close_idx)
+                }
+            }
+            (Some(open_idx), None) => (true, open_idx),
+            (None, Some(close_idx)) => (false, close_idx),
+            (None, None) => return None,
+        };
+
+        let tag_end = lowered[token_idx..]
+            .find('>')
+            .map(|idx| token_idx + idx + 1)?;
+
+        if is_open {
+            depth += 1;
+            cursor = tag_end;
+            continue;
+        }
+
+        depth = depth.checked_sub(1)?;
+        cursor = tag_end;
+        if depth == 0 {
+            return Some(html[section_start..tag_end].to_string());
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct WorkspaceAssetsResponse {
     pub js: Vec<String>,
@@ -130,7 +173,12 @@ pub async fn workspace_partial(
     };
 
     match ctx.plugins.call_admin_handler(&path).await {
-        Some(Ok(html)) => Html(html).into_response(),
+        Some(Ok(html)) => {
+            if let Some(fragment) = extract_workspace_module_fragment(&html) {
+                return Html(fragment).into_response();
+            }
+            Html(html).into_response()
+        }
         Some(Err(err)) => {
             let message = format!("plugin runtime error on workspace page {path}: {err}");
             tracing::error!("{message}");

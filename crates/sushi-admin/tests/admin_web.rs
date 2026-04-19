@@ -710,7 +710,10 @@ async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> ax
     for plugin in plugins.drain(..) {
         let plugin_name = plugin.name().to_string();
         ctx.plugins
-            .register_plugin_manifest_with_permissions(plugin.manifest(), plugin.effective_permissions())
+            .register_plugin_manifest_with_permissions(
+                plugin.manifest(),
+                plugin.effective_permissions(),
+            )
             .await;
         plugin
             .init(&ctx)
@@ -1051,7 +1054,10 @@ async fn admin_cms_workspace_page_renders() {
         .oneshot(
             Request::builder()
                 .uri("/admin/cms")
-                .header(header::AUTHORIZATION, format!("Bearer {}", admin_bearer_token()))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", admin_bearer_token()),
+                )
                 .body(Body::empty())
                 .expect("failed to build request"),
         )
@@ -1089,19 +1095,26 @@ fn admin_cms_template_uses_top_nav_and_panel_mounts() {
     assert!(source.contains("data-cms-panel=\"overview\""));
     assert!(source.contains("data-cms-panel=\"library\""));
     assert!(source.contains("data-cms-panel=\"editor\""));
+    assert!(source.contains("id=\"cms-toast-stack\""));
 }
 
 #[test]
 fn cms_js_defines_shortcuts_and_command_palette_hooks() {
-    let source = std::fs::read_to_string(
-        workspace_root().join("plugins/official/cms/web/static/cms.js"),
-    )
-    .expect("failed to read cms.js");
+    let source =
+        std::fs::read_to_string(workspace_root().join("plugins/official/cms/web/static/cms.js"))
+            .expect("failed to read cms.js");
 
     assert!(source.contains("Cmd/Ctrl+K"));
     assert!(source.contains("switchPanel"));
     assert!(source.contains("openCommandPalette"));
     assert!(source.contains("handleGlobalShortcut"));
+    assert!(source.contains("const typingTarget = isTypingTarget(event.target);"));
+    assert!(source.contains("if (!typingTarget && this.handleGotoSequence(event))"));
+    assert!(source.contains("handleFeedbackResponse"));
+    assert!(source.contains("showToast"));
+    assert!(source.contains("previousSlug === '' || previousSlug !== nextSlug"));
+    assert!(source.contains("initMarkdownEditors"));
+    assert!(source.contains("data-cms-md-action"));
 }
 
 #[test]
@@ -1117,6 +1130,35 @@ fn cms_template_wires_overview_library_editor_endpoints() {
     assert!(source.contains("/admin/partials/cms/editor/save"));
     assert!(source.contains("/admin/partials/cms/status/transition"));
     assert!(source.contains("/admin/partials/cms/commands"));
+}
+
+#[test]
+fn cms_editor_and_row_templates_expose_preview_and_markdown_helpers() {
+    let editor = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/fragments/editor_panel.html"),
+    )
+    .expect("failed to read cms editor panel");
+    let pages_rows = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/fragments/page_rows.html"),
+    )
+    .expect("failed to read page rows template");
+    let posts_rows = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/fragments/post_rows.html"),
+    )
+    .expect("failed to read post rows template");
+
+    assert!(editor.contains("data-cms-markdown-helper"));
+    assert!(editor.contains("data-cms-md-action=\"preview\""));
+    assert!(editor.contains("href=\"/app/pages/{{ item.slug }}\""));
+    assert!(editor.contains("href=\"/admin/preview/cms/pages/{{ item.slug }}\""));
+    assert!(editor.contains("href=\"/app/posts/{{ item.slug }}\""));
+    assert!(editor.contains("href=\"/admin/preview/cms/posts/{{ item.slug }}\""));
+    assert!(pages_rows.contains("href=\"/app/pages/{{ item.slug }}\""));
+    assert!(pages_rows.contains("href=\"/admin/preview/cms/pages/{{ item.slug }}\""));
+    assert!(pages_rows.contains("Preview"));
+    assert!(posts_rows.contains("href=\"/app/posts/{{ item.slug }}\""));
+    assert!(posts_rows.contains("href=\"/admin/preview/cms/posts/{{ item.slug }}\""));
+    assert!(posts_rows.contains("Preview"));
 }
 
 #[tokio::test]
@@ -2169,6 +2211,14 @@ async fn workspace_cms_module_loads_for_authenticated_admin() {
         "html: {html}"
     );
     assert!(html.contains("data-cms-top-nav"), "html: {html}");
+    assert!(
+        !html.contains("id=\"admin-workspace\""),
+        "workspace partial must not include full admin shell: {html}"
+    );
+    assert!(
+        !html.contains("<!DOCTYPE html>"),
+        "workspace partial must not include full page document: {html}"
+    );
 }
 
 #[tokio::test]

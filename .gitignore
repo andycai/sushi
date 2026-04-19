@@ -37,3 +37,4 @@ Thumbs.db
 /.worktrees/
 /worktrees/
 /graphify-out/cache
+.gstack/
