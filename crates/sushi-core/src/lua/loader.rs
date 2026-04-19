@@ -1517,6 +1517,12 @@ end
             .await
             .unwrap();
         ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .unwrap();
+        ctx.db
             .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
             .await
             .unwrap();

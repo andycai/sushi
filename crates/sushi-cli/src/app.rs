@@ -238,12 +238,32 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     // Load plugins
     for plugin in lua_plugins {
         let plugin_name = plugin.name().to_string();
+        let plugin_path_id = plugin.path_id().to_string();
+        let plugin_kind = plugin.kind();
         ctx.plugins
-            .register_plugin_manifest_with_permissions(
+            .register_plugin_manifest_with_permissions_and_identity(
                 plugin.manifest(),
                 plugin.effective_permissions(),
+                &plugin_path_id,
+                plugin_kind,
             )
             .await;
+
+        let enabled = ctx
+            .plugins
+            .list_plugins()
+            .await
+            .into_iter()
+            .find(|item| item.name == plugin_name.as_str())
+            .map(|item| item.enabled)
+            .unwrap_or(true);
+        if !enabled {
+            tracing::info!(
+                "plugin {plugin_name} is disabled by governance state; skipping init"
+            );
+            ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            continue;
+        }
 
         if let Err(e) = plugin.init(&ctx).await {
             tracing::warn!("failed to init plugin {plugin_name}: {e}");

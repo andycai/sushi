@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::state_repository::PluginStateRepository;
-use super::{DatabasePermission, Permissions, PluginManifest};
+use super::{DatabasePermission, Permissions, PluginKind, PluginManifest};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PluginPermissionsView {
@@ -123,33 +123,74 @@ impl PluginManager {
         manifest: &PluginManifest,
         effective_permissions: &Permissions,
     ) {
+        self.register_plugin_manifest_with_permissions_and_identity(
+            manifest,
+            effective_permissions,
+            &manifest.plugin.name,
+            PluginKind::ThirdParty,
+        )
+        .await;
+    }
+
+    pub async fn register_plugin_manifest_with_permissions_and_identity(
+        &self,
+        manifest: &PluginManifest,
+        effective_permissions: &Permissions,
+        plugin_id: &str,
+        kind: PluginKind,
+    ) {
         let plugin_name = manifest.plugin.name.clone();
         let manifest_version = manifest.plugin.version.clone();
-        let mut plugin_info = self.plugin_info.write().await;
-        let (plugin_id, source_kind, enabled, loaded) =
-            if let Some(existing) = plugin_info.get(&plugin_name) {
-                (
-                    existing.plugin_id.clone(),
-                    existing.source_kind.clone(),
-                    existing.enabled,
-                    existing.loaded,
-                )
-            } else {
-                (
-                    manifest.plugin.name.clone(),
-                    "third_party".to_string(),
-                    true,
-                    false,
-                )
-            };
+        let source_kind = kind.tier_name().to_string();
 
-        plugin_info.insert(
+        let existing = self.plugin_info.read().await.get(&plugin_name).cloned();
+        let mut resolved_plugin_id = plugin_id.to_string();
+        let mut resolved_source_kind = source_kind.clone();
+        let mut enabled = existing.as_ref().map(|item| item.enabled).unwrap_or(true);
+        let mut loaded = existing.as_ref().map(|item| item.loaded).unwrap_or(false);
+        let mut resolved_version = manifest_version.clone();
+
+        // Best-effort identity upsert: runtime state must not block plugin bootstrap.
+        if let Some(repo) = &self.state_repo {
+            if let Err(err) = repo
+                .upsert_discovered_plugin(plugin_id, &plugin_name, &source_kind, &manifest_version)
+                .await
+            {
+                tracing::warn!(
+                    "failed to upsert plugin runtime state during manifest registration: plugin={} error={}",
+                    plugin_name,
+                    err
+                );
+            }
+
+            match repo.get_by_name(&plugin_name).await {
+                Ok(Some(state)) => {
+                    resolved_plugin_id = state.plugin_id;
+                    resolved_source_kind = state.source_kind;
+                    enabled = state.enabled;
+                    loaded = state.loaded;
+                    if !state.version.is_empty() {
+                        resolved_version = state.version;
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(
+                        "failed to read plugin runtime state during manifest registration: plugin={} error={}",
+                        plugin_name,
+                        err
+                    );
+                }
+            }
+        }
+
+        self.plugin_info.write().await.insert(
             plugin_name.clone(),
             PluginInfo {
-                plugin_id: plugin_id.clone(),
-                source_kind: source_kind.clone(),
-                name: plugin_name.clone(),
-                version: manifest_version.clone(),
+                plugin_id: resolved_plugin_id,
+                source_kind: resolved_source_kind,
+                name: plugin_name,
+                version: resolved_version,
                 description: manifest.plugin.description.clone(),
                 enabled,
                 loaded,
@@ -161,33 +202,6 @@ impl PluginManager {
                 },
             },
         );
-        drop(plugin_info);
-
-        // Best-effort bootstrap to ensure discovered plugins exist in runtime governance storage.
-        if let Some(repo) = &self.state_repo {
-            match repo
-                .upsert_discovered_plugin(&plugin_id, &plugin_name, &source_kind, &manifest_version)
-                .await
-            {
-                Ok(state) => {
-                    let mut plugin_info = self.plugin_info.write().await;
-                    if let Some(item) = plugin_info.get_mut(&plugin_name) {
-                        item.plugin_id = state.plugin_id;
-                        item.source_kind = state.source_kind;
-                        item.version = state.version;
-                        item.enabled = state.enabled;
-                        item.loaded = state.loaded;
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        "failed to upsert plugin runtime state during manifest registration: plugin={} error={}",
-                        plugin_name,
-                        err
-                    );
-                }
-            }
-        }
     }
 
     pub async fn mark_plugin_loaded(&self, plugin_name: &str, loaded: bool) {
