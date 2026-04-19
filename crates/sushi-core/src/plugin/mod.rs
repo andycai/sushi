@@ -1,4 +1,5 @@
 pub mod manager;
+pub mod state_repository;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
