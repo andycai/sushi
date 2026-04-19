@@ -833,6 +833,68 @@ end
     }
 
     #[tokio::test]
+    async fn test_plugin_api_dispatch_returns_forbidden_when_plugin_disabled() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_test";
+        let handler = lua
+            .create_async_function(|_, ()| async { Ok(r#"{"ok":true}"#.to_string()) })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/test",
+                "plugin",
+                handler_key,
+                None,
+                true,
+            )
+            .await;
+        manager
+            .set_plugin_enabled("plugin", false, Some("admin"), Some("test"))
+            .await
+            .unwrap();
+
+        let state = PluginApiState {
+            plugins: manager,
+            auth_state: test_auth_state(),
+            logs: Arc::new(LogService::new()),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/test")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(
+            response.headers().get(axum::http::header::CONTENT_TYPE),
+            Some(&axum::http::HeaderValue::from_static("application/json"))
+        );
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "error": "plugin_disabled",
+                "message": "plugin 'plugin' is disabled",
+            })
+        );
+    }
+
+    #[tokio::test]
     async fn test_build_app_allows_login_without_token() {
         let ctx = test_context().await;
         let app = build_app(&ctx);
