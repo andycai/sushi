@@ -15,7 +15,9 @@ use sushi_core::context::SushiContext;
 use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::manager::PageResolvedAssets;
-use sushi_core::plugin::Plugin;
+use sushi_core::plugin::{
+    DatabasePermission, Permissions, Plugin, PluginManifest, PluginMeta, PluginPoliciesConfig,
+};
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
 use sushi_core::web::template_service::TemplateService;
@@ -322,6 +324,12 @@ fn admin_http_bindings() -> Vec<HttpBinding> {
             method: "GET".to_string(),
             path_pattern: "/admin/api/plugins/{plugin}/pages".to_string(),
             policy_key: "admin.plugins.view".to_string(),
+        },
+        HttpBinding {
+            surface: "admin".to_string(),
+            method: "PATCH".to_string(),
+            path_pattern: "/admin/api/plugins/{plugin}/state".to_string(),
+            policy_key: "admin.plugins.manage".to_string(),
         },
         HttpBinding {
             surface: "admin".to_string(),
@@ -1340,6 +1348,28 @@ fn bearer_token_for_role(role: &str) -> String {
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     jwt.create_access_token(1, "admin", role)
         .expect("failed to create token")
+}
+
+async fn register_test_plugin(ctx: &SushiContext, plugin_name: &str) {
+    let manifest = PluginManifest {
+        plugin: PluginMeta {
+            name: plugin_name.to_string(),
+            version: "1.0.0".to_string(),
+            description: "Toggle test plugin".to_string(),
+            entry: "init.lua".to_string(),
+        },
+        permissions: Permissions {
+            routes: true,
+            commands: true,
+            admin: true,
+            database: DatabasePermission::None,
+        },
+        policies: PluginPoliciesConfig::default(),
+        admin: None,
+        file_browser: None,
+    };
+
+    ctx.plugins.register_plugin_manifest(&manifest).await;
 }
 
 fn extract_attr_value(source: &str, attr: &str) -> Option<String> {
@@ -2515,6 +2545,114 @@ async fn viewer_cannot_access_plugin_pages_api_without_plugins_view_permission()
         .expect("request failed");
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_can_toggle_plugin_enabled_state() {
+    let (app, ctx) = build_app_with_context(None).await;
+    register_test_plugin(&ctx, "toggle-target").await;
+    let token = admin_bearer_token();
+
+    let disable_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/admin/api/plugins/toggle-target/state")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"enabled":false,"reason":"maintenance window"}"#,
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(disable_response.status(), StatusCode::OK);
+    let disable_body = to_bytes(disable_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let disable_payload: Value =
+        serde_json::from_slice(&disable_body).expect("invalid disable payload");
+    assert_eq!(
+        disable_payload.get("enabled").and_then(Value::as_bool),
+        Some(false)
+    );
+
+    let disabled_state = ctx
+        .plugins
+        .list_plugins()
+        .await
+        .into_iter()
+        .find(|plugin| plugin.name == "toggle-target")
+        .map(|plugin| plugin.enabled);
+    assert_eq!(disabled_state, Some(false));
+
+    let enable_response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/admin/api/plugins/toggle-target/state")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"enabled":true,"reason":"maintenance complete"}"#,
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(enable_response.status(), StatusCode::OK);
+    let enable_body = to_bytes(enable_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let enable_payload: Value =
+        serde_json::from_slice(&enable_body).expect("invalid enable payload");
+    assert_eq!(
+        enable_payload.get("enabled").and_then(Value::as_bool),
+        Some(true)
+    );
+
+    let enabled_state = ctx
+        .plugins
+        .list_plugins()
+        .await
+        .into_iter()
+        .find(|plugin| plugin.name == "toggle-target")
+        .map(|plugin| plugin.enabled);
+    assert_eq!(enabled_state, Some(true));
+}
+
+#[tokio::test]
+async fn viewer_cannot_toggle_plugin_enabled_state() {
+    let (app, ctx) = build_app_with_context(None).await;
+    register_test_plugin(&ctx, "toggle-target").await;
+    let token = bearer_token_for_role("viewer");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/admin/api/plugins/toggle-target/state")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"enabled":false,"reason":"unauthorized change"}"#,
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let current_state = ctx
+        .plugins
+        .list_plugins()
+        .await
+        .into_iter()
+        .find(|plugin| plugin.name == "toggle-target")
+        .map(|plugin| plugin.enabled);
+    assert_eq!(current_state, Some(true));
 }
 
 #[tokio::test]
