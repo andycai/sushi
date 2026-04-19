@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 use clap::{Args, Subcommand};
+use sushi_core::plugin::manager::PluginInfo;
 
 #[derive(Args)]
 pub struct PluginArgs {
@@ -66,22 +67,12 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
             )
             .await?;
 
-            let plugins = ctx.plugins.list_plugins().await;
-            if let Some(plugin_name) = plugin.as_ref() {
-                let Some(item) = plugins.into_iter().find(|p| p.name == *plugin_name) else {
-                    anyhow::bail!("plugin not found: {}", plugin_name);
-                };
+            let targets = select_status_targets(ctx.plugins.list_plugins().await, plugin.as_deref())?;
+            for item in targets {
                 println!(
                     "{}\t{}\tenabled={}\tloaded={}\tsource_kind={}",
                     item.name, item.version, item.enabled, item.loaded, item.source_kind
                 );
-            } else {
-                for item in plugins {
-                    println!(
-                        "{}\t{}\tenabled={}\tloaded={}\tsource_kind={}",
-                        item.name, item.version, item.enabled, item.loaded, item.source_kind
-                    );
-                }
             }
         }
         PluginCommand::Enable { plugin, reason } => {
@@ -96,7 +87,7 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
                 .plugins
                 .set_plugin_enabled(&plugin, true, Some(role), reason.as_deref())
                 .await
-                .map_err(anyhow::Error::msg)?;
+                .map_err(map_toggle_error)?;
             println!("enabled {} (loaded={})", state.name, state.loaded);
         }
         PluginCommand::Disable { plugin, reason } => {
@@ -111,17 +102,33 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
                 .plugins
                 .set_plugin_enabled(&plugin, false, Some(role), reason.as_deref())
                 .await
-                .map_err(anyhow::Error::msg)?;
+                .map_err(map_toggle_error)?;
             println!("disabled {} (loaded={})", state.name, state.loaded);
         }
     }
     Ok(())
 }
 
+fn select_status_targets(plugins: Vec<PluginInfo>, target: Option<&str>) -> Result<Vec<PluginInfo>> {
+    if let Some(plugin_name) = target {
+        let Some(item) = plugins.into_iter().find(|p| p.name == plugin_name) else {
+            anyhow::bail!("plugin not found: {}", plugin_name);
+        };
+        return Ok(vec![item]);
+    }
+
+    Ok(plugins)
+}
+
+fn map_toggle_error(err: String) -> Error {
+    Error::msg(err)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use clap::Parser;
+    use sushi_core::plugin::manager::PluginPermissionsView;
 
     #[derive(Parser)]
     struct TestCli {
@@ -165,6 +172,45 @@ mod tests {
                 assert_eq!(reason.as_deref(), Some("maintenance"));
             }
             _ => panic!("expected disable command"),
+        }
+    }
+
+    #[test]
+    fn status_selection_returns_error_for_missing_plugin() {
+        let plugins = vec![test_plugin("kv-store"), test_plugin("notes")];
+        let err = select_status_targets(plugins, Some("missing")).unwrap_err();
+        assert_eq!(err.to_string(), "plugin not found: missing");
+    }
+
+    #[test]
+    fn status_selection_returns_single_match_for_named_plugin() {
+        let plugins = vec![test_plugin("kv-store"), test_plugin("notes")];
+        let selected = select_status_targets(plugins, Some("notes")).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].name, "notes");
+    }
+
+    #[test]
+    fn map_toggle_error_preserves_message() {
+        let err = map_toggle_error("plugin not found: missing".to_string());
+        assert_eq!(err.to_string(), "plugin not found: missing");
+    }
+
+    fn test_plugin(name: &str) -> PluginInfo {
+        PluginInfo {
+            plugin_id: format!("plugin-{name}"),
+            source_kind: "third_party".to_string(),
+            name: name.to_string(),
+            version: "0.1.0".to_string(),
+            description: String::new(),
+            enabled: true,
+            loaded: true,
+            permissions: PluginPermissionsView {
+                routes: true,
+                commands: true,
+                admin: true,
+                database: "none".to_string(),
+            },
         }
     }
 }
