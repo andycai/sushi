@@ -2,210 +2,76 @@
 {% set active_section = "plugins" %}
 {% block title %}CMS — Sushi Admin{% endblock %}
 {% block content %}
-<section class="admin-module" data-admin-workspace-module="cms" x-data="cmsPage()">
-  <div class="ui-page-header">
-    <h1 class="ui-title">CMS</h1>
-    <p class="ui-subtitle">Manage pages, posts, and categories.</p>
-  </div>
+<section
+  class="admin-module cms-workbench"
+  data-admin-workspace-module="cms"
+  data-cms-editor-save-url="/admin/partials/cms/editor/save"
+  data-cms-status-transition-url="/admin/partials/cms/status/transition"
+  x-data="cmsPage()"
+  x-init="init()"
+>
+  <header class="cms-top-nav ui-card" data-cms-top-nav>
+    <div class="cms-top-nav-left">
+      <h1 class="ui-title">CMS workspace</h1>
+      <p class="ui-subtitle">Editorial workbench for pages, posts, and categories.</p>
+    </div>
+
+    <nav class="cms-top-nav-center" aria-label="CMS navigation">
+      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('overview') }" @click="goOverview()">Overview</button>
+      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('posts') }" @click="goLibrary('posts')">Posts</button>
+      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('pages') }" @click="goLibrary('pages')">Pages</button>
+      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('categories') }" @click="goLibrary('categories')">Categories</button>
+    </nav>
+
+    <div class="cms-top-nav-right">
+      <button type="button" class="ui-btn ui-btn-secondary" @click="openCommandPalette()" title="Cmd/Ctrl+K">Command</button>
+      <button type="button" class="ui-btn ui-btn-primary" @click="openEditor('posts', 'new')">New Post</button>
+      <button type="button" class="ui-btn ui-btn-primary" @click="openEditor('pages', 'new')">New Page</button>
+    </div>
+  </header>
 
   <div id="cms-feedback" class="ui-feedback"></div>
 
-  <section class="ui-card">
-    <header class="ui-card-header">
-      <h2 class="text-lg font-semibold">Pages</h2>
-    </header>
+  <section
+    id="cms-overview-panel"
+    class="cms-panel"
+    data-cms-panel="overview"
+    x-show="isPanel('overview')"
+    x-cloak
+    hx-get="/admin/partials/cms/overview"
+    hx-trigger="load, cms:panel:overview from:body"
+    hx-swap="innerHTML"
+  ></section>
 
-    <form
-      id="cms-page-form"
-      class="space-y-3"
-      hx-post="/admin/partials/cms/pages/upsert"
-      hx-target="#cms-feedback"
+  <section
+    id="cms-library-panel"
+    class="cms-panel"
+    data-cms-panel="library"
+    x-show="isPanel('library')"
+    x-cloak
+    hx-get="/admin/partials/cms/library/posts"
+    hx-trigger="cms:panel:library from:body, cms:library:refresh from:body"
+    hx-swap="innerHTML"
+  ></section>
+
+  <section
+    id="cms-editor-panel"
+    class="cms-panel"
+    data-cms-panel="editor"
+    x-show="isPanel('editor')"
+    x-cloak
+    hx-get="/admin/partials/cms/editor/posts/new"
+    hx-trigger="cms:panel:editor from:body, cms:editor:refresh from:body"
+    hx-swap="innerHTML"
+  ></section>
+
+  <section class="cms-command-overlay" x-show="commandOpen" x-cloak @click.self="closeCommandPalette()">
+    <div id="cms-command-panel"
+      class="cms-command-shell"
+      hx-get="/admin/partials/cms/commands"
+      hx-trigger="revealed, cms:commands:refresh from:body"
       hx-swap="innerHTML"
-      x-on:htmx:after-request.camel="onPagesUpsertAfterRequest($event)"
-    >
-      <input type="hidden" name="original_slug" x-model="pageForm.original_slug">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label class="ui-label" for="cms-page-title">Title</label>
-          <input id="cms-page-title" type="text" class="ui-input" name="title" x-model="pageForm.title" required>
-        </div>
-        <div>
-          <label class="ui-label" for="cms-page-slug">Slug</label>
-          <input id="cms-page-slug" type="text" class="ui-input" name="slug" x-model="pageForm.slug" required>
-        </div>
-        <div>
-          <label class="ui-label" for="cms-page-status">Status</label>
-          <select id="cms-page-status" class="ui-select" name="status" x-model="pageForm.status">
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-          </select>
-        </div>
-      </div>
-      <div>
-        <label class="ui-label" for="cms-page-body">Markdown</label>
-        <textarea id="cms-page-body" class="ui-input" rows="6" name="markdown_body" x-model="pageForm.markdown_body" required></textarea>
-      </div>
-      <div class="ui-toolbar">
-        <button type="button" class="ui-btn ui-btn-secondary" @click="resetPageForm()">New</button>
-        <button type="submit" class="ui-btn ui-btn-primary">Save Page</button>
-      </div>
-    </form>
-
-    <div class="ui-table-wrap mt-3">
-      <table class="ui-table">
-        <thead>
-          <tr>
-            <th>Slug</th>
-            <th>Title</th>
-            <th>Status</th>
-            <th class="actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody
-          id="cms-page-table"
-          hx-get="/admin/partials/cms/pages/table"
-          hx-trigger="load, cms:pages:refresh from:body"
-          hx-swap="innerHTML"
-        >
-          <tr>
-            <td colspan="4" class="ui-empty">Loading pages...</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="ui-card mt-4">
-    <header class="ui-card-header">
-      <h2 class="text-lg font-semibold">Posts</h2>
-    </header>
-
-    <form
-      id="cms-post-form"
-      class="space-y-3"
-      hx-post="/admin/partials/cms/posts/upsert"
-      hx-target="#cms-feedback"
-      hx-swap="innerHTML"
-      x-on:htmx:after-request.camel="onPostsUpsertAfterRequest($event)"
-    >
-      <input type="hidden" name="original_slug" x-model="postForm.original_slug">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label class="ui-label" for="cms-post-title">Title</label>
-          <input id="cms-post-title" type="text" class="ui-input" name="title" x-model="postForm.title" required>
-        </div>
-        <div>
-          <label class="ui-label" for="cms-post-slug">Slug</label>
-          <input id="cms-post-slug" type="text" class="ui-input" name="slug" x-model="postForm.slug" required>
-        </div>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label class="ui-label" for="cms-post-category">Category slug</label>
-          <input id="cms-post-category" type="text" class="ui-input" name="category_slug" x-model="postForm.category_slug" required>
-        </div>
-        <div>
-          <label class="ui-label" for="cms-post-status">Status</label>
-          <select id="cms-post-status" class="ui-select" name="status" x-model="postForm.status">
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-          </select>
-        </div>
-        <div>
-          <label class="ui-label" for="cms-post-excerpt">Excerpt</label>
-          <input id="cms-post-excerpt" type="text" class="ui-input" name="excerpt" x-model="postForm.excerpt">
-        </div>
-      </div>
-      <div>
-        <label class="ui-label" for="cms-post-body">Markdown</label>
-        <textarea id="cms-post-body" class="ui-input" rows="6" name="markdown_body" x-model="postForm.markdown_body" required></textarea>
-      </div>
-      <div class="ui-toolbar">
-        <button type="button" class="ui-btn ui-btn-secondary" @click="resetPostForm()">New</button>
-        <button type="submit" class="ui-btn ui-btn-primary">Save Post</button>
-      </div>
-    </form>
-
-    <div class="ui-table-wrap mt-3">
-      <table class="ui-table">
-        <thead>
-          <tr>
-            <th>Slug</th>
-            <th>Title</th>
-            <th>Category</th>
-            <th>Status</th>
-            <th class="actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody
-          id="cms-post-table"
-          hx-get="/admin/partials/cms/posts/table"
-          hx-trigger="load, cms:posts:refresh from:body"
-          hx-swap="innerHTML"
-        >
-          <tr>
-            <td colspan="5" class="ui-empty">Loading posts...</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="ui-card mt-4">
-    <header class="ui-card-header">
-      <h2 class="text-lg font-semibold">Categories</h2>
-    </header>
-
-    <form
-      id="cms-category-form"
-      class="space-y-3"
-      hx-post="/admin/partials/cms/categories/upsert"
-      hx-target="#cms-feedback"
-      hx-swap="innerHTML"
-      x-on:htmx:after-request.camel="onCategoriesUpsertAfterRequest($event)"
-    >
-      <input type="hidden" name="original_slug" x-model="categoryForm.original_slug">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label class="ui-label" for="cms-category-name">Name</label>
-          <input id="cms-category-name" type="text" class="ui-input" name="name" x-model="categoryForm.name" required>
-        </div>
-        <div>
-          <label class="ui-label" for="cms-category-slug">Slug</label>
-          <input id="cms-category-slug" type="text" class="ui-input" name="slug" x-model="categoryForm.slug" required>
-        </div>
-      </div>
-      <div>
-        <label class="ui-label" for="cms-category-description">Description</label>
-        <textarea id="cms-category-description" class="ui-input" rows="4" name="description" x-model="categoryForm.description"></textarea>
-      </div>
-      <div class="ui-toolbar">
-        <button type="button" class="ui-btn ui-btn-secondary" @click="resetCategoryForm()">New</button>
-        <button type="submit" class="ui-btn ui-btn-primary">Save Category</button>
-      </div>
-    </form>
-
-    <div class="ui-table-wrap mt-3">
-      <table class="ui-table">
-        <thead>
-          <tr>
-            <th>Slug</th>
-            <th>Name</th>
-            <th class="actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody
-          id="cms-category-table"
-          hx-get="/admin/partials/cms/categories/table"
-          hx-trigger="load, cms:categories:refresh from:body"
-          hx-swap="innerHTML"
-        >
-          <tr>
-            <td colspan="3" class="ui-empty">Loading categories...</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    ></div>
   </section>
 </section>
 {% endblock %}

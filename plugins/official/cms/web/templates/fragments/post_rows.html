@@ -1,30 +1,28 @@
 {% for item in items %}
-  <tr
-    data-post-slug="{{ item.slug }}"
-    data-post-title="{{ item.title }}"
-    data-post-status="{{ item.status }}"
-    data-post-category-slug="{{ item.category_slug }}"
-    data-post-category-name="{{ item.category_name }}"
-  >
+  <tr data-cms-row data-resource="posts" data-slug="{{ item.slug }}">
     <td class="ui-mono">{{ item.slug }}</td>
     <td>{{ item.title }}</td>
     <td>{{ item.category_name }}</td>
-    <td>{{ item.status }}</td>
-    <td class="actions">
-      <textarea class="hidden" data-post-markdown>{{ item.markdown_body }}</textarea>
-      <textarea class="hidden" data-post-excerpt>{{ item.excerpt }}</textarea>
-      <button type="button" class="ui-action-link" @click="editPostFromRow($el.closest('tr'))">Edit</button>
-      <form
-        class="inline-block"
-        hx-post="/admin/partials/cms/posts/delete"
-        hx-target="#cms-feedback"
-        hx-swap="innerHTML"
-        x-on:submit="if (!confirmDelete('post', '{{ item.slug }}')) { $event.preventDefault() }"
-        x-on:htmx:after-request.camel="onPostsDeleteAfterRequest($event)"
-      >
+    <td>
+      <form class="cms-inline-form" hx-post="/admin/partials/cms/status/transition" hx-target="#cms-feedback" hx-swap="innerHTML">
+        <input type="hidden" name="resource" value="posts">
         <input type="hidden" name="slug" value="{{ item.slug }}">
-        <button type="submit" class="ui-action-link danger">Delete</button>
+        <select name="next_status" class="ui-select">
+          <option value="draft" {% if item.status == "draft" %}selected{% endif %}>Draft</option>
+          <option value="published" {% if item.status == "published" %}selected{% endif %}>Published</option>
+          <option value="archived" {% if item.status == "archived" %}selected{% endif %}>Archived</option>
+        </select>
+        <button type="submit" class="ui-btn ui-btn-ghost">Apply</button>
       </form>
+    </td>
+    <td class="text-right">
+      <div class="cms-row-actions">
+        <button type="button" class="ui-btn ui-btn-secondary" data-cms-open-editor data-resource="posts" data-slug="{{ item.slug }}">Edit</button>
+        <form hx-post="/admin/partials/cms/posts/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
+          <input type="hidden" name="slug" value="{{ item.slug }}">
+          <button type="submit" class="ui-btn ui-btn-danger" data-confirm="Delete this post?">Delete</button>
+        </form>
+      </div>
     </td>
   </tr>
 {% else %}

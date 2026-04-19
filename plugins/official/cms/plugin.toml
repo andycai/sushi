@@ -20,4 +20,4 @@ scopes = [
 
 [admin.assets.bundles.workspace]
 js = ["cms.js"]
-css = []
+css = ["cms.css"]

@@ -1,253 +1,370 @@
 (() => {
-  function defaultPageForm() {
-    return {
-      original_slug: '',
-      title: '',
-      slug: '',
-      status: 'draft',
-      markdown_body: '',
-    };
-  }
+  const OVERVIEW = 'overview';
+  const LIBRARY = 'library';
+  const EDITOR = 'editor';
+  const DEFAULT_LIBRARY_SCOPE = 'posts';
+  const VALID_SCOPES = new Set(['posts', 'pages', 'categories']);
 
-  function defaultPostForm() {
-    return {
-      original_slug: '',
-      title: '',
-      slug: '',
-      excerpt: '',
-      markdown_body: '',
-      status: 'draft',
-      category_slug: '',
-    };
-  }
-
-  function defaultCategoryForm() {
-    return {
-      original_slug: '',
-      name: '',
-      slug: '',
-      description: '',
-    };
-  }
-
-  function readTextareaValue(row, selector) {
-    if (!row) {
-      return '';
+  function toScope(value) {
+    const normalized = String(value || '').toLowerCase();
+    if (VALID_SCOPES.has(normalized)) {
+      return normalized;
     }
-    const node = row.querySelector(selector);
-    if (!node) {
-      return '';
-    }
-    return typeof node.value === 'string' ? node.value : '';
+    return DEFAULT_LIBRARY_SCOPE;
   }
 
-  function normalizeText(value) {
-    return typeof value === 'string' ? value : '';
+  function isTypingTarget(target) {
+    if (!target) {
+      return false;
+    }
+    const tag = (target.tagName || '').toLowerCase();
+    return (
+      tag === 'input' ||
+      tag === 'textarea' ||
+      tag === 'select' ||
+      target.isContentEditable
+    );
+  }
+
+  function closest(el, selector) {
+    if (!el || typeof el.closest !== 'function') {
+      return null;
+    }
+    return el.closest(selector);
   }
 
   window.cmsPage = function cmsPage() {
     return {
-      pageForm: defaultPageForm(),
-      postForm: defaultPostForm(),
-      categoryForm: defaultCategoryForm(),
+      panel: OVERVIEW,
+      activeNav: OVERVIEW,
+      libraryScope: DEFAULT_LIBRARY_SCOPE,
+      commandOpen: false,
+      pendingGotoPrefix: false,
+      selectedRowIndex: 0,
+      libraryRows: [],
 
-      resetPageForm() {
-        this.pageForm = defaultPageForm();
+      init() {
+        this.bindEvents();
       },
 
-      resetPostForm() {
-        this.postForm = defaultPostForm();
+      bindEvents() {
+        window.addEventListener('keydown', (event) => this.handleGlobalShortcut(event));
+
+        document.body.addEventListener('click', (event) => {
+          const openLibraryTrigger = closest(event.target, '[data-cms-open-library]');
+          if (openLibraryTrigger) {
+            event.preventDefault();
+            this.goLibrary(openLibraryTrigger.dataset.scope || DEFAULT_LIBRARY_SCOPE);
+            return;
+          }
+
+          const openEditorTrigger = closest(event.target, '[data-cms-open-editor]');
+          if (openEditorTrigger) {
+            event.preventDefault();
+            this.openEditor(
+              toScope(openEditorTrigger.dataset.resource),
+              openEditorTrigger.dataset.slug || 'new',
+            );
+          }
+        });
+
+        document.body.addEventListener('input', (event) => {
+          if (!closest(event.target, '[data-cms-library-search]')) {
+            return;
+          }
+          this.filterRows(event.target.value || '');
+        });
       },
 
-      resetCategoryForm() {
-        this.categoryForm = defaultCategoryForm();
-      },
-
-      editPageFromRow(row) {
-        if (!row) {
+      switchPanel(next) {
+        if (next !== OVERVIEW && next !== LIBRARY && next !== EDITOR) {
           return;
         }
-        this.pageForm = {
-          original_slug: normalizeText(row.dataset.pageSlug),
-          title: normalizeText(row.dataset.pageTitle),
-          slug: normalizeText(row.dataset.pageSlug),
-          status: normalizeText(row.dataset.pageStatus) || 'draft',
-          markdown_body: readTextareaValue(row, '[data-page-markdown]'),
-        };
+        this.panel = next;
       },
 
-      editPostFromRow(row) {
-        if (!row) {
-          return;
-        }
-        this.postForm = {
-          original_slug: normalizeText(row.dataset.postSlug),
-          title: normalizeText(row.dataset.postTitle),
-          slug: normalizeText(row.dataset.postSlug),
-          excerpt: readTextareaValue(row, '[data-post-excerpt]'),
-          markdown_body: readTextareaValue(row, '[data-post-markdown]'),
-          status: normalizeText(row.dataset.postStatus) || 'draft',
-          category_slug: normalizeText(row.dataset.postCategorySlug),
-        };
+      isPanel(name) {
+        return this.panel === name;
       },
 
-      editCategoryFromRow(row) {
-        if (!row) {
-          return;
-        }
-        this.categoryForm = {
-          original_slug: normalizeText(row.dataset.categorySlug),
-          name: normalizeText(row.dataset.categoryName),
-          slug: normalizeText(row.dataset.categorySlug),
-          description: readTextareaValue(row, '[data-category-description]'),
-        };
+      isNavActive(name) {
+        return this.activeNav === name;
       },
 
-      confirmDelete(kind, slug) {
-        const entity = normalizeText(kind) || 'item';
-        const label = normalizeText(slug) || 'this item';
-        return window.confirm(`Delete ${entity} "${label}"? This action cannot be undone.`);
+      goOverview() {
+        this.activeNav = OVERVIEW;
+        this.switchPanel(OVERVIEW);
+        this.dispatchHtmxTrigger('cms:panel:overview');
       },
 
-      isErrorFeedback(selector) {
-        if (window.AdminUI && typeof window.AdminUI.isErrorFeedback === 'function') {
-          return window.AdminUI.isErrorFeedback(selector, 'error');
-        }
-
-        const container = document.querySelector(selector);
-        if (!container) {
-          return false;
-        }
-        const flash = container.querySelector('[data-ui-flash]');
-        if (!flash) {
-          return false;
-        }
-        const level = String(flash.dataset.level || '').toLowerCase();
-        return level === 'error' || level === 'danger';
+      goLibrary(scope) {
+        const resolvedScope = toScope(scope);
+        this.activeNav = resolvedScope;
+        this.libraryScope = resolvedScope;
+        this.switchPanel(LIBRARY);
+        this.loadPanel('#cms-library-panel', `/admin/partials/cms/library/${resolvedScope}`);
       },
 
-      notifyFeedback(selector, fallbackLevel) {
-        if (window.AdminUI && typeof window.AdminUI.consumeFeedback === 'function') {
-          window.AdminUI.consumeFeedback(selector, fallbackLevel);
-        }
+      openEditor(resource, slug) {
+        const resolvedResource = toScope(resource);
+        const resolvedSlug = slug && String(slug).trim() !== '' ? String(slug).trim() : 'new';
+        this.activeNav = resolvedResource;
+        this.switchPanel(EDITOR);
+        this.loadPanel('#cms-editor-panel', `/admin/partials/cms/editor/${resolvedResource}/${encodeURIComponent(resolvedSlug)}`);
       },
 
-      isSuccessfulRequest(event, feedbackSelector) {
-        if (!event?.detail?.successful) {
-          return false;
-        }
-        return !this.isErrorFeedback(feedbackSelector);
+      openCommandPalette() {
+        this.commandOpen = true;
+        this.dispatchHtmxTrigger('cms:commands:refresh');
       },
 
-      refreshPartial(url, target, errorMessage) {
-        if (window.AdminUI && typeof window.AdminUI.refreshPartial === 'function') {
-          window.AdminUI.refreshPartial({
-            url,
-            target,
-            errorMessage,
+      closeCommandPalette() {
+        this.commandOpen = false;
+      },
+
+      loadPanel(targetSelector, url) {
+        if (window.htmx && typeof window.htmx.ajax === 'function') {
+          window.htmx.ajax('GET', url, {
+            target: targetSelector,
+            swap: 'innerHTML',
           });
           return;
         }
-
+        const target = document.querySelector(targetSelector);
+        if (!target) {
+          return;
+        }
         fetch(url)
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(`refresh failed (${response.status})`);
-            }
-            return response.text();
-          })
+          .then((response) => response.text())
           .then((html) => {
-            const node = document.querySelector(target);
-            if (node) {
-              node.innerHTML = html;
-            }
+            target.innerHTML = html;
           })
           .catch(() => {
-            if (window.AdminUI && typeof window.AdminUI.notify === 'function') {
-              window.AdminUI.notify({
-                tone: 'danger',
-                title: 'Refresh failed',
-                message: errorMessage,
-              });
-            }
+            target.innerHTML = '<div class="ui-empty">Unable to load this panel.</div>';
           });
       },
 
-      refreshPages() {
-        this.refreshPartial(
-          '/admin/partials/cms/pages/table',
-          '#cms-page-table',
-          'Unable to refresh pages table.',
-        );
-      },
-
-      refreshPosts() {
-        this.refreshPartial(
-          '/admin/partials/cms/posts/table',
-          '#cms-post-table',
-          'Unable to refresh posts table.',
-        );
-      },
-
-      refreshCategories() {
-        this.refreshPartial(
-          '/admin/partials/cms/categories/table',
-          '#cms-category-table',
-          'Unable to refresh categories table.',
-        );
-      },
-
-      onPagesUpsertAfterRequest(event) {
-        const ok = this.isSuccessfulRequest(event, '#cms-feedback');
-        this.notifyFeedback('#cms-feedback', ok ? 'success' : 'error');
-        if (ok) {
-          this.refreshPages();
-          this.resetPageForm();
+      dispatchHtmxTrigger(name) {
+        if (window.htmx && typeof window.htmx.trigger === 'function') {
+          window.htmx.trigger(document.body, name);
         }
       },
 
-      onPagesDeleteAfterRequest(event) {
-        const ok = this.isSuccessfulRequest(event, '#cms-feedback');
-        this.notifyFeedback('#cms-feedback', ok ? 'success' : 'error');
-        if (ok) {
-          this.refreshPages();
-          this.resetPageForm();
+      focusLibrarySearch() {
+        const input = document.querySelector('[data-cms-library-search]');
+        if (input) {
+          input.focus();
+          input.select();
         }
       },
 
-      onPostsUpsertAfterRequest(event) {
-        const ok = this.isSuccessfulRequest(event, '#cms-feedback');
-        this.notifyFeedback('#cms-feedback', ok ? 'success' : 'error');
-        if (ok) {
-          this.refreshPosts();
-          this.resetPostForm();
+      collectLibraryRows() {
+        const rows = Array.from(document.querySelectorAll('#cms-library-table-body [data-cms-row]'));
+        this.libraryRows = rows;
+        return rows;
+      },
+
+      highlightLibrarySelection() {
+        const rows = this.collectLibraryRows();
+        rows.forEach((row, index) => {
+          row.classList.toggle('is-selected', index === this.selectedRowIndex);
+        });
+      },
+
+      moveRowSelection(direction) {
+        const rows = this.collectLibraryRows();
+        if (rows.length === 0) {
+          this.selectedRowIndex = 0;
+          return;
+        }
+        if (direction > 0) {
+          this.selectedRowIndex = Math.min(rows.length - 1, this.selectedRowIndex + 1);
+        } else {
+          this.selectedRowIndex = Math.max(0, this.selectedRowIndex - 1);
+        }
+        this.highlightLibrarySelection();
+      },
+
+      openSelectedRow() {
+        const rows = this.collectLibraryRows();
+        const selected = rows[this.selectedRowIndex];
+        if (!selected) {
+          return;
+        }
+        this.openEditor(selected.dataset.resource || this.libraryScope, selected.dataset.slug || 'new');
+      },
+
+      deleteSelectedRow() {
+        const rows = this.collectLibraryRows();
+        const selected = rows[this.selectedRowIndex];
+        if (!selected) {
+          return;
+        }
+        const form = selected.querySelector('form[hx-post*="/delete"]');
+        if (!form) {
+          return;
+        }
+        if (window.htmx && typeof window.htmx.trigger === 'function') {
+          window.htmx.trigger(form, 'submit');
+        } else {
+          form.requestSubmit();
         }
       },
 
-      onPostsDeleteAfterRequest(event) {
-        const ok = this.isSuccessfulRequest(event, '#cms-feedback');
-        this.notifyFeedback('#cms-feedback', ok ? 'success' : 'error');
-        if (ok) {
-          this.refreshPosts();
-          this.resetPostForm();
+      saveEditor() {
+        const form = document.getElementById('cms-editor-form');
+        if (!form) {
+          return;
+        }
+        if (window.htmx && typeof window.htmx.trigger === 'function') {
+          window.htmx.trigger(form, 'submit');
+        } else {
+          form.requestSubmit();
         }
       },
 
-      onCategoriesUpsertAfterRequest(event) {
-        const ok = this.isSuccessfulRequest(event, '#cms-feedback');
-        this.notifyFeedback('#cms-feedback', ok ? 'success' : 'error');
-        if (ok) {
-          this.refreshCategories();
-          this.resetCategoryForm();
+      publishEditor() {
+        const transitionForm = document.getElementById('cms-transition-form');
+        if (!transitionForm) {
+          return;
+        }
+        const statusInput = transitionForm.querySelector('select[name="next_status"], input[name="next_status"]');
+        if (statusInput) {
+          statusInput.value = 'published';
+        }
+        if (window.htmx && typeof window.htmx.trigger === 'function') {
+          window.htmx.trigger(transitionForm, 'submit');
+        } else {
+          transitionForm.requestSubmit();
         }
       },
 
-      onCategoriesDeleteAfterRequest(event) {
-        const ok = this.isSuccessfulRequest(event, '#cms-feedback');
-        this.notifyFeedback('#cms-feedback', ok ? 'success' : 'error');
-        if (ok) {
-          this.refreshCategories();
-          this.resetCategoryForm();
+      openStatusTransition() {
+        const transitionForm = document.getElementById('cms-transition-form');
+        if (!transitionForm) {
+          return;
+        }
+        const statusInput = transitionForm.querySelector('select[name="next_status"], input[name="next_status"]');
+        if (statusInput && typeof statusInput.focus === 'function') {
+          statusInput.focus();
+        }
+      },
+
+      filterRows(query) {
+        const value = String(query || '').trim().toLowerCase();
+        const rows = this.collectLibraryRows();
+        rows.forEach((row) => {
+          const text = row.textContent ? row.textContent.toLowerCase() : '';
+          row.hidden = value !== '' && !text.includes(value);
+        });
+        this.selectedRowIndex = 0;
+        this.highlightLibrarySelection();
+      },
+
+      handleGotoSequence(event) {
+        if (event.defaultPrevented) {
+          return false;
+        }
+
+        const key = String(event.key || '').toLowerCase();
+        if (!this.pendingGotoPrefix) {
+          if (key === 'g' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+            this.pendingGotoPrefix = true;
+            window.setTimeout(() => {
+              this.pendingGotoPrefix = false;
+            }, 900);
+            return true;
+          }
+          return false;
+        }
+
+        this.pendingGotoPrefix = false;
+        if (key === 'o') {
+          this.goOverview();
+          return true;
+        }
+        if (key === 'p') {
+          this.goLibrary('posts');
+          return true;
+        }
+        if (key === 'a') {
+          this.openEditor('posts', 'new');
+          return true;
+        }
+        return false;
+      },
+
+      handleGlobalShortcut(event) {
+        const cmd = event.metaKey || event.ctrlKey;
+        const key = String(event.key || '').toLowerCase();
+
+        if (key === 'escape' && this.commandOpen) {
+          event.preventDefault();
+          this.closeCommandPalette();
+          return;
+        }
+
+        if (cmd && key === 'k') {
+          // Cmd/Ctrl+K opens command palette.
+          event.preventDefault();
+          this.openCommandPalette();
+          return;
+        }
+
+        if (cmd && key === 's') {
+          event.preventDefault();
+          this.saveEditor();
+          return;
+        }
+
+        if (cmd && key === 'enter') {
+          event.preventDefault();
+          this.publishEditor();
+          return;
+        }
+
+        if (cmd && event.shiftKey && key === 'p') {
+          event.preventDefault();
+          this.openStatusTransition();
+          return;
+        }
+
+        if (this.handleGotoSequence(event)) {
+          event.preventDefault();
+          return;
+        }
+
+        if (isTypingTarget(event.target) && key !== '/') {
+          return;
+        }
+
+        if (this.panel === LIBRARY && key === '/') {
+          event.preventDefault();
+          this.focusLibrarySearch();
+          return;
+        }
+
+        if (this.panel === LIBRARY && key === 'j') {
+          event.preventDefault();
+          this.moveRowSelection(1);
+          return;
+        }
+
+        if (this.panel === LIBRARY && key === 'k' && !cmd) {
+          event.preventDefault();
+          this.moveRowSelection(-1);
+          return;
+        }
+
+        if (this.panel === LIBRARY && key === 'e') {
+          event.preventDefault();
+          this.openSelectedRow();
+          return;
+        }
+
+        if (this.panel === LIBRARY && (key === 'delete' || key === 'backspace')) {
+          event.preventDefault();
+          this.deleteSelectedRow();
         }
       },
     };

@@ -77,3 +77,99 @@ fn cms_public_post_detail_hides_draft_posts() {
     assert!(source.contains("post.get_by_slug(slug, { only_published = true })"));
     assert!(source.contains("return json_error(kind, msg)"));
 }
+
+#[test]
+fn cms_page_domain_exposes_overview_and_status_helpers() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/domain/page.lua"),
+    )
+    .expect("failed to read page domain");
+
+    assert!(source.contains("function page.count_by_status"));
+    assert!(source.contains("function page.recent"));
+    assert!(source.contains("function page.set_status"));
+    assert!(source.contains("validate.validate_status(status)"));
+    assert!(source.contains("slug.normalize(slug_input)"));
+    assert!(source.contains("slug cannot be empty"));
+    assert!(source.contains("limit:match(\"^%d+$\")"));
+    assert!(source.contains("max ~= math.floor(max)"));
+    assert!(source.contains("SAFE_INTEGER_MAX"));
+    assert!(source.contains("max > SAFE_INTEGER_MAX"));
+}
+
+#[test]
+fn cms_post_domain_exposes_overview_and_status_helpers() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/domain/post.lua"),
+    )
+    .expect("failed to read post domain");
+
+    assert!(source.contains("function post.count_by_status"));
+    assert!(source.contains("function post.recent"));
+    assert!(source.contains("function post.set_status"));
+    assert!(source.contains("validate.validate_status(status)"));
+    assert!(source.contains("slug.normalize(slug_input)"));
+    assert!(source.contains("slug cannot be empty"));
+    assert!(source.contains("limit:match(\"^%d+$\")"));
+    assert!(source.contains("max ~= math.floor(max)"));
+    assert!(source.contains("SAFE_INTEGER_MAX"));
+    assert!(source.contains("max > SAFE_INTEGER_MAX"));
+}
+
+#[test]
+fn cms_admin_interface_exposes_workbench_handlers() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/interfaces/admin.lua"),
+    )
+    .expect("failed to read admin interface");
+
+    assert!(source.contains("function admin.overview_partial"));
+    assert!(source.contains("function admin.library_partial"));
+    assert!(source.contains("function admin.editor_partial"));
+    assert!(source.contains("function admin.editor_save_partial"));
+    assert!(source.contains("function admin.status_transition_partial"));
+    assert!(source.contains("function admin.commands_partial"));
+
+    assert!(source.contains("plugins/official/cms/fragments/overview_panel.html"));
+    assert!(source.contains("plugins/official/cms/fragments/library_panel.html"));
+    assert!(source.contains("plugins/official/cms/fragments/editor_panel.html"));
+    assert!(source.contains("page.count_by_status()"));
+    assert!(source.contains("post.count_by_status()"));
+    assert!(source.contains("page.recent(5)"));
+    assert!(source.contains("post.recent(5)"));
+    assert!(source.contains("path:match(\"^/admin/partials/cms/library/([^/?]+)\")"));
+    assert!(source.contains("path:match(\"^/admin/partials/cms/editor/([^/?]+)\")"));
+    assert!(source.contains("path:match(\"^/admin/partials/cms/editor/[^/?]+/([^/?]+)\")"));
+    assert!(source.contains("kind == \"page\" or resource == \"page\""));
+    assert!(source.contains("kind == \"post\" or resource == \"post\""));
+    assert!(source.contains("resource == \"categories\""));
+    assert!(source.contains("form.original_slug"));
+    assert!(source.contains("category.upsert({"));
+    assert!(source.contains("form.content_type"));
+    assert!(source.contains("page.set_status("));
+    assert!(source.contains("post.set_status("));
+    assert!(source.contains("cms_overview_template_fallback_marker"));
+    assert!(source.contains("pcall(sushi.web.render, \"plugins/official/cms/fragments/overview_panel.html\", data)"));
+}
+
+#[test]
+fn cms_register_uses_v2_policy_key_shape_and_public_app_routes() {
+    let source = std::fs::read_to_string(
+        repo_root().join("plugins/official/cms/lua/bootstrap/register.lua"),
+    )
+    .expect("failed to read cms bootstrap register");
+
+    assert!(source.contains("policy = \"api.cms.read\""));
+    assert!(source.contains("policy = \"api.cms.write\""));
+    assert!(source.contains("policy = \"api.cms.delete\""));
+    assert!(!source.contains("api.cms.pages.read"));
+    assert!(!source.contains("api.cms.posts.read"));
+    assert!(!source.contains("api.cms.categories.read"));
+    assert!(!source.contains("api.cms.public.read"));
+    assert!(source.contains("/app/pages/*\", deps.api.public_page_detail, { public = true }"));
+    assert!(source.contains("/app/posts\", deps.api.public_post_list, { public = true }"));
+    assert!(source.contains("/app/posts/*\", deps.api.public_post_detail, { public = true }"));
+    assert!(source.contains(
+        "/app/categories/*\", deps.api.public_category_detail, { public = true }"
+    ));
+}

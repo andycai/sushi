@@ -1,12 +1,12 @@
-# Graph Report - .  (2026-04-18)
+# Graph Report - .  (2026-04-19)
 
 ## Corpus Check
-- 114 files · ~127,351 words
+- 114 files · ~136,244 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1740 nodes · 3697 edges · 102 communities detected
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 253 edges (avg confidence: 0.8)
+- 1830 nodes · 3953 edges · 102 communities detected
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 266 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -119,23 +119,23 @@
 3. `PluginManager` - 35 edges
 4. `inject_sushi_api()` - 35 edges
 5. `te()` - 31 edges
-6. `get()` - 30 edges
-7. `gt()` - 29 edges
-8. `ie()` - 29 edges
-9. `Ae()` - 29 edges
-10. `test_context()` - 28 edges
+6. `add()` - 30 edges
+7. `get()` - 30 edges
+8. `gt()` - 29 edges
+9. `ie()` - 29 edges
+10. `Ae()` - 29 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `refreshTable()` --calls--> `refreshPartial()`  [INFERRED]
-  plugins/official/kv-store/web/static/kv.js → web/static/admin/js/ui-kit.js
-- `refreshPages()` --calls--> `refreshPartial()`  [INFERRED]
-  plugins/official/cms/web/static/cms.js → web/static/admin/js/ui-kit.js
+- `toScope()` --calls--> `has()`  [INFERRED]
+  plugins/official/cms/web/static/cms.js → web/static/js/alpine-3.15.11.js
 - `toQuery()` --calls--> `entries()`  [INFERRED]
   plugins/official/file-browser/web/static/file_browser.js → web/static/js/tailwindcss-4.2.2.js
-- `createText()` --calls--> `get()`  [INFERRED]
-  plugins/official/file-browser/web/static/file_browser.js → web/static/js/alpine-3.15.11.js
-- `createDir()` --calls--> `get()`  [INFERRED]
-  plugins/official/file-browser/web/static/file_browser.js → web/static/js/alpine-3.15.11.js
+- `clearExpandedSubtree()` --calls--> `keys()`  [INFERRED]
+  plugins/official/file-browser/web/static/file_browser.js → web/static/js/tailwindcss-4.2.2.js
+- `closeContextMenu()` --calls--> `add()`  [INFERRED]
+  plugins/official/file-browser/web/static/file_browser.js → web/static/js/tailwindcss-4.2.2.js
+- `collapseDirectory()` --calls--> `add()`  [INFERRED]
+  plugins/official/file-browser/web/static/file_browser.js → web/static/js/tailwindcss-4.2.2.js
 
 ## Hyperedges (group relationships)
 - **All sushi.* Lua API Namespaces** — sushi_api_namespace, sushi_admin_namespace, sushi_cli_namespace, sushi_config_namespace, sushi_log_namespace, sushi_db_namespace, sushi_web_namespace, sushi_event_namespace, sushi_json_namespace, sushi_auth_namespace [EXTRACTED 1.00]
@@ -149,99 +149,99 @@
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
-Nodes (156): _(), A(), ae(), ai(), an(), ao(), ar(), At() (+148 more)
+Nodes (82): init(), closeDeleteConfirm(), closeModal(), isErrorFeedback(), isSuccessfulKvRequest(), notifyFeedback(), onDeleteAfterRequest(), onUpsertAfterRequest() (+74 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.02
-Nodes (76): refreshPages(), init(), notifyFeedback(), onSubmitEnd(), badgeTone(), init(), loadLogs(), closeDelete() (+68 more)
+Cohesion: 0.03
+Nodes (138): _(), A(), ae(), ai(), an(), ao(), ar(), At() (+130 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.05
-Nodes (113): D(), ownKeys(), raw(), r(), $(), a(), add(), addKeyframes() (+105 more)
+Cohesion: 0.04
+Nodes (130): D(), ownKeys(), raw(), r(), assetKey(), fetchAssetsForPath(), inferStaticPrefix(), loadAssetsForPath() (+122 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.1
-Nodes (103): $(), a(), Ae(), an(), at(), B(), be(), bn() (+95 more)
+Cohesion: 0.09
+Nodes (106): closest(), $(), a(), Ae(), an(), at(), B(), be() (+98 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.07
-Nodes (70): admin_bearer_token(), admin_can_crud_permissions_via_partials(), admin_can_crud_roles_and_assign_permissions(), admin_cms_category_delete_returns_flash_on_conflict(), admin_cms_workspace_page_renders(), admin_http_bindings(), admin_prefix_is_rejected_for_static(), admin_requires_auth_without_token() (+62 more)
+Nodes (75): admin_bearer_token(), admin_can_crud_permissions_via_partials(), admin_can_crud_roles_and_assign_permissions(), admin_cms_category_delete_returns_flash_on_conflict(), admin_cms_template_uses_top_nav_and_panel_mounts(), admin_cms_workspace_page_renders(), admin_http_bindings(), admin_prefix_is_rejected_for_static() (+67 more)
 
 ### Community 5 - "Community 5"
+Cohesion: 0.09
+Nodes (67): bindDelegatedEvents(), can(), clearExpandedSubtree(), closeContextMenu(), collapseDirectory(), contextMenu(), contextUploadInput(), createDir() (+59 more)
+
+### Community 6 - "Community 6"
 Cohesion: 0.06
 Nodes (36): create_plugin_dir(), create_plugin_dir_with_manifest(), LuaPlugin, normalize_static_url_prefix(), page_assets_fail_when_file_missing(), page_assets_resolve_bundle_then_page_assets(), parse_entry_policy(), parse_entry_public() (+28 more)
 
-### Community 6 - "Community 6"
+### Community 7 - "Community 7"
 Cohesion: 0.07
 Nodes (20): admin_page_assets_are_stored_and_returned(), AdminHandlerBinding, api_route_policy_matches_wildcard_for_concrete_path(), ApiHandlerBinding, call_api_handler_matches_wildcards(), CliHandlerBinding, db_permission_name(), dispatch_api_handler_forwards_dispatch_path_and_binary_body() (+12 more)
 
-### Community 7 - "Community 7"
+### Community 8 - "Community 8"
 Cohesion: 0.06
 Nodes (50): Architecture Overview, Argon2 Password Hashing, Authentication & RBAC, Axum Web Framework, Built-in Events, Configuration Guide, Database Layer, DbGateway (+42 more)
 
-### Community 8 - "Community 8"
+### Community 9 - "Community 9"
 Cohesion: 0.11
 Nodes (39): build_web_context(), inject_sushi_api(), lua_params(), map_db_permission(), next_handler_key(), parse_asset_string_array(), parse_optional_policy(), parse_optional_public() (+31 more)
 
-### Community 9 - "Community 9"
+### Community 10 - "Community 10"
 Cohesion: 0.06
 Nodes (21): DatabasePermission, FnPlugin, Permissions, Plugin, PluginAdminAssetsConfig, PluginAdminConfig, PluginAssetBundle, PluginError (+13 more)
 
-### Community 10 - "Community 10"
+### Community 11 - "Community 11"
 Cohesion: 0.09
 Nodes (24): ConfigStore, DatabaseConfig, default_access_ttl(), default_body_size_limit(), default_db_path(), default_file_browser_root_dir(), default_host(), default_jwt_secret() (+16 more)
 
-### Community 11 - "Community 11"
+### Community 12 - "Community 12"
 Cohesion: 0.11
 Nodes (17): default_text_extensions(), DownloadPayload, DownloadTicket, ensure_text_extension(), FileBrowserFsService, FsEntry, FsError, FsRoot (+9 more)
 
-### Community 12 - "Community 12"
+### Community 13 - "Community 13"
 Cohesion: 0.14
 Nodes (31): api_http_bindings(), build_app(), build_plugin_api_routes(), decode_hex_bytes(), DownloadEnvelope, extract_token_from_cookie(), file_browser_download_returns_attachment_headers(), html_plugin_route_returns_text_html_content_type() (+23 more)
 
-### Community 13 - "Community 13"
+### Community 14 - "Community 14"
 Cohesion: 0.1
 Nodes (10): Permission, PermissionSummary, RbacRepository, replace_role_permissions_syncs_role_policy_keys(), repo_with_schema(), Role, RolePermissionAssignment, RoleSummary (+2 more)
 
-### Community 14 - "Community 14"
+### Community 15 - "Community 15"
 Cohesion: 0.13
 Nodes (26): create_menu_item(), CreateMenuItem, delete_menu_item(), ensure_menu_schema(), flash_response(), flash_response_with_trigger(), is_system_route(), list_menu_items() (+18 more)
 
-### Community 15 - "Community 15"
+### Community 16 - "Community 16"
 Cohesion: 0.11
 Nodes (20): init(), refreshPulse(), addRecent(), canUseStorage(), collectPages(), init(), isPinned(), markLoaded() (+12 more)
 
-### Community 16 - "Community 16"
+### Community 17 - "Community 17"
 Cohesion: 0.17
 Nodes (13): compile_snapshot_includes_seeded_plugin_list_command_binding(), grant_role_policy(), normalize_non_empty(), plugin_binding_upsert_populates_compiled_snapshot(), plugin_cli_binding_policy_update_replaces_old_identity_binding(), plugin_http_binding_policy_update_replaces_old_identity_binding(), PolicyRepository, rejects_empty_policy_name() (+5 more)
 
-### Community 17 - "Community 17"
+### Community 18 - "Community 18"
+Cohesion: 0.16
+Nodes (25): bindEvents(), closeCommandPalette(), collectLibraryRows(), deleteSelectedRow(), dispatchHtmxTrigger(), filterRows(), focusLibrarySearch(), goLibrary() (+17 more)
+
+### Community 19 - "Community 19"
 Cohesion: 0.18
 Nodes (26): activateTab(), bootstrapInitialPane(), canUseStorage(), closeTab(), createPane(), emitChange(), ensureDashboardTab(), ensurePane() (+18 more)
 
-### Community 18 - "Community 18"
-Cohesion: 0.1
-Nodes (7): closeDeleteConfirm(), closeModal(), isErrorFeedback(), isSuccessfulKvRequest(), onDeleteAfterRequest(), onUpsertAfterRequest(), refreshTable()
-
-### Community 19 - "Community 19"
+### Community 20 - "Community 20"
 Cohesion: 0.09
 Nodes (24): Admin Asset Bundles Declaration, Admin Dynamic Menu System, Admin Workspace Tabbed Navigation, DbGateway (Permissioned SQL), Database Permission Tiers (read/write/admin), Effective Permissions (Official Override), EventBus (Plugin Inter-Communication), HTMX Partial Content Loading (+16 more)
 
-### Community 20 - "Community 20"
+### Community 21 - "Community 21"
 Cohesion: 0.14
 Nodes (10): AdminPageEntry, AdminRegistry, AdminWidgetEntry, ApiRegistry, CliCommandEntry, CliRegistry, RouteEntry, test_admin_registry() (+2 more)
 
-### Community 21 - "Community 21"
+### Community 22 - "Community 22"
 Cohesion: 0.13
 Nodes (8): Authorizer, command_binding_presence_lookup_is_exact(), command_binding_requires_exact_name(), CompiledPolicySnapshot, HttpBinding, is_path_param(), path_pattern_matches(), split_path_segments()
 
-### Community 22 - "Community 22"
+### Community 23 - "Community 23"
 Cohesion: 0.2
 Nodes (15): CreateRoleForm, flash_response(), flash_response_with_trigger(), render_roles_rows(), role_permissions_form_partial(), role_permissions_update_partial(), roles_create_partial(), roles_delete_partial() (+7 more)
-
-### Community 23 - "Community 23"
-Cohesion: 0.31
-Nodes (18): bindDelegatedEvents(), createDir(), createText(), deleteEntry(), download(), fetchText(), goToParent(), goToPath() (+10 more)
 
 ### Community 24 - "Community 24"
 Cohesion: 0.15
@@ -272,64 +272,64 @@ Cohesion: 0.27
 Nodes (10): config_for(), create_symlink(), list_rejects_parent_directory_escape(), read_text_rejects_non_whitelisted_extension(), read_text_rejects_symlink_target(), rename_directory_moves_nested_entries(), rename_rejects_directory_target_inside_source(), rename_rejects_existing_destination() (+2 more)
 
 ### Community 31 - "Community 31"
+Cohesion: 0.32
+Nodes (11): cms_admin_interface_exposes_workbench_handlers(), cms_category_delete_conflicts_when_posts_exist(), cms_cli_dispatch_supports_page_list(), cms_page_domain_exposes_overview_and_status_helpers(), cms_post_domain_exposes_overview_and_status_helpers(), cms_post_list_category_query_filters_rows(), cms_public_page_route_hides_draft_content(), cms_public_post_detail_hides_draft_posts() (+3 more)
+
+### Community 32 - "Community 32"
 Cohesion: 0.29
 Nodes (7): allows_admin_when_command_binding_is_missing(), allows_command_when_role_has_grant(), denies_command_when_binding_exists_without_grant(), ensure_command_authorized(), ensure_command_authorized_with_authorizer(), normalize_role(), resolve_cli_role()
 
-### Community 32 - "Community 32"
+### Community 33 - "Community 33"
 Cohesion: 0.25
 Nodes (8): admin_auth_middleware(), AdminAuthContext, AdminAuthState, append_assets_to_html_response(), build_admin_router(), is_plugin_workspace_root_path(), is_valid_plugin_mount_id(), matches_static_prefix()
 
-### Community 33 - "Community 33"
+### Community 34 - "Community 34"
 Cohesion: 0.35
 Nodes (5): Claims, JwtService, test_create_and_verify_access_token(), test_invalid_token(), test_refresh_token_type()
 
-### Community 34 - "Community 34"
+### Community 35 - "Community 35"
 Cohesion: 0.44
 Nodes (5): SqliteStorage, test_run_migrations(), test_sqlite_execute_and_query(), test_sqlite_multiple_rows(), test_sqlite_null_handling()
 
-### Community 35 - "Community 35"
+### Community 36 - "Community 36"
 Cohesion: 0.31
 Nodes (9): M.extract_root_id(), M.file_name(), M.join_rel(), M.normalize_rel_path(), M.parent_path(), M.parse_query(), M.read_query_value(), M.split_path_and_query() (+1 more)
 
-### Community 36 - "Community 36"
+### Community 37 - "Community 37"
 Cohesion: 0.38
 Nodes (8): CreateUserForm, flash_response(), flash_response_with_trigger(), render_users_rows(), users_create_partial(), users_delete_partial(), users_table_partial(), validate_create_user_form()
 
-### Community 37 - "Community 37"
+### Community 38 - "Community 38"
 Cohesion: 0.27
 Nodes (2): row_to_user(), UserRepository
 
-### Community 38 - "Community 38"
+### Community 39 - "Community 39"
 Cohesion: 0.4
 Nodes (6): load_template(), safe_join(), split_plugin_template_name(), TemplateService, validate_root(), validate_root_optional()
 
-### Community 39 - "Community 39"
+### Community 40 - "Community 40"
 Cohesion: 0.47
 Nodes (4): EventBus, test_emit_no_subscribers(), test_multiple_subscribers(), test_subscribe_and_emit()
 
-### Community 40 - "Community 40"
+### Community 41 - "Community 41"
 Cohesion: 0.22
 Nodes (4): create_user(), CreateUserRequest, PaginationParams, UsersRouteState
 
-### Community 41 - "Community 41"
+### Community 42 - "Community 42"
 Cohesion: 0.33
 Nodes (6): find_plugin(), plugin_pages_api(), plugin_workspace_context(), plugin_workspace_page(), PluginWorkspaceResponse, render_plugin_workspace_partial()
 
-### Community 42 - "Community 42"
+### Community 43 - "Community 43"
 Cohesion: 0.36
 Nodes (8): admin_can_access_admin_partials(), auth_state(), AuthState, AuthUser, extract_token_from_cookie(), non_admin_cannot_access_admin_partials(), require_auth(), viewer_without_policy_grant_is_denied_api_route()
 
-### Community 43 - "Community 43"
+### Community 44 - "Community 44"
 Cohesion: 0.22
 Nodes (5): sqlite_to_json(), Storage, StorageConn, StorageConn<'a>, StorageError
 
-### Community 44 - "Community 44"
+### Community 45 - "Community 45"
 Cohesion: 0.31
 Nodes (4): ensure_rel_path(), friendly_error(), list_context(), root_id_or_unknown()
-
-### Community 45 - "Community 45"
-Cohesion: 0.46
-Nodes (7): cms_category_delete_conflicts_when_posts_exist(), cms_cli_dispatch_supports_page_list(), cms_post_list_category_query_filters_rows(), cms_public_page_route_hides_draft_content(), cms_public_post_detail_hides_draft_posts(), cms_soft_deleted_posts_are_hidden_from_list(), repo_root()
 
 ### Community 46 - "Community 46"
 Cohesion: 0.25
@@ -352,44 +352,44 @@ Cohesion: 0.29
 Nodes (2): AuthRouteState, RefreshRequest
 
 ### Community 51 - "Community 51"
-Cohesion: 0.47
-Nodes (4): module_template(), module_to_admin_path(), workspace_partial(), WorkspaceAssetsResponse
+Cohesion: 0.38
+Nodes (5): M.new(), parse_urlencoded(), request_path(), strip_query(), url_decode()
 
 ### Community 52 - "Community 52"
 Cohesion: 0.47
-Nodes (4): login_error_response(), login_submit(), LoginForm, render_login_flash_html()
+Nodes (4): module_template(), module_to_admin_path(), workspace_partial(), WorkspaceAssetsResponse
 
 ### Community 53 - "Community 53"
+Cohesion: 0.47
+Nodes (4): login_error_response(), login_submit(), LoginForm, render_login_flash_html()
+
+### Community 54 - "Community 54"
 Cohesion: 0.6
 Nodes (5): install_plugin_require(), require_loads_plugin_local_module(), require_rejects_parent_traversal(), safe_module_join(), validate_module_name()
 
-### Community 54 - "Community 54"
+### Community 55 - "Community 55"
 Cohesion: 0.7
 Nodes (4): merge_static_prefix(), normalize_static_url_prefix(), render_template(), render_template_with_context()
 
-### Community 55 - "Community 55"
+### Community 56 - "Community 56"
 Cohesion: 0.4
 Nodes (0): 
 
-### Community 56 - "Community 56"
+### Community 57 - "Community 57"
 Cohesion: 0.7
 Nodes (4): copy_dir_all(), dispatch(), file_browser_public_routes_support_core_operations(), write_manifest()
 
-### Community 57 - "Community 57"
+### Community 58 - "Community 58"
 Cohesion: 0.5
 Nodes (1): SushiContext
 
-### Community 58 - "Community 58"
+### Community 59 - "Community 59"
 Cohesion: 0.4
 Nodes (1): sushi.init()
 
-### Community 59 - "Community 59"
+### Community 60 - "Community 60"
 Cohesion: 0.4
 Nodes (1): M.new()
-
-### Community 60 - "Community 60"
-Cohesion: 0.5
-Nodes (3): M.new(), parse_urlencoded(), url_decode()
 
 ### Community 61 - "Community 61"
 Cohesion: 0.4
@@ -608,12 +608,12 @@ Nodes (0):
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `add()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 17`, `Community 26`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
-- **Why does `dismissToast()` connect `Community 1` to `Community 2`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
-- **Why does `createDataTable()` connect `Community 1` to `Community 2`?**
-  _High betweenness centrality (0.013) - this node is a cross-community bridge._
+- **Why does `add()` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 5`, `Community 19`, `Community 26`?**
+  _High betweenness centrality (0.047) - this node is a cross-community bridge._
+- **Why does `dismissToast()` connect `Community 0` to `Community 2`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
+- **Why does `entries()` connect `Community 2` to `Community 1`, `Community 5`?**
+  _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `He()` (e.g. with `set()` and `keys()`) actually correct?**
   _`He()` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
@@ -621,4 +621,4 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.02 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.02 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.03 - nodes in this community are weakly interconnected._

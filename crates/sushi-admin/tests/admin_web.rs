@@ -12,8 +12,10 @@ use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
+use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::manager::PageResolvedAssets;
+use sushi_core::plugin::Plugin;
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
 use sushi_core::web::template_service::TemplateService;
@@ -626,6 +628,103 @@ async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
     app
 }
 
+async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> axum::Router {
+    let templates_dir = templates_root();
+    let static_dir = static_root();
+    let plugins_dir = workspace_root().join("plugins");
+
+    let mut config = SushiConfig::default();
+    config.web.templates_dir = templates_dir.to_string_lossy().to_string();
+    config.web.static_dir = static_dir.to_string_lossy().to_string();
+    if let Some(prefix) = static_url_prefix {
+        config.web.static_url_prefix = prefix.to_string();
+    }
+
+    let config = ConfigStore::new(config);
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .run_migrations(KV_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 002_kv_store");
+    storage
+        .run_migrations(RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 003_rbac");
+    storage
+        .run_migrations(MENU_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 004_menu");
+    storage
+        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 005_menus_rbac");
+    storage
+        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 006_unified_policy_v2");
+    storage
+        .run_migrations(CMS_MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 007_cms");
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+
+    let mut plugins = LuaPlugin::scan_dir(&plugins_dir)
+        .await
+        .expect("failed to scan plugins")
+        .into_iter()
+        .filter(|plugin| plugin.name() == "cms")
+        .collect::<Vec<_>>();
+    assert_eq!(plugins.len(), 1, "expected exactly one cms plugin");
+
+    let cms_template_roots = plugins
+        .iter()
+        .filter_map(|plugin| {
+            let root = plugin.web_templates_dir();
+            if root.is_dir() {
+                Some((plugin.path_id().to_string(), root))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let templates = TemplateService::new_with_plugin_roots(&templates_dir, cms_template_roots)
+        .expect("failed to init template service");
+    let ctx = SushiContext::new(config, storage, jwt, templates);
+
+    for plugin in &plugins {
+        let static_root = plugin.web_static_dir();
+        if static_root.is_dir() {
+            ctx.plugins
+                .register_plugin_static_root(plugin.path_id(), static_root)
+                .await;
+        }
+    }
+
+    for plugin in plugins.drain(..) {
+        let plugin_name = plugin.name().to_string();
+        ctx.plugins
+            .register_plugin_manifest_with_permissions(plugin.manifest(), plugin.effective_permissions())
+            .await;
+        plugin
+            .init(&ctx)
+            .await
+            .unwrap_or_else(|err| panic!("failed to init cms plugin: {err}"));
+        if let Some(lua) = plugin.into_vm() {
+            ctx.plugins.register_vm(&plugin_name, lua).await;
+        }
+    }
+
+    refresh_admin_authorizer(&ctx).await;
+    build_admin_router(&ctx).await
+}
+
 async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Path) -> axum::Router {
     let templates_dir = templates_root();
     let static_dir = static_root();
@@ -980,21 +1079,44 @@ fn admin_cms_category_delete_returns_flash_on_conflict() {
 }
 
 #[test]
-fn admin_cms_template_exposes_crud_forms_and_actions() {
+fn admin_cms_template_uses_top_nav_and_panel_mounts() {
     let source = std::fs::read_to_string(
         workspace_root().join("plugins/official/cms/web/templates/cms.html"),
     )
     .expect("failed to read cms template");
-    let rows = std::fs::read_to_string(
-        workspace_root().join("plugins/official/cms/web/templates/fragments/page_rows.html"),
-    )
-    .expect("failed to read cms page rows template");
 
-    assert!(source.contains("/admin/partials/cms/pages/upsert"));
-    assert!(source.contains("/admin/partials/cms/posts/upsert"));
-    assert!(source.contains("/admin/partials/cms/categories/upsert"));
-    assert!(rows.contains("/admin/partials/cms/pages/delete"));
-    assert!(rows.contains("editPageFromRow"));
+    assert!(source.contains("data-cms-top-nav"));
+    assert!(source.contains("data-cms-panel=\"overview\""));
+    assert!(source.contains("data-cms-panel=\"library\""));
+    assert!(source.contains("data-cms-panel=\"editor\""));
+}
+
+#[test]
+fn cms_js_defines_shortcuts_and_command_palette_hooks() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/static/cms.js"),
+    )
+    .expect("failed to read cms.js");
+
+    assert!(source.contains("Cmd/Ctrl+K"));
+    assert!(source.contains("switchPanel"));
+    assert!(source.contains("openCommandPalette"));
+    assert!(source.contains("handleGlobalShortcut"));
+}
+
+#[test]
+fn cms_template_wires_overview_library_editor_endpoints() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/cms.html"),
+    )
+    .expect("failed to read cms template");
+
+    assert!(source.contains("/admin/partials/cms/overview"));
+    assert!(source.contains("/admin/partials/cms/library/posts"));
+    assert!(source.contains("/admin/partials/cms/editor/posts/new"));
+    assert!(source.contains("/admin/partials/cms/editor/save"));
+    assert!(source.contains("/admin/partials/cms/status/transition"));
+    assert!(source.contains("/admin/partials/cms/commands"));
 }
 
 #[tokio::test]
@@ -1458,25 +1580,6 @@ async fn menu_api_returns_menu_items() {
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/menus"));
     assert!(menus.is_some(), "Menus management entry should exist");
 
-    let plugins = menu
-        .iter()
-        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/plugins"))
-        .expect("Plugins menu item should exist");
-    let plugins_id = plugins
-        .get("id")
-        .and_then(Value::as_i64)
-        .expect("Plugins menu id should exist");
-    let cms = menu
-        .iter()
-        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/cms"))
-        .expect("CMS menu item should exist");
-    let cms_parent_id = cms.get("parent_id").and_then(Value::as_i64);
-    assert_eq!(
-        cms_parent_id,
-        Some(plugins_id),
-        "CMS should be grouped under Plugins menu"
-    );
-
     let system = menu
         .iter()
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/system"))
@@ -1547,11 +1650,6 @@ async fn menu_api_handles_legacy_menu_table_without_is_hidden_column() {
         kv_count, 1,
         "legacy duplicate kv menu entries should be deduplicated"
     );
-    let cms_count = menu
-        .iter()
-        .filter(|item| item.get("route").and_then(Value::as_str) == Some("/admin/cms"))
-        .count();
-    assert_eq!(cms_count, 1, "cms menu entry should be seeded once");
     let system = menu
         .iter()
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/system"))
@@ -2043,6 +2141,34 @@ async fn workspace_users_module_loads_for_authenticated_admin() {
         .expect("request failed");
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn workspace_cms_module_loads_for_authenticated_admin() {
+    let app = build_app_with_cms_plugin_loaded(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/cms")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        html.contains("data-admin-workspace-module=\"cms\""),
+        "html: {html}"
+    );
+    assert!(html.contains("data-cms-top-nav"), "html: {html}");
 }
 
 #[tokio::test]

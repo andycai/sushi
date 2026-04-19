@@ -1166,8 +1166,37 @@ end)
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
         assert!(source.contains("sushi.web.page(\"/admin/cms\""));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/overview\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/library/*\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/editor/*\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/admin/partials/cms/editor/save\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"POST\", \"/admin/partials/cms/status/transition\""
+        ));
+        assert!(source.contains(
+            "sushi.api.route(\"GET\", \"/admin/partials/cms/commands\""
+        ));
         assert!(source.contains("sushi.api.route(\"GET\", \"/app/posts\""));
         assert!(source.contains("sushi.cli.command(\"cms\""));
+    }
+
+    #[test]
+    fn cms_plugin_declares_workspace_css_bundle() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let source =
+            std::fs::read_to_string(repo_root.join("plugins/official/cms/plugin.toml")).unwrap();
+
+        assert!(source.contains("[admin.assets.bundles.workspace]"));
+        assert!(source.contains("js = [\"cms.js\"]"));
+        assert!(source.contains("css = [\"cms.css\"]"));
     }
 
     #[test]
