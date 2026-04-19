@@ -362,6 +362,7 @@ mod tests {
     const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
     const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
         include_str!("../../../migrations/008_plugin_governance_v1.sql");
+    const PLUGIN_GOVERNANCE_MIGRATION_NAME: &str = "008_plugin_governance_v1";
 
     fn api_http_bindings() -> Vec<HttpBinding> {
         vec![
@@ -437,7 +438,7 @@ mod tests {
         let rows = storage
             .query(
                 "SELECT 1 AS found FROM _sushi_migrations WHERE name = ?1 LIMIT 1",
-                vec![Value::String("008_plugin_governance_v1".to_string())],
+                vec![Value::String(PLUGIN_GOVERNANCE_MIGRATION_NAME.to_string())],
             )
             .await
             .expect("failed to query migration 008_plugin_governance_v1 state");
@@ -526,6 +527,31 @@ mod tests {
             .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert_eq!(body, r#"{"ok":true}"#);
+    }
+
+    #[tokio::test]
+    async fn plugin_governance_migration_helper_skips_when_already_applied() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        storage.run_migrations(MIGRATION_SQL).await.unwrap();
+        storage
+            .execute(
+                "INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (8, '008_plugin_governance_v1')",
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        run_plugin_governance_migration_if_needed(&storage).await;
+
+        let columns = storage.query("PRAGMA table_info(plugin_state)", vec![]).await.unwrap();
+        let has_plugin_id = columns
+            .iter()
+            .any(|column| column.get("name").and_then(Value::as_str) == Some("plugin_id"));
+
+        assert!(
+            !has_plugin_id,
+            "helper should skip applying migration SQL when marker is already present"
+        );
     }
 
     #[tokio::test]

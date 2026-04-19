@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use serde_json::Value;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -24,6 +23,7 @@ const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
 const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
 const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
     include_str!("../../../migrations/008_plugin_governance_v1.sql");
+const PLUGIN_GOVERNANCE_MIGRATION_NAME: &str = "008_plugin_governance_v1";
 
 pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     let config = match config_path {
@@ -77,15 +77,7 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .context("failed to run cms migrations")?;
-    if !migration_applied(&storage, "008_plugin_governance_v1")
-        .await
-        .context("failed to check plugin governance migration state")?
-    {
-        storage
-            .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-            .await
-            .context("failed to run plugin governance migrations")?;
-    }
+    run_plugin_governance_migration_if_needed(&storage).await?;
 
     let jwt = {
         let guard = config.get().await;
@@ -235,12 +227,82 @@ async fn hydrate_authorizer_snapshot(ctx: &SushiContext) -> Result<()> {
 }
 
 async fn migration_applied(storage: &SqliteStorage, migration_name: &str) -> Result<bool> {
+    let migration_name = migration_name.replace('\'', "''");
+    let query = format!(
+        "SELECT 1 AS found FROM _sushi_migrations WHERE name = '{migration_name}' LIMIT 1"
+    );
+
     let rows = storage
-        .query(
-            "SELECT 1 AS found FROM _sushi_migrations WHERE name = ?1 LIMIT 1",
-            vec![Value::String(migration_name.to_string())],
-        )
+        .query(&query, vec![])
         .await
         .context("failed to query migration history")?;
     Ok(!rows.is_empty())
+}
+
+async fn run_plugin_governance_migration_if_needed(storage: &SqliteStorage) -> Result<()> {
+    if migration_applied(storage, PLUGIN_GOVERNANCE_MIGRATION_NAME)
+        .await
+        .context("failed to check plugin governance migration state")?
+    {
+        return Ok(());
+    }
+
+    match storage.run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let err_message = err.to_string();
+            if is_duplicate_column_error(&err_message)
+                && migration_applied(storage, PLUGIN_GOVERNANCE_MIGRATION_NAME)
+                    .await
+                    .context("failed to re-check plugin governance migration state")?
+            {
+                Ok(())
+            } else {
+                Err(err).context("failed to run plugin governance migrations")
+            }
+        }
+    }
+}
+
+fn is_duplicate_column_error(error: &str) -> bool {
+    error.to_ascii_lowercase().contains("duplicate column name")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn plugin_governance_migration_is_skipped_when_already_applied() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        storage.run_migrations(MIGRATION_SQL).await.unwrap();
+        storage
+            .execute(
+                "INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (8, '008_plugin_governance_v1')",
+                vec![],
+            )
+            .await
+            .unwrap();
+
+        run_plugin_governance_migration_if_needed(&storage)
+            .await
+            .unwrap();
+
+        let columns = storage.query("PRAGMA table_info(plugin_state)", vec![]).await.unwrap();
+        let has_plugin_id = columns.iter().any(|column| {
+            column.get("name").and_then(|value| value.as_str()) == Some("plugin_id")
+        });
+
+        assert!(
+            !has_plugin_id,
+            "migration should be skipped when already recorded in _sushi_migrations"
+        );
+    }
+
+    #[test]
+    fn duplicate_column_error_detection_is_case_insensitive() {
+        assert!(is_duplicate_column_error("duplicate column name: plugin_id"));
+        assert!(is_duplicate_column_error("DUPLICATE COLUMN NAME: plugin_id"));
+        assert!(!is_duplicate_column_error("no such table: plugin_state"));
+    }
 }

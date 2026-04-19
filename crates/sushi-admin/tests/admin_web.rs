@@ -31,6 +31,7 @@ const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
 const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
 const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
     include_str!("../../../migrations/008_plugin_governance_v1.sql");
+const PLUGIN_GOVERNANCE_MIGRATION_NAME: &str = "008_plugin_governance_v1";
 const LEGACY_MENU_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -578,7 +579,7 @@ async fn run_plugin_governance_migration_if_needed(storage: &SqliteStorage) {
     let rows = storage
         .query(
             "SELECT 1 AS found FROM _sushi_migrations WHERE name = ?1 LIMIT 1",
-            vec![Value::String("008_plugin_governance_v1".to_string())],
+            vec![Value::String(PLUGIN_GOVERNANCE_MIGRATION_NAME.to_string())],
         )
         .await
         .expect("failed to query migration 008_plugin_governance_v1 state");
@@ -588,6 +589,39 @@ async fn run_plugin_governance_migration_if_needed(storage: &SqliteStorage) {
             .await
             .expect("failed to run migration 008_plugin_governance_v1");
     }
+}
+
+#[tokio::test]
+async fn plugin_governance_migration_helper_skips_when_already_applied() {
+    let storage = SqliteStorage::new_in_memory()
+        .await
+        .expect("failed to init sqlite");
+    storage
+        .run_migrations(MIGRATION_SQL)
+        .await
+        .expect("failed to run migration 001_init");
+    storage
+        .execute(
+            "INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (8, '008_plugin_governance_v1')",
+            vec![],
+        )
+        .await
+        .expect("failed to seed migration 008 marker");
+
+    run_plugin_governance_migration_if_needed(&storage).await;
+
+    let columns = storage
+        .query("PRAGMA table_info(plugin_state)", vec![])
+        .await
+        .expect("failed to query plugin_state columns");
+    let has_plugin_id = columns
+        .iter()
+        .any(|column| column.get("name").and_then(Value::as_str) == Some("plugin_id"));
+
+    assert!(
+        !has_plugin_id,
+        "helper should skip applying migration SQL when marker is already present"
+    );
 }
 
 async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Router, SushiContext) {
