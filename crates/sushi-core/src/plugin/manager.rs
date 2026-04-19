@@ -123,9 +123,11 @@ impl PluginManager {
         manifest: &PluginManifest,
         effective_permissions: &Permissions,
     ) {
+        let plugin_name = manifest.plugin.name.clone();
+        let manifest_version = manifest.plugin.version.clone();
         let mut plugin_info = self.plugin_info.write().await;
         let (plugin_id, source_kind, enabled, loaded) =
-            if let Some(existing) = plugin_info.get(&manifest.plugin.name) {
+            if let Some(existing) = plugin_info.get(&plugin_name) {
                 (
                     existing.plugin_id.clone(),
                     existing.source_kind.clone(),
@@ -142,12 +144,12 @@ impl PluginManager {
             };
 
         plugin_info.insert(
-            manifest.plugin.name.clone(),
+            plugin_name.clone(),
             PluginInfo {
-                plugin_id,
-                source_kind,
-                name: manifest.plugin.name.clone(),
-                version: manifest.plugin.version.clone(),
+                plugin_id: plugin_id.clone(),
+                source_kind: source_kind.clone(),
+                name: plugin_name.clone(),
+                version: manifest_version.clone(),
                 description: manifest.plugin.description.clone(),
                 enabled,
                 loaded,
@@ -159,6 +161,33 @@ impl PluginManager {
                 },
             },
         );
+        drop(plugin_info);
+
+        // Best-effort bootstrap to ensure discovered plugins exist in runtime governance storage.
+        if let Some(repo) = &self.state_repo {
+            match repo
+                .upsert_discovered_plugin(&plugin_id, &plugin_name, &source_kind, &manifest_version)
+                .await
+            {
+                Ok(state) => {
+                    let mut plugin_info = self.plugin_info.write().await;
+                    if let Some(item) = plugin_info.get_mut(&plugin_name) {
+                        item.plugin_id = state.plugin_id;
+                        item.source_kind = state.source_kind;
+                        item.version = state.version;
+                        item.enabled = state.enabled;
+                        item.loaded = state.loaded;
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "failed to upsert plugin runtime state during manifest registration: plugin={} error={}",
+                        plugin_name,
+                        err
+                    );
+                }
+            }
+        }
     }
 
     pub async fn mark_plugin_loaded(&self, plugin_name: &str, loaded: bool) {
@@ -196,6 +225,43 @@ impl PluginManager {
             .values()
             .cloned()
             .collect::<Vec<_>>();
+
+        if let Some(repo) = &self.state_repo {
+            for plugin in &mut plugins {
+                match repo.get_by_name(&plugin.name).await {
+                    Ok(Some(state)) => {
+                        plugin.plugin_id = state.plugin_id;
+                        plugin.source_kind = state.source_kind;
+                        plugin.enabled = state.enabled;
+                        plugin.loaded = state.loaded;
+                        if !state.version.is_empty() {
+                            plugin.version = state.version;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        tracing::warn!(
+                            "failed to read plugin runtime state while listing plugins: plugin={} error={}",
+                            plugin.name,
+                            err
+                        );
+                    }
+                }
+            }
+
+            // Keep in-memory cache aligned with storage-backed source of truth.
+            let mut plugin_info = self.plugin_info.write().await;
+            for plugin in &plugins {
+                if let Some(item) = plugin_info.get_mut(&plugin.name) {
+                    item.plugin_id = plugin.plugin_id.clone();
+                    item.source_kind = plugin.source_kind.clone();
+                    item.version = plugin.version.clone();
+                    item.enabled = plugin.enabled;
+                    item.loaded = plugin.loaded;
+                }
+            }
+        }
+
         plugins.sort_by(|a, b| a.name.cmp(&b.name));
         plugins
     }
@@ -559,24 +625,47 @@ impl PluginManager {
         actor: Option<&str>,
         reason: Option<&str>,
     ) -> Result<PluginInfo, String> {
+        let known_plugin = self
+            .plugin_info
+            .read()
+            .await
+            .get(plugin_name)
+            .cloned()
+            .ok_or_else(|| format!("plugin not found: {plugin_name}"))?;
+
         if let Some(repo) = &self.state_repo {
+            repo.upsert_discovered_plugin(
+                &known_plugin.plugin_id,
+                &known_plugin.name,
+                &known_plugin.source_kind,
+                &known_plugin.version,
+            )
+            .await?;
             let state = repo.set_enabled(plugin_name, enabled, actor, reason).await?;
             let mut info = self.plugin_info.write().await;
             let item = info
-                .get_mut(plugin_name)
-                .ok_or_else(|| format!("plugin not found: {plugin_name}"))?;
+                .entry(plugin_name.to_string())
+                .or_insert_with(|| known_plugin.clone());
             item.plugin_id = state.plugin_id;
             item.source_kind = state.source_kind;
+            if !state.version.is_empty() {
+                item.version = state.version;
+            }
             item.enabled = state.enabled;
+            item.loaded = state.loaded;
             return Ok(item.clone());
         }
 
         let mut info = self.plugin_info.write().await;
-        let item = info
-            .get_mut(plugin_name)
-            .ok_or_else(|| format!("plugin not found: {plugin_name}"))?;
-        item.enabled = enabled;
-        Ok(item.clone())
+        if let Some(item) = info.get_mut(plugin_name) {
+            item.enabled = enabled;
+            return Ok(item.clone());
+        }
+
+        let mut fallback = known_plugin;
+        fallback.enabled = enabled;
+        info.insert(plugin_name.to_string(), fallback.clone());
+        Ok(fallback)
     }
 
     // -- private helpers --
@@ -727,7 +816,69 @@ fn db_permission_name(permission: &DatabasePermission) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::state_repository::PluginStateRepository;
     use crate::plugin::{Permissions, PluginMeta, PluginPoliciesConfig};
+    use crate::storage::sqlite::SqliteStorage;
+    use crate::storage::Storage;
+    use std::sync::Arc;
+
+    async fn storage_with_governance_schema() -> Arc<SqliteStorage> {
+        let sqlite = Arc::new(SqliteStorage::new_in_memory().await.expect("create sqlite"));
+        sqlite
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .expect("run migration 001");
+
+        sqlite
+            .run_migrations(
+                r#"
+                CREATE TABLE IF NOT EXISTS roles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS policy_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL UNIQUE,
+                    surface TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    is_system INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS role_policy_keys (
+                    role_id INTEGER NOT NULL,
+                    policy_key_id INTEGER NOT NULL,
+                    UNIQUE(role_id, policy_key_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS policy_bindings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    surface TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_ref TEXT NOT NULL,
+                    method TEXT,
+                    path_pattern TEXT,
+                    command_name TEXT,
+                    policy_key_id INTEGER NOT NULL,
+                    owner_type TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    is_system INTEGER NOT NULL DEFAULT 0
+                );
+                "#,
+            )
+            .await
+            .expect("create migration prerequisites");
+
+        sqlite
+            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .await
+            .expect("run migration 008");
+
+        sqlite
+    }
 
     #[tokio::test]
     async fn register_manifest_is_visible_in_plugin_list() {
@@ -1137,5 +1288,66 @@ mod tests {
         assert!(api.contains("plugin_disabled"));
         assert!(admin.contains("plugin_disabled"));
         assert!(cli.contains("plugin_disabled"));
+    }
+
+    #[tokio::test]
+    async fn storage_backed_set_plugin_enabled_updates_repo_and_list() {
+        let sqlite = storage_with_governance_schema().await;
+        let storage: Arc<dyn Storage> = sqlite.clone();
+        let manager = PluginManager::new_with_storage(storage.clone());
+        let repo = PluginStateRepository::new(storage);
+
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "notes".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Notes plugin".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+
+        manager.register_plugin_manifest(&manifest).await;
+        let updated = manager
+            .set_plugin_enabled("notes", false, Some("admin"), Some("maintenance"))
+            .await
+            .expect("disable plugin");
+
+        assert!(!updated.enabled);
+
+        let stored = repo
+            .get_by_name("notes")
+            .await
+            .expect("query stored plugin state")
+            .expect("stored plugin row");
+        assert!(!stored.enabled);
+
+        let listed = manager.list_plugins().await;
+        assert_eq!(listed.len(), 1);
+        assert!(!listed[0].enabled);
+        assert_eq!(listed[0].plugin_id, stored.plugin_id);
+    }
+
+    #[tokio::test]
+    async fn set_plugin_enabled_missing_plugin_does_not_write_repo() {
+        let sqlite = storage_with_governance_schema().await;
+        let storage: Arc<dyn Storage> = sqlite;
+        let manager = PluginManager::new_with_storage(storage.clone());
+        let repo = PluginStateRepository::new(storage);
+
+        let err = manager
+            .set_plugin_enabled("missing", false, Some("admin"), Some("noop"))
+            .await
+            .expect_err("missing plugin should fail");
+        assert!(err.contains("plugin not found"));
+
+        let stored = repo
+            .get_by_name("missing")
+            .await
+            .expect("query missing plugin state");
+        assert!(stored.is_none());
     }
 }
