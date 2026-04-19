@@ -59,6 +59,15 @@
     return parts[parts.length - 1] || "";
   }
 
+  function escapeHtml(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll("\"", "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   window.fileBrowserPage = function fileBrowserPage(initial) {
     return {
       routePrefix: initial.routePrefix || "/app/files",
@@ -71,6 +80,11 @@
       listRequestId: 0,
       contextPath: "",
       activeNodeScrollPath: "",
+      searchOpen: false,
+      searchQuery: "",
+      searchRequestId: 0,
+      searchTimer: null,
+      searchMaxResults: 200,
 
       init() {
         if (this.initialized) {
@@ -79,6 +93,8 @@
         this.initialized = true;
         this.seedExpandedDirs();
         this.bindDelegatedEvents();
+        this.setSearchToggleVisual(false);
+        this.setSearchListVisibility(false);
         this.refreshList();
       },
 
@@ -111,9 +127,15 @@
             this.toggleDirectory(path, actionEl);
           } else if (action === "open-dir") {
             event.preventDefault();
+            if (this.searchOpen) {
+              this.closeSearchPanel();
+            }
             this.focusDirectory(path);
           } else if (action === "open-file") {
             event.preventDefault();
+            if (this.searchOpen) {
+              this.closeSearchPanel();
+            }
             this.openFile(path);
           } else if (action === "download") {
             event.preventDefault();
@@ -121,6 +143,15 @@
           } else if (action === "refresh-list") {
             event.preventDefault();
             this.refreshList();
+          } else if (action === "toggle-search") {
+            event.preventDefault();
+            this.toggleSearchPanel();
+          } else if (action === "run-search") {
+            event.preventDefault();
+            this.runSearchNow();
+          } else if (action === "clear-search") {
+            event.preventDefault();
+            this.clearSearch();
           } else if (action === "ctx-create-text") {
             event.preventDefault();
             this.closeContextMenu();
@@ -200,9 +231,29 @@
           this.handleContextUploadInput(input);
         });
 
+        document.addEventListener("input", (event) => {
+          const input = event.target;
+          if (!(input instanceof HTMLInputElement)) {
+            return;
+          }
+          if (input.id !== "fb-search-input") {
+            return;
+          }
+          this.onSearchInput(input.value);
+        });
+
         document.addEventListener("keydown", (event) => {
           const isSave = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
+          const eventTarget = event.target;
+          if (event.key === "Enter" && eventTarget instanceof HTMLInputElement && eventTarget.id === "fb-search-input") {
+            event.preventDefault();
+            this.runSearchNow();
+            return;
+          }
           if (event.key === "Escape") {
+            if (this.searchOpen) {
+              this.closeSearchPanel();
+            }
             this.closeContextMenu();
           }
           if (!isSave) {
@@ -310,6 +361,298 @@
           toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
           toggle.setAttribute("aria-busy", loading ? "true" : "false");
         }
+      },
+
+      searchPanel() {
+        return q("#fb-search-panel");
+      },
+
+      searchInput() {
+        return q("#fb-search-input");
+      },
+
+      searchMeta() {
+        return q("#fb-search-meta");
+      },
+
+      searchResults() {
+        return q("#fb-search-results");
+      },
+
+      setSearchToggleVisual(active) {
+        const toggles = document.querySelectorAll("[data-fb-search-toggle='1']");
+        toggles.forEach((toggle) => {
+          toggle.classList.toggle("border-slate-400", active);
+          toggle.classList.toggle("border-slate-300", !active);
+          toggle.classList.toggle("bg-[#d9dde3]", active);
+          toggle.classList.toggle("bg-[#eef1f5]", !active);
+          toggle.classList.toggle("text-slate-700", active);
+          toggle.classList.toggle("text-slate-500", !active);
+          toggle.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+      },
+
+      setSearchMeta(text) {
+        const target = this.searchMeta();
+        if (target) {
+          target.textContent = text;
+        }
+      },
+
+      showSearchHint(message) {
+        const target = this.searchResults();
+        if (!target) {
+          return;
+        }
+        target.innerHTML = `<div class="px-3 py-6 text-center text-xs text-slate-500">${escapeHtml(message || "")}</div>`;
+      },
+
+      setSearchListVisibility(showSearch) {
+        const list = q("#fb-list");
+        const results = this.searchResults();
+        if (list) {
+          list.classList.toggle("hidden", showSearch);
+        }
+        if (results) {
+          results.classList.toggle("hidden", !showSearch);
+        }
+      },
+
+      openSearchPanel() {
+        if (this.searchOpen) {
+          return;
+        }
+        this.searchOpen = true;
+        const panel = this.searchPanel();
+        if (panel) {
+          panel.classList.remove("hidden");
+        }
+        this.setSearchToggleVisual(true);
+        this.setSearchListVisibility(true);
+        this.setSearchMeta("Type to search all folders in this root.");
+        this.showSearchHint("Type to search all folders in this root.");
+        const input = this.searchInput();
+        if (input) {
+          input.value = this.searchQuery || "";
+          window.setTimeout(() => input.focus(), 0);
+        }
+      },
+
+      closeSearchPanel() {
+        this.searchOpen = false;
+        this.searchQuery = "";
+        this.searchRequestId += 1;
+        if (this.searchTimer) {
+          window.clearTimeout(this.searchTimer);
+          this.searchTimer = null;
+        }
+        const panel = this.searchPanel();
+        if (panel) {
+          panel.classList.add("hidden");
+        }
+        const input = this.searchInput();
+        if (input) {
+          input.value = "";
+        }
+        const results = this.searchResults();
+        if (results) {
+          results.innerHTML = "";
+        }
+        this.setSearchToggleVisual(false);
+        this.setSearchListVisibility(false);
+      },
+
+      toggleSearchPanel() {
+        if (this.searchOpen) {
+          this.closeSearchPanel();
+        } else {
+          this.openSearchPanel();
+        }
+      },
+
+      onSearchInput(value) {
+        this.searchQuery = String(value || "").trim();
+        if (!this.searchOpen) {
+          return;
+        }
+        if (this.searchTimer) {
+          window.clearTimeout(this.searchTimer);
+        }
+        if (!this.searchQuery) {
+          this.searchRequestId += 1;
+          this.setSearchMeta("Type to search all folders in this root.");
+          this.showSearchHint("Type to search all folders in this root.");
+          this.searchTimer = null;
+          return;
+        }
+        this.searchTimer = window.setTimeout(() => {
+          this.runSearchNow();
+        }, 220);
+      },
+
+      clearSearch() {
+        if (!this.searchOpen) {
+          return;
+        }
+        const input = this.searchInput();
+        if (input) {
+          input.value = "";
+          input.focus();
+        }
+        this.searchQuery = "";
+        this.searchRequestId += 1;
+        if (this.searchTimer) {
+          window.clearTimeout(this.searchTimer);
+          this.searchTimer = null;
+        }
+        this.setSearchMeta("Type to search all folders in this root.");
+        this.showSearchHint("Type to search all folders in this root.");
+      },
+
+      extractEntriesFromListHtml(html) {
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = html || "";
+        const nodes = wrapper.querySelectorAll("[data-fb-node='1'][data-path][data-kind]");
+        const entries = [];
+        nodes.forEach((node) => {
+          const path = normalizePath(node.getAttribute("data-path") || "");
+          if (!path) {
+            return;
+          }
+          const kind = (node.getAttribute("data-kind") || "") === "dir" ? "dir" : "file";
+          entries.push({ path, kind, name: fileName(path) });
+        });
+        return entries;
+      },
+
+      renderSearchResults(result, query) {
+        const target = this.searchResults();
+        if (!target) {
+          return;
+        }
+        const matches = result && result.matches ? result.matches : [];
+        if (matches.length === 0) {
+          this.setSearchMeta(`No matches for "${query}"`);
+          this.showSearchHint(`No matches for "${query}"`);
+          return;
+        }
+
+        const rows = matches
+          .map((item) => {
+            const safePath = escapeHtml(item.path);
+            const safeName = escapeHtml(item.name || fileName(item.path));
+            const isDir = item.kind === "dir";
+            const action = isDir ? "open-dir" : "open-file";
+            const badgeClass = isDir ? "bg-[#eef1f5] text-slate-600" : "bg-[#eceff4] text-slate-500";
+            const badgeText = isDir ? "DIR" : "FILE";
+            return `
+<li>
+  <button
+    type="button"
+    class="flex w-full items-center justify-between gap-2 rounded-sm border-l-2 border-transparent px-2 py-1.5 text-left transition hover:bg-[#e5e9f1]"
+    data-fb-action="${action}"
+    data-path="${safePath}"
+  >
+    <span class="min-w-0 flex flex-1 items-center gap-2">
+      <span class="rounded px-1 py-0.5 text-[10px] font-semibold tracking-[0.08em] ${badgeClass}">${badgeText}</span>
+      <span class="truncate text-sm text-slate-700">${safeName}</span>
+    </span>
+    <span class="fb-code-font text-[11px] text-slate-500">${safePath}</span>
+  </button>
+</li>`;
+          })
+          .join("");
+
+        target.innerHTML = `<ul class="divide-y divide-slate-200 text-sm">${rows}</ul>`;
+        const scanned = result.scanned || 0;
+        const suffix = result.truncated ? " (showing first 200)" : "";
+        this.setSearchMeta(`Found ${matches.length} match(es), scanned ${scanned} item(s)${suffix}.`);
+      },
+
+      async runSearchNow() {
+        if (!this.searchOpen) {
+          this.openSearchPanel();
+        }
+        if (this.searchTimer) {
+          window.clearTimeout(this.searchTimer);
+          this.searchTimer = null;
+        }
+
+        const query = String(this.searchQuery || "").trim();
+        this.searchQuery = query;
+        if (!query) {
+          this.setSearchMeta("Type to search all folders in this root.");
+          this.showSearchHint("Type to search all folders in this root.");
+          return;
+        }
+        if (!this.rootId) {
+          this.setSearchMeta("No root selected.");
+          this.showSearchHint("No root selected.");
+          return;
+        }
+        if (!this.can("canList")) {
+          this.setSearchMeta("Search unavailable because list capability is disabled.");
+          this.showSearchHint("Search unavailable because list capability is disabled.");
+          return;
+        }
+
+        const requestId = this.searchRequestId + 1;
+        this.searchRequestId = requestId;
+        this.setSearchMeta(`Searching "${query}"...`);
+        this.showSearchHint(`Searching "${query}"...`);
+
+        const queue = [""];
+        const visited = new Set([""]);
+        const matches = [];
+        const queryLower = query.toLowerCase();
+        let scanned = 0;
+        let truncated = false;
+
+        while (queue.length > 0) {
+          if (requestId !== this.searchRequestId) {
+            return;
+          }
+
+          const currentPath = queue.shift();
+          const result = await this.fetchList(currentPath);
+          if (!result.ok) {
+            continue;
+          }
+
+          const entries = this.extractEntriesFromListHtml(result.text);
+          for (const entry of entries) {
+            const entryPath = normalizePath(entry.path);
+            if (!entryPath) {
+              continue;
+            }
+
+            scanned += 1;
+            const haystack = `${entry.name} ${entryPath}`.toLowerCase();
+            if (haystack.includes(queryLower)) {
+              matches.push(entry);
+              if (matches.length >= this.searchMaxResults) {
+                truncated = true;
+                break;
+              }
+            }
+
+            if (entry.kind === "dir" && !visited.has(entryPath)) {
+              visited.add(entryPath);
+              queue.push(entryPath);
+            }
+          }
+
+          if (truncated) {
+            break;
+          }
+        }
+
+        if (requestId !== this.searchRequestId) {
+          return;
+        }
+
+        matches.sort((left, right) => left.path.localeCompare(right.path));
+        this.renderSearchResults({ matches, scanned, truncated }, query);
       },
 
       clearExpandedSubtree(path) {
@@ -590,6 +933,13 @@
       },
 
       switchRoot() {
+        if (this.searchTimer) {
+          window.clearTimeout(this.searchTimer);
+          this.searchTimer = null;
+        }
+        this.searchRequestId += 1;
+        this.searchOpen = false;
+        this.searchQuery = "";
         this.relPath = "";
         this.activePath = "";
         this.contextPath = "";

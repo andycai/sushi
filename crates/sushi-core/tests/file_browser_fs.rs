@@ -349,6 +349,42 @@ async fn from_manifest_with_root_base_resolves_relative_paths() {
     assert_eq!(entries[0].name, "note.txt");
 }
 
+#[tokio::test]
+async fn list_sorts_directories_before_files() {
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    std::fs::create_dir(tmp.path().join("a-dir")).expect("create directory fixture");
+    std::fs::create_dir(tmp.path().join("z-dir")).expect("create directory fixture");
+    std::fs::write(tmp.path().join("a.txt"), "a").expect("write file fixture");
+    std::fs::write(tmp.path().join("z.txt"), "z").expect("write file fixture");
+
+    let cfg = config_for(
+        tmp.path(),
+        PluginFileBrowserCapabilities {
+            can_list: true,
+            can_view_text: true,
+            can_edit_text: true,
+            can_create_text: true,
+            can_create_dir: true,
+            can_rename: true,
+            can_delete: true,
+            can_upload: true,
+            can_download: true,
+        },
+    );
+    let service = FileBrowserFsService::from_manifest(&cfg).expect("service should build");
+
+    let entries = service.list("docs", "").await.expect("list root entries");
+    assert_eq!(entries.len(), 4);
+    assert_eq!(entries[0].name, "a-dir");
+    assert!(entries[0].is_dir);
+    assert_eq!(entries[1].name, "z-dir");
+    assert!(entries[1].is_dir);
+    assert_eq!(entries[2].name, "a.txt");
+    assert!(!entries[2].is_dir);
+    assert_eq!(entries[3].name, "z.txt");
+    assert!(!entries[3].is_dir);
+}
+
 #[cfg(unix)]
 fn create_symlink(target: &Path, link: &Path) {
     std::os::unix::fs::symlink(target, link).expect("create unix symlink");

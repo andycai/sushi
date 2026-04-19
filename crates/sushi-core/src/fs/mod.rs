@@ -247,7 +247,8 @@ impl FileBrowserFsService {
             });
         }
 
-        out.sort_by(|a, b| a.name.cmp(&b.name));
+        // Keep directories grouped above files to match file-explorer expectations.
+        out.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
         Ok(out)
     }
 

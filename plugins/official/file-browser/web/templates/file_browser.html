@@ -14,6 +14,7 @@
   rootId: '{{ root_id }}',
   relPath: '{{ rel_path }}',
   capabilities: {
+    canList: {% if root and root.capabilities and root.capabilities.can_list %}true{% else %}false{% endif %},
     canCreateText: {% if root and root.capabilities and root.capabilities.can_create_text %}true{% else %}false{% endif %},
     canCreateDir: {% if root and root.capabilities and root.capabilities.can_create_dir %}true{% else %}false{% endif %},
     canRename: {% if root and root.capabilities and root.capabilities.can_rename %}true{% else %}false{% endif %},
@@ -38,8 +39,6 @@
             {% endfor %}
           </select>
 
-          <button type="button" class="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100" @click="goToParent()">Up</button>
-          <button type="button" class="rounded border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-700" @click="refreshList()">Refresh</button>
         </div>
         {% endif %}
       </header>
@@ -56,12 +55,20 @@
                   <path d="M1.75 4.25h3.75l1.25 1.5h5.5v5.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>
                 </svg>
               </span>
-              <span class="grid h-6 w-6 place-items-center rounded border border-slate-300 bg-[#eef1f5] text-slate-500">
+              <button
+                type="button"
+                class="grid h-6 w-6 place-items-center rounded border border-slate-300 bg-[#eef1f5] text-slate-500 transition hover:bg-[#d7dce5] hover:text-slate-900"
+                title="Search files and folders"
+                aria-label="Search files and folders"
+                aria-pressed="false"
+                data-fb-action="toggle-search"
+                data-fb-search-toggle="1"
+              >
                 <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
                   <circle cx="6.25" cy="6.25" r="2.75"/>
                   <path d="M8.5 8.5l2.75 2.75"/>
                 </svg>
-              </span>
+              </button>
             </div>
             <div class="min-h-0 flex flex-1 flex-col">
           <div class="border-b border-slate-300 px-3 py-2.5">
@@ -156,7 +163,20 @@
                 </svg>
               </button>
             </div>
+            <div id="fb-search-panel" class="hidden border-t border-slate-300 px-1 py-1">
+              <div class="flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1.5">
+                <svg class="h-3.5 w-3.5 shrink-0 text-slate-500" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
+                  <circle cx="6.25" cy="6.25" r="2.75"/>
+                  <path d="M8.5 8.5l2.75 2.75"/>
+                </svg>
+                <input id="fb-search-input" type="search" class="min-w-0 flex-1 bg-white text-sm text-slate-700 focus:outline-none" placeholder="Search files and folders" autocomplete="off" spellcheck="false">
+                <button type="button" class="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100" data-fb-action="clear-search">Clear</button>
+              </div>
+              <p id="fb-search-meta" class="mt-1 px-1 text-[11px] text-slate-500">Type to search all folders in this root.</p>
+            </div>
           </div>
+
+          <div id="fb-search-results" class="hidden min-h-0 flex-1 overflow-y-auto bg-white"></div>
 
           <div id="fb-list" class="min-h-0 flex-1 overflow-y-auto">
             {% include "plugins/official/file-browser/fragments/list.html" %}

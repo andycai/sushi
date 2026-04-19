@@ -73,6 +73,7 @@ text_extensions = [
   "cxx",
   "hxx",
   "cs",
+  "meta",
   "swift",
   "scala",
   "sql",

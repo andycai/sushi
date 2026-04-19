@@ -85,7 +85,9 @@ async fn dispatch(
 
 #[tokio::test]
 async fn file_browser_public_routes_support_core_operations() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
     let source_plugin = repo_root.join("plugins/official/file-browser");
 
     let sandbox = tempfile::tempdir().expect("create sandbox dir");
@@ -102,7 +104,9 @@ async fn file_browser_public_routes_support_core_operations() {
     std::fs::write(docs_root.join("welcome.txt"), "hello").expect("write text fixture");
     write_manifest(&plugin_root.join("plugin.toml"), &docs_root);
 
-    let mut plugins = LuaPlugin::scan_dir(sandbox.path()).await.expect("scan plugins");
+    let mut plugins = LuaPlugin::scan_dir(sandbox.path())
+        .await
+        .expect("scan plugins");
     assert_eq!(plugins.len(), 1);
 
     let plugin = plugins.remove(0);
@@ -114,12 +118,17 @@ async fn file_browser_public_routes_support_core_operations() {
     .expect("create template service");
 
     let config = ConfigStore::new(SushiConfig::default());
-    let db = SqliteStorage::new_in_memory().await.expect("create sqlite db");
+    let db = SqliteStorage::new_in_memory()
+        .await
+        .expect("create sqlite db");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let ctx = SushiContext::new(config, db, jwt, templates);
 
     ctx.plugins
-        .register_plugin_manifest_with_permissions(plugin.manifest(), plugin.effective_permissions())
+        .register_plugin_manifest_with_permissions(
+            plugin.manifest(),
+            plugin.effective_permissions(),
+        )
         .await;
 
     plugin.init(&ctx).await.expect("init plugin");
@@ -150,7 +159,8 @@ async fn file_browser_public_routes_support_core_operations() {
     .await;
     assert!(flash.contains("Created directory notes"));
 
-    let create_text_body = b"root_id=docs&parent_path=notes&name=todo&initial_content=first".to_vec();
+    let create_text_body =
+        b"root_id=docs&parent_path=notes&name=todo&initial_content=first".to_vec();
     let flash = dispatch(
         &ctx,
         "POST",
@@ -203,8 +213,8 @@ async fn file_browser_public_routes_support_core_operations() {
     .await;
     assert!(download_payload.contains("\"__sushi_file_download\":true"));
 
-    let frontend_script =
-        std::fs::read_to_string(plugin_root.join("web/static/file_browser.js")).expect("read web script");
+    let frontend_script = std::fs::read_to_string(plugin_root.join("web/static/file_browser.js"))
+        .expect("read web script");
     assert!(
         frontend_script.contains("toggle-dir"),
         "file browser frontend should support directory toggle action"
@@ -226,6 +236,14 @@ async fn file_browser_public_routes_support_core_operations() {
         "file browser frontend should expose context-menu upload action"
     );
     assert!(
+        frontend_script.contains("toggle-search"),
+        "file browser frontend should expose left-rail search action"
+    );
+    assert!(
+        frontend_script.contains("runSearchNow"),
+        "file browser frontend should support recursive search"
+    );
+    assert!(
         frontend_script.contains("query.set(\"root\", this.rootId)"),
         "root switch should include selected root in query"
     );
@@ -242,7 +260,7 @@ async fn file_browser_public_routes_support_core_operations() {
         "file browser frontend should rotate chevrons instead of text glyph swapping"
     );
 
-    let saved = std::fs::read_to_string(docs_root.join("notes").join("todo.txt"))
-        .expect("read saved file");
+    let saved =
+        std::fs::read_to_string(docs_root.join("notes").join("todo.txt")).expect("read saved file");
     assert_eq!(saved, "updated content");
 }
