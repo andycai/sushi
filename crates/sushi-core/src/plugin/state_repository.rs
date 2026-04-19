@@ -15,6 +15,16 @@ pub struct StoredPluginState {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct StoredPluginStateEvent {
+    pub plugin_id: String,
+    pub source_kind: String,
+    pub changed_by: String,
+    pub previous_enabled: Option<bool>,
+    pub next_enabled: Option<bool>,
+    pub reason: String,
+}
+
 pub struct PluginStateRepository {
     storage: Arc<dyn Storage>,
 }
@@ -154,6 +164,28 @@ impl PluginStateRepository {
             .await?
             .ok_or_else(|| format!("plugin state row missing after update: {name}"))
     }
+
+    pub async fn get_latest_event_by_plugin_id(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Option<StoredPluginStateEvent>, String> {
+        let rows = self
+            .storage
+            .query(
+                r#"
+                SELECT plugin_id, source_kind, changed_by, previous_enabled, next_enabled, reason
+                FROM plugin_state_events
+                WHERE plugin_id = ?1
+                ORDER BY changed_at DESC, id DESC
+                LIMIT 1
+                "#,
+                vec![Value::String(plugin_id.to_string())],
+            )
+            .await
+            .map_err(|err| err.to_string())?;
+
+        rows.into_iter().next().map(row_to_event).transpose()
+    }
 }
 
 fn row_to_state(row: Row) -> Result<StoredPluginState, String> {
@@ -166,6 +198,17 @@ fn row_to_state(row: Row) -> Result<StoredPluginState, String> {
         version: string_or_default(&row, "version", ""),
         updated_by: optional_non_empty_string(&row, "updated_by"),
         updated_at: string_or_default(&row, "updated_at", ""),
+        reason: string_or_default(&row, "reason", ""),
+    })
+}
+
+fn row_to_event(row: Row) -> Result<StoredPluginStateEvent, String> {
+    Ok(StoredPluginStateEvent {
+        plugin_id: required_string(&row, "plugin_id")?,
+        source_kind: string_or_default(&row, "source_kind", "third_party"),
+        changed_by: string_or_default(&row, "changed_by", ""),
+        previous_enabled: optional_bool(&row, "previous_enabled"),
+        next_enabled: optional_bool(&row, "next_enabled"),
         reason: string_or_default(&row, "reason", ""),
     })
 }
@@ -201,6 +244,18 @@ fn bool_or_default(row: &Row, key: &str, default: bool) -> bool {
             value.as_i64().map(|v| v != 0)
         })
         .unwrap_or(default)
+}
+
+fn optional_bool(row: &Row, key: &str) -> Option<bool> {
+    row.get(key).and_then(|value| {
+        if value.is_null() {
+            return None;
+        }
+        if let Some(v) = value.as_bool() {
+            return Some(v);
+        }
+        value.as_i64().map(|v| v != 0)
+    })
 }
 
 #[cfg(test)]
