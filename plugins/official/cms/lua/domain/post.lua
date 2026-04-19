@@ -32,7 +32,7 @@ function M.new(deps)
             params = { opts.category_slug }
         end
         local rows, kind, msg = db.query(
-            "SELECT p.id, p.title, p.slug, p.excerpt, p.status, c.slug AS category_slug, c.name AS category_name "
+            "SELECT p.id, p.title, p.slug, p.excerpt, p.markdown_body, p.status, c.slug AS category_slug, c.name AS category_name "
                 .. "FROM cms_posts p JOIN cms_categories c ON c.id = p.category_id "
                 .. "WHERE "
                 .. where

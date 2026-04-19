@@ -190,6 +190,25 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
 
+    // Seed CMS child menu only when no matching route exists.
+    ctx.db
+        .execute(
+            "INSERT INTO menu_items (label, icon, position, parent_id, route)
+             SELECT 'CMS', 'file-text', 52, (
+               SELECT id FROM menu_items
+               WHERE route = '/admin/plugins'
+               ORDER BY id
+               LIMIT 1
+             ), '/admin/cms'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM menu_items
+               WHERE route = '/admin/cms'
+             )",
+            vec![],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     // Group built-in governance menus under System, but only when still top-level.
     ctx.db
         .execute(
@@ -231,6 +250,19 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
     ctx.db
         .execute(
             "DELETE FROM menu_items
+             WHERE route = '/admin/cms'
+               AND id <> (
+                 SELECT MIN(id) FROM menu_items
+                 WHERE route = '/admin/cms'
+               )",
+            vec![],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    ctx.db
+        .execute(
+            "DELETE FROM menu_items
              WHERE route = '/admin/menus'
                AND id <> (
                  SELECT MIN(id) FROM menu_items
@@ -257,6 +289,7 @@ fn is_system_route(route: &str) -> bool {
             | "/admin/logs"
             | "/admin/menus"
             | "/admin/kv"
+            | "/admin/cms"
     )
 }
 

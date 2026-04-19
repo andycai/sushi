@@ -8,7 +8,7 @@ function M.new(deps)
 
     function page.list()
         local rows, kind, msg = db.query(
-            "SELECT id, title, slug, status, created_at, updated_at FROM cms_pages WHERE deleted_at IS NULL ORDER BY updated_at DESC",
+            "SELECT id, title, slug, markdown_body, status, created_at, updated_at FROM cms_pages WHERE deleted_at IS NULL ORDER BY updated_at DESC",
             {}
         )
         if not rows then

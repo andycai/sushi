@@ -1,10 +1,28 @@
 {% for item in items %}
-  <tr>
+  <tr
+    data-category-slug="{{ item.slug }}"
+    data-category-name="{{ item.name }}"
+  >
     <td class="ui-mono">{{ item.slug }}</td>
     <td>{{ item.name }}</td>
+    <td class="actions">
+      <textarea class="hidden" data-category-description>{{ item.description }}</textarea>
+      <button type="button" class="ui-action-link" @click="editCategoryFromRow($el.closest('tr'))">Edit</button>
+      <form
+        class="inline-block"
+        hx-post="/admin/partials/cms/categories/delete"
+        hx-target="#cms-feedback"
+        hx-swap="innerHTML"
+        x-on:submit="if (!confirmDelete('category', '{{ item.slug }}')) { $event.preventDefault() }"
+        x-on:htmx:after-request.camel="onCategoriesDeleteAfterRequest($event)"
+      >
+        <input type="hidden" name="slug" value="{{ item.slug }}">
+        <button type="submit" class="ui-action-link danger">Delete</button>
+      </form>
+    </td>
   </tr>
 {% else %}
   <tr>
-    <td colspan="2" class="ui-empty">No categories found.</td>
+    <td colspan="3" class="ui-empty">No categories found.</td>
   </tr>
 {% endfor %}

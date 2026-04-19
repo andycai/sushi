@@ -979,6 +979,24 @@ fn admin_cms_category_delete_returns_flash_on_conflict() {
     assert!(source.contains("plugins/official/cms/fragments/flash.html"));
 }
 
+#[test]
+fn admin_cms_template_exposes_crud_forms_and_actions() {
+    let source = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/cms.html"),
+    )
+    .expect("failed to read cms template");
+    let rows = std::fs::read_to_string(
+        workspace_root().join("plugins/official/cms/web/templates/fragments/page_rows.html"),
+    )
+    .expect("failed to read cms page rows template");
+
+    assert!(source.contains("/admin/partials/cms/pages/upsert"));
+    assert!(source.contains("/admin/partials/cms/posts/upsert"));
+    assert!(source.contains("/admin/partials/cms/categories/upsert"));
+    assert!(rows.contains("/admin/partials/cms/pages/delete"));
+    assert!(rows.contains("editPageFromRow"));
+}
+
 #[tokio::test]
 async fn role_permission_updates_refresh_authorizer_for_workspace_asset_checks() {
     let (app, _ctx) = build_app_with_context(None).await;
@@ -1440,6 +1458,25 @@ async fn menu_api_returns_menu_items() {
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/menus"));
     assert!(menus.is_some(), "Menus management entry should exist");
 
+    let plugins = menu
+        .iter()
+        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/plugins"))
+        .expect("Plugins menu item should exist");
+    let plugins_id = plugins
+        .get("id")
+        .and_then(Value::as_i64)
+        .expect("Plugins menu id should exist");
+    let cms = menu
+        .iter()
+        .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/cms"))
+        .expect("CMS menu item should exist");
+    let cms_parent_id = cms.get("parent_id").and_then(Value::as_i64);
+    assert_eq!(
+        cms_parent_id,
+        Some(plugins_id),
+        "CMS should be grouped under Plugins menu"
+    );
+
     let system = menu
         .iter()
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/system"))
@@ -1510,6 +1547,11 @@ async fn menu_api_handles_legacy_menu_table_without_is_hidden_column() {
         kv_count, 1,
         "legacy duplicate kv menu entries should be deduplicated"
     );
+    let cms_count = menu
+        .iter()
+        .filter(|item| item.get("route").and_then(Value::as_str) == Some("/admin/cms"))
+        .count();
+    assert_eq!(cms_count, 1, "cms menu entry should be seeded once");
     let system = menu
         .iter()
         .find(|m| m.get("route").and_then(Value::as_str) == Some("/admin/system"))

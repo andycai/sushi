@@ -1,11 +1,30 @@
 {% for item in items %}
-  <tr>
+  <tr
+    data-page-slug="{{ item.slug }}"
+    data-page-title="{{ item.title }}"
+    data-page-status="{{ item.status }}"
+  >
     <td class="ui-mono">{{ item.slug }}</td>
     <td>{{ item.title }}</td>
     <td>{{ item.status }}</td>
+    <td class="actions">
+      <textarea class="hidden" data-page-markdown>{{ item.markdown_body }}</textarea>
+      <button type="button" class="ui-action-link" @click="editPageFromRow($el.closest('tr'))">Edit</button>
+      <form
+        class="inline-block"
+        hx-post="/admin/partials/cms/pages/delete"
+        hx-target="#cms-feedback"
+        hx-swap="innerHTML"
+        x-on:submit="if (!confirmDelete('page', '{{ item.slug }}')) { $event.preventDefault() }"
+        x-on:htmx:after-request.camel="onPagesDeleteAfterRequest($event)"
+      >
+        <input type="hidden" name="slug" value="{{ item.slug }}">
+        <button type="submit" class="ui-action-link danger">Delete</button>
+      </form>
+    </td>
   </tr>
 {% else %}
   <tr>
-    <td colspan="3" class="ui-empty">No pages found.</td>
+    <td colspan="4" class="ui-empty">No pages found.</td>
   </tr>
 {% endfor %}

@@ -1,12 +1,34 @@
 {% for item in items %}
-  <tr>
+  <tr
+    data-post-slug="{{ item.slug }}"
+    data-post-title="{{ item.title }}"
+    data-post-status="{{ item.status }}"
+    data-post-category-slug="{{ item.category_slug }}"
+    data-post-category-name="{{ item.category_name }}"
+  >
     <td class="ui-mono">{{ item.slug }}</td>
     <td>{{ item.title }}</td>
     <td>{{ item.category_name }}</td>
     <td>{{ item.status }}</td>
+    <td class="actions">
+      <textarea class="hidden" data-post-markdown>{{ item.markdown_body }}</textarea>
+      <textarea class="hidden" data-post-excerpt>{{ item.excerpt }}</textarea>
+      <button type="button" class="ui-action-link" @click="editPostFromRow($el.closest('tr'))">Edit</button>
+      <form
+        class="inline-block"
+        hx-post="/admin/partials/cms/posts/delete"
+        hx-target="#cms-feedback"
+        hx-swap="innerHTML"
+        x-on:submit="if (!confirmDelete('post', '{{ item.slug }}')) { $event.preventDefault() }"
+        x-on:htmx:after-request.camel="onPostsDeleteAfterRequest($event)"
+      >
+        <input type="hidden" name="slug" value="{{ item.slug }}">
+        <button type="submit" class="ui-action-link danger">Delete</button>
+      </form>
+    </td>
   </tr>
 {% else %}
   <tr>
-    <td colspan="4" class="ui-empty">No posts found.</td>
+    <td colspan="5" class="ui-empty">No posts found.</td>
   </tr>
 {% endfor %}
