@@ -249,15 +249,19 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             )
             .await;
 
-        let enabled = ctx
-            .plugins
-            .list_plugins()
-            .await
-            .into_iter()
-            .find(|item| item.name == plugin_name.as_str())
-            .map(|item| item.enabled)
-            .unwrap_or(true);
-        if !enabled {
+        let enabled_before_init = match ctx.plugins.plugin_runtime_enabled(&plugin_name).await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                let message = format!(
+                    "failed to resolve runtime state before init for plugin {plugin_name}: {err}; skipping init"
+                );
+                tracing::warn!("{message}");
+                ctx.logs.warn(&message).await;
+                ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+                continue;
+            }
+        };
+        if !enabled_before_init {
             tracing::info!(
                 "plugin {plugin_name} is disabled by governance state; skipping init"
             );
@@ -273,6 +277,27 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
             continue;
         }
+
+        let enabled_after_init = match ctx.plugins.plugin_runtime_enabled(&plugin_name).await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                let message = format!(
+                    "failed to resolve runtime state after init for plugin {plugin_name}: {err}; skipping VM registration"
+                );
+                tracing::warn!("{message}");
+                ctx.logs.warn(&message).await;
+                ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+                continue;
+            }
+        };
+        if !enabled_after_init {
+            tracing::info!(
+                "plugin {plugin_name} became disabled during init; skipping VM registration"
+            );
+            ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            continue;
+        }
+
         if let Some(lua) = plugin.into_vm() {
             ctx.plugins.register_vm(&plugin_name, lua).await;
             tracing::debug!("registered VM for plugin {plugin_name}");
@@ -435,6 +460,7 @@ async fn plugin_state_columns(storage: &SqliteStorage) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
     use sushi_core::storage::Storage;
 
     async fn run_base_migrations_to_007(storage: &SqliteStorage) {
@@ -536,5 +562,96 @@ mod tests {
         assert!(is_duplicate_column_error("duplicate column name: plugin_id"));
         assert!(is_duplicate_column_error("DUPLICATE COLUMN NAME: plugin_id"));
         assert!(!is_duplicate_column_error("no such table: plugin_state"));
+    }
+
+    #[tokio::test]
+    async fn bootstrap_skips_disabled_plugin_init_side_effects() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_root = std::env::temp_dir().join(format!("sushi-bootstrap-skip-{unique}"));
+        std::fs::create_dir_all(&temp_root).unwrap();
+
+        let data_dir = temp_root.join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let db_path = data_dir.join("sushi.db");
+
+        let plugins_dir = temp_root.join("plugins");
+        let plugin_dir = plugins_dir.join("third_party").join("skip-probe");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "skip-probe"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+
+[permissions]
+routes = true
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_dir.join("init.lua"),
+            r#"
+sushi.api.route("GET", "/api/bootstrap-skip-proof", function()
+    return "init-ran"
+end)
+"#,
+        )
+        .unwrap();
+
+        let db_path_string = db_path.to_string_lossy().to_string();
+        let storage = SqliteStorage::new(&db_path_string).await.unwrap();
+        run_base_migrations_to_007(&storage).await;
+        run_plugin_governance_migration_if_needed(&storage)
+            .await
+            .unwrap();
+        storage
+            .execute(
+                "INSERT INTO plugin_state (name, plugin_id, source_kind, enabled, loaded, version, updated_by, reason, updated_at) VALUES ('skip-probe', 'third_party/skip-probe', 'third_party', 0, 0, '0.1.0', 'seed', 'disabled for bootstrap test', datetime('now'))",
+                vec![],
+            )
+            .await
+            .unwrap();
+        drop(storage);
+
+        let config_path = temp_root.join("config.toml");
+        let templates_dir = temp_root.join("templates");
+        let static_dir = temp_root.join("static");
+        let config_toml = format!(
+            r#"
+[database]
+path = "{}"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "{}"
+static_dir = "{}"
+static_url_prefix = "/static"
+"#,
+            db_path.display(),
+            plugins_dir.display(),
+            templates_dir.display(),
+            static_dir.display()
+        );
+        std::fs::write(&config_path, config_toml).unwrap();
+
+        let ctx = bootstrap(Some(&config_path)).await.unwrap();
+
+        assert!(
+            ctx.plugins
+                .call_api_handler("GET", "/api/bootstrap-skip-proof", None)
+                .await
+                .is_none(),
+            "disabled plugin side effects should not be registered during bootstrap"
+        );
+
+        std::fs::remove_dir_all(&temp_root).ok();
     }
 }

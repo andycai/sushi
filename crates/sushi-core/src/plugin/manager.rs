@@ -682,33 +682,57 @@ impl PluginManager {
         Ok(fallback)
     }
 
+    pub async fn plugin_runtime_enabled(&self, plugin_name: &str) -> Result<bool, String> {
+        if let Some(repo) = &self.state_repo {
+            if let Some(state) = repo.get_by_name(plugin_name).await? {
+                let mut info = self.plugin_info.write().await;
+                if let Some(plugin) = info.get_mut(plugin_name) {
+                    plugin.plugin_id = state.plugin_id.clone();
+                    plugin.source_kind = state.source_kind.clone();
+                    if !state.version.is_empty() {
+                        plugin.version = state.version.clone();
+                    }
+                    plugin.enabled = state.enabled;
+                    plugin.loaded = state.loaded;
+                } else {
+                    info.insert(
+                        plugin_name.to_string(),
+                        PluginInfo {
+                            plugin_id: state.plugin_id.clone(),
+                            source_kind: state.source_kind.clone(),
+                            name: state.name.clone(),
+                            version: state.version.clone(),
+                            description: String::new(),
+                            enabled: state.enabled,
+                            loaded: state.loaded,
+                            permissions: PluginPermissionsView {
+                                routes: false,
+                                commands: false,
+                                admin: false,
+                                database: db_permission_name(&DatabasePermission::None)
+                                    .to_string(),
+                            },
+                        },
+                    );
+                }
+                return Ok(state.enabled);
+            }
+        }
+
+        self.plugin_info
+            .read()
+            .await
+            .get(plugin_name)
+            .map(|plugin| plugin.enabled)
+            .ok_or_else(|| format!("plugin not found: {plugin_name}"))
+    }
+
     // -- private helpers --
 
     async fn guard_plugin_enabled(&self, plugin_name: &str) -> Result<(), String> {
-        if let Some(repo) = &self.state_repo {
-            if let Some(state) = repo.get_by_name(plugin_name).await? {
-                let mut plugin_info = self.plugin_info.write().await;
-                if let Some(plugin) = plugin_info.get_mut(plugin_name) {
-                    plugin.plugin_id = state.plugin_id.clone();
-                    plugin.source_kind = state.source_kind.clone();
-                    plugin.enabled = state.enabled;
-                    plugin.loaded = state.loaded;
-                }
-
-                if !state.enabled {
-                    return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
-                }
-                return Ok(());
-            }
+        if !self.plugin_runtime_enabled(plugin_name).await? {
+            return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
         }
-
-        let info = self.plugin_info.read().await;
-        if let Some(plugin) = info.get(plugin_name) {
-            if !plugin.enabled {
-                return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
-            }
-        }
-
         Ok(())
     }
 
