@@ -360,6 +360,8 @@ mod tests {
     const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
         include_str!("../../../migrations/006_unified_policy_v2.sql");
     const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
+    const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
+        include_str!("../../../migrations/008_plugin_governance_v1.sql");
 
     fn api_http_bindings() -> Vec<HttpBinding> {
         vec![
@@ -444,6 +446,10 @@ mod tests {
             .run_migrations(CMS_MIGRATION_SQL)
             .await
             .expect("failed to run migration 007_cms");
+        storage
+            .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
+            .await
+            .expect("failed to run migration 008_plugin_governance_v1");
         let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
 
         let templates_root =

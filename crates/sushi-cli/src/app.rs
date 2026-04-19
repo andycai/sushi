@@ -21,6 +21,8 @@ const MENUS_RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/005_men
 const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
     include_str!("../../../migrations/006_unified_policy_v2.sql");
 const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
+const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
+    include_str!("../../../migrations/008_plugin_governance_v1.sql");
 
 pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     let config = match config_path {
@@ -74,6 +76,10 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         .run_migrations(CMS_MIGRATION_SQL)
         .await
         .context("failed to run cms migrations")?;
+    storage
+        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
+        .await
+        .context("failed to run plugin governance migrations")?;
 
     let jwt = {
         let guard = config.get().await;
