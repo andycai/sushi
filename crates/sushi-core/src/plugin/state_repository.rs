@@ -85,6 +85,10 @@ impl PluginStateRepository {
     }
 
     pub async fn set_loaded(&self, name: &str, loaded: bool) -> Result<(), String> {
+        if self.get_by_name(name).await?.is_none() {
+            return Err(format!("plugin not found: {name}"));
+        }
+
         self.storage
             .execute(
                 r#"
@@ -135,7 +139,13 @@ impl PluginStateRepository {
             .await
             .map_err(|err| err.to_string())?;
 
-        self.storage
+        let after = self
+            .get_by_name(name)
+            .await?
+            .ok_or_else(|| format!("plugin state row missing after update: {name}"))?;
+
+        let event_insert = self
+            .storage
             .execute(
                 r#"
                 INSERT INTO plugin_state_events (
@@ -149,20 +159,50 @@ impl PluginStateRepository {
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                 "#,
                 vec![
-                    Value::String(before.plugin_id.clone()),
-                    Value::String(before.source_kind),
+                    Value::String(after.plugin_id.clone()),
+                    Value::String(after.source_kind.clone()),
                     Value::String(actor_value),
                     Value::Bool(before.enabled),
-                    Value::Bool(enabled),
+                    Value::Bool(after.enabled),
                     Value::String(reason_value),
                 ],
             )
             .await
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| err.to_string());
 
-        self.get_by_name(name)
-            .await?
-            .ok_or_else(|| format!("plugin state row missing after update: {name}"))
+        if let Err(event_err) = event_insert {
+            let rollback_result = self
+                .storage
+                .execute(
+                    r#"
+                    UPDATE plugin_state
+                    SET enabled = ?2,
+                        updated_by = ?3,
+                        reason = ?4,
+                        updated_at = datetime('now')
+                    WHERE name = ?1
+                    "#,
+                    vec![
+                        Value::String(name.to_string()),
+                        Value::Bool(before.enabled),
+                        Value::String(before.updated_by.clone().unwrap_or_default()),
+                        Value::String(before.reason.clone()),
+                    ],
+                )
+                .await
+                .map_err(|err| err.to_string());
+
+            return match rollback_result {
+                Ok(()) => Err(format!(
+                    "failed to insert plugin_state_events row for {name}; state rolled back: {event_err}"
+                )),
+                Err(rollback_err) => Err(format!(
+                    "failed to insert plugin_state_events row for {name}; rollback failed: {rollback_err}; original error: {event_err}"
+                )),
+            };
+        }
+
+        Ok(after)
     }
 
     pub async fn get_latest_event_by_plugin_id(
@@ -190,8 +230,8 @@ impl PluginStateRepository {
 
 fn row_to_state(row: Row) -> Result<StoredPluginState, String> {
     Ok(StoredPluginState {
-        plugin_id: required_string(&row, "plugin_id")?,
-        name: required_string(&row, "name")?,
+        plugin_id: required_string(&row, "plugin_state", "plugin_id")?,
+        name: required_string(&row, "plugin_state", "name")?,
         source_kind: string_or_default(&row, "source_kind", "third_party"),
         enabled: bool_or_default(&row, "enabled", true),
         loaded: bool_or_default(&row, "loaded", false),
@@ -204,7 +244,7 @@ fn row_to_state(row: Row) -> Result<StoredPluginState, String> {
 
 fn row_to_event(row: Row) -> Result<StoredPluginStateEvent, String> {
     Ok(StoredPluginStateEvent {
-        plugin_id: required_string(&row, "plugin_id")?,
+        plugin_id: required_string(&row, "plugin_state_events", "plugin_id")?,
         source_kind: string_or_default(&row, "source_kind", "third_party"),
         changed_by: string_or_default(&row, "changed_by", ""),
         previous_enabled: optional_bool(&row, "previous_enabled"),
@@ -213,11 +253,11 @@ fn row_to_event(row: Row) -> Result<StoredPluginStateEvent, String> {
     })
 }
 
-fn required_string(row: &Row, key: &str) -> Result<String, String> {
+fn required_string(row: &Row, scope: &str, key: &str) -> Result<String, String> {
     row.get(key)
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
-        .ok_or_else(|| format!("missing or invalid plugin_state.{key}"))
+        .ok_or_else(|| format!("missing or invalid {scope}.{key}"))
 }
 
 fn string_or_default(row: &Row, key: &str, default: &str) -> String {
@@ -349,5 +389,68 @@ mod tests {
         assert_eq!(latest_event.previous_enabled, Some(true));
         assert_eq!(latest_event.next_enabled, Some(false));
         assert_eq!(latest_event.reason, "incident response");
+    }
+
+    #[tokio::test]
+    async fn set_loaded_returns_error_for_missing_plugin() {
+        let sqlite = Arc::new(SqliteStorage::new_in_memory().await.unwrap());
+        sqlite
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        sqlite
+            .run_migrations(
+                r#"
+                CREATE TABLE IF NOT EXISTS roles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS policy_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL UNIQUE,
+                    surface TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    is_system INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS role_policy_keys (
+                    role_id INTEGER NOT NULL,
+                    policy_key_id INTEGER NOT NULL,
+                    UNIQUE(role_id, policy_key_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS policy_bindings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    surface TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_ref TEXT NOT NULL,
+                    method TEXT,
+                    path_pattern TEXT,
+                    command_name TEXT,
+                    policy_key_id INTEGER NOT NULL,
+                    owner_type TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    is_system INTEGER NOT NULL DEFAULT 0
+                );
+
+                INSERT OR IGNORE INTO roles (slug) VALUES ('admin');
+                "#,
+            )
+            .await
+            .unwrap();
+        sqlite
+            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .await
+            .unwrap();
+
+        let storage: Arc<dyn Storage> = sqlite;
+        let repo = PluginStateRepository::new(storage);
+
+        let err = repo.set_loaded("missing-plugin", true).await.unwrap_err();
+        assert_eq!(err, "plugin not found: missing-plugin");
     }
 }
