@@ -993,4 +993,60 @@ mod tests {
             .expect("expected successful handler call");
         assert_eq!(response, "/api/notes/123");
     }
+
+    #[tokio::test]
+    async fn plugin_disabled_gate_blocks_api_admin_and_cli_dispatch() {
+        let manager = PluginManager::new();
+        let lua = mlua::Lua::new();
+
+        let sushi = lua.create_table().expect("create sushi table");
+        let handlers = lua.create_table().expect("create handlers table");
+        sushi
+            .set("__handlers", handlers.clone())
+            .expect("set handlers table");
+        lua.globals().set("sushi", sushi).expect("set sushi global");
+
+        let passthrough = lua
+            .create_async_function(|_, _: mlua::Value| async move { Ok("ok".to_string()) })
+            .expect("create passthrough handler");
+        handlers
+            .set("h", passthrough)
+            .expect("register passthrough handler");
+
+        manager.register_vm("notes", lua).await;
+        manager
+            .register_api_handler("GET", "/api/notes", "notes", "h")
+            .await;
+        manager
+            .register_admin_handler("/admin/notes", "notes", "Notes", "h")
+            .await;
+        manager
+            .register_cli_handler("notes-run", "notes", "h")
+            .await;
+
+        manager
+            .set_plugin_enabled("notes", false, Some("admin"), Some("test"))
+            .await
+            .expect("disable plugin");
+
+        let api = manager
+            .call_api_handler("GET", "/api/notes", None)
+            .await
+            .expect("api binding must exist")
+            .expect_err("disabled plugin must fail");
+        let admin = manager
+            .call_admin_handler("/admin/notes")
+            .await
+            .expect("admin binding must exist")
+            .expect_err("disabled plugin must fail");
+        let cli = manager
+            .call_cli_handler("notes-run", &[])
+            .await
+            .expect("cli binding must exist")
+            .expect_err("disabled plugin must fail");
+
+        assert!(api.contains("plugin_disabled"));
+        assert!(admin.contains("plugin_disabled"));
+        assert!(cli.contains("plugin_disabled"));
+    }
 }
