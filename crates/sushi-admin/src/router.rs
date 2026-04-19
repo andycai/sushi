@@ -241,6 +241,13 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
                         axum::response::Html(html_with_assets).into_response()
                     }
                     Some(Err(e)) => {
+                        if is_plugin_disabled_error(&e) {
+                            return (
+                                axum::http::StatusCode::FORBIDDEN,
+                                plugin_disabled_message(&e),
+                            )
+                                .into_response();
+                        }
                         let message = format!("plugin runtime error on admin page {path}: {e}");
                         tracing::error!("{message}");
                         logs.error(&message).await;
@@ -290,6 +297,18 @@ fn is_valid_plugin_mount_id(plugin_mount_id: &str) -> bool {
     }
 
     has_segment
+}
+
+fn is_plugin_disabled_error(err: &str) -> bool {
+    err.starts_with("plugin_disabled:")
+}
+
+fn plugin_disabled_message(err: &str) -> String {
+    err.strip_prefix("plugin_disabled:")
+        .map(str::trim)
+        .filter(|msg| !msg.is_empty())
+        .unwrap_or("plugin is disabled")
+        .to_string()
 }
 
 async fn list_plugins_api(State(ctx): State<SushiContext>) -> impl IntoResponse {

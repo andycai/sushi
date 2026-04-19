@@ -180,6 +180,9 @@ pub async fn workspace_partial(
             Html(html).into_response()
         }
         Some(Err(err)) => {
+            if is_plugin_disabled_error(&err) {
+                return (StatusCode::FORBIDDEN, plugin_disabled_message(&err)).into_response();
+            }
             let message = format!("plugin runtime error on workspace page {path}: {err}");
             tracing::error!("{message}");
             ctx.logs.error(&message).await;
@@ -187,4 +190,16 @@ pub async fn workspace_partial(
         }
         None => (StatusCode::NOT_FOUND, "workspace module not found").into_response(),
     }
+}
+
+fn is_plugin_disabled_error(err: &str) -> bool {
+    err.starts_with("plugin_disabled:")
+}
+
+fn plugin_disabled_message(err: &str) -> String {
+    err.strip_prefix("plugin_disabled:")
+        .map(str::trim)
+        .filter(|msg| !msg.is_empty())
+        .unwrap_or("plugin is disabled")
+        .to_string()
 }

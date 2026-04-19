@@ -23,6 +23,12 @@ pub async fn run(args: RunArgs, role: &str) -> Result<()> {
     {
         Some(Ok(output)) => println!("{output}"),
         Some(Err(e)) => {
+            if is_plugin_disabled_error(&e) {
+                anyhow::bail!(
+                    "plugin is disabled by administrator: {}",
+                    args.plugin_name
+                );
+            }
             tracing::error!(
                 "plugin runtime error on CLI command {}: {e}",
                 args.plugin_name
@@ -39,4 +45,8 @@ pub async fn run(args: RunArgs, role: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_plugin_disabled_error(err: &str) -> bool {
+    err.starts_with("plugin_disabled:")
 }

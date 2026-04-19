@@ -235,6 +235,19 @@ async fn plugin_api_dispatch(
             }
         }
         Some(Err(e)) => {
+            if is_plugin_disabled_error(&e) {
+                let body = serde_json::json!({
+                    "error": "plugin_disabled",
+                    "message": plugin_disabled_message(&e),
+                })
+                .to_string();
+                return (
+                    axum::http::StatusCode::FORBIDDEN,
+                    [(axum::http::header::CONTENT_TYPE, "application/json")],
+                    body,
+                )
+                    .into_response();
+            }
             let message = format!("plugin runtime error on {method} {match_path}: {e}");
             tracing::error!("{message}");
             state.logs.error(&message).await;
@@ -252,6 +265,18 @@ async fn plugin_api_dispatch(
         )
             .into_response(),
     }
+}
+
+fn is_plugin_disabled_error(err: &str) -> bool {
+    err.starts_with("plugin_disabled:")
+}
+
+fn plugin_disabled_message(err: &str) -> String {
+    err.strip_prefix("plugin_disabled:")
+        .map(str::trim)
+        .filter(|msg| !msg.is_empty())
+        .unwrap_or("plugin is disabled")
+        .to_string()
 }
 
 #[derive(serde::Deserialize)]
