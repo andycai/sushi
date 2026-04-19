@@ -49,8 +49,8 @@
                 <a href="/app/pages/{{ item.slug }}" class="transition hover:text-blue-700">{{ item.title }}</a>
               </h2>
               <p class="cms-clamp-3 mt-4 text-sm leading-7 text-slate-600">{{ item.markdown_body }}</p>
-              <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
-                <span class="rounded-full bg-slate-100 px-3 py-1 font-mono text-[11px] text-slate-500">{{ item.slug }}</span>
+              <div class="mt-5 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span class="max-w-full break-all rounded-full bg-slate-100 px-3 py-1 font-mono text-[11px] text-slate-500">{{ item.slug }}</span>
                 <a href="/app/pages/{{ item.slug }}" class="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700 transition hover:border-blue-300 hover:bg-blue-100">
                   Read page
                 </a>
@@ -62,7 +62,7 @@
                 <h3 class="text-xl font-semibold leading-tight tracking-tight text-slate-900" style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;">
                   <a href="/app/pages/{{ item.slug }}" class="transition hover:text-blue-700">{{ item.title }}</a>
                 </h3>
-                <span class="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-500">{{ item.slug }}</span>
+                <span class="max-w-full break-all rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-500">{{ item.slug }}</span>
               </div>
               <p class="cms-clamp-2 mt-3 text-sm leading-6 text-slate-600">{{ item.markdown_body }}</p>
             </article>
