@@ -37,7 +37,7 @@ impl SushiContext {
     ) -> Self {
         let db = Arc::new(db);
         let storage: Arc<dyn Storage> = db.clone();
-        let db_gateway = DbGateway::new(storage, DbPermission::Admin);
+        let db_gateway = DbGateway::new(storage.clone(), DbPermission::Admin);
 
         Self {
             config,
@@ -46,7 +46,7 @@ impl SushiContext {
             event: EventBus::new(),
             jwt: Arc::new(jwt),
             authorizer: Arc::new(Authorizer::new(CompiledPolicySnapshot::default())),
-            plugins: PluginManager::new(),
+            plugins: PluginManager::new_with_storage(storage),
             templates: Arc::new(templates),
             logs: Arc::new(LogService::new()),
         }

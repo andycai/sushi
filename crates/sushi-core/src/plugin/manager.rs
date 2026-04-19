@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use super::state_repository::PluginStateRepository;
 use super::{DatabasePermission, Permissions, PluginManifest};
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -15,9 +16,12 @@ pub struct PluginPermissionsView {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PluginInfo {
+    pub plugin_id: String,
+    pub source_kind: String,
     pub name: String,
     pub version: String,
     pub description: String,
+    pub enabled: bool,
     pub loaded: bool,
     pub permissions: PluginPermissionsView,
 }
@@ -68,6 +72,7 @@ pub struct PluginManager {
     admin_handlers: Arc<RwLock<HashMap<String, AdminHandlerBinding>>>,
     plugin_info: Arc<RwLock<HashMap<String, PluginInfo>>>,
     plugin_static_roots: Arc<RwLock<HashMap<String, PathBuf>>>,
+    state_repo: Option<Arc<PluginStateRepository>>,
 }
 
 fn match_api_handler_binding(
@@ -101,6 +106,13 @@ impl PluginManager {
         Self::default()
     }
 
+    pub fn new_with_storage(storage: Arc<dyn crate::storage::Storage>) -> Self {
+        Self {
+            state_repo: Some(Arc::new(PluginStateRepository::new(storage))),
+            ..Self::default()
+        }
+    }
+
     pub async fn register_plugin_manifest(&self, manifest: &PluginManifest) {
         self.register_plugin_manifest_with_permissions(manifest, &manifest.permissions)
             .await;
@@ -112,17 +124,32 @@ impl PluginManager {
         effective_permissions: &Permissions,
     ) {
         let mut plugin_info = self.plugin_info.write().await;
-        let loaded = plugin_info
-            .get(&manifest.plugin.name)
-            .map(|item| item.loaded)
-            .unwrap_or(false);
+        let (plugin_id, source_kind, enabled, loaded) =
+            if let Some(existing) = plugin_info.get(&manifest.plugin.name) {
+                (
+                    existing.plugin_id.clone(),
+                    existing.source_kind.clone(),
+                    existing.enabled,
+                    existing.loaded,
+                )
+            } else {
+                (
+                    manifest.plugin.name.clone(),
+                    "third_party".to_string(),
+                    true,
+                    false,
+                )
+            };
 
         plugin_info.insert(
             manifest.plugin.name.clone(),
             PluginInfo {
+                plugin_id,
+                source_kind,
                 name: manifest.plugin.name.clone(),
                 version: manifest.plugin.version.clone(),
                 description: manifest.plugin.description.clone(),
+                enabled,
                 loaded,
                 permissions: PluginPermissionsView {
                     routes: effective_permissions.routes,
@@ -144,9 +171,12 @@ impl PluginManager {
         plugin_info.insert(
             plugin_name.to_string(),
             PluginInfo {
+                plugin_id: plugin_name.to_string(),
+                source_kind: "third_party".to_string(),
                 name: plugin_name.to_string(),
                 version: String::new(),
                 description: String::new(),
+                enabled: true,
                 loaded,
                 permissions: PluginPermissionsView {
                     routes: false,
@@ -367,6 +397,10 @@ impl PluginManager {
         let handler_key = binding.handler_key;
         drop(map);
 
+        if let Err(err) = self.guard_plugin_enabled(&plugin_name).await {
+            return Some(Err(err));
+        }
+
         Some(
             self.call_api_handler_with_dispatch(
                 &plugin_name,
@@ -403,6 +437,9 @@ impl PluginManager {
             let map = self.cli_handlers.read().await;
             map.get(command_name).cloned()?
         };
+        if let Err(err) = self.guard_plugin_enabled(&binding.plugin_name).await {
+            return Some(Err(err));
+        }
         Some(
             self.call_handler_with_args(&binding.plugin_name, &binding.handler_key, args)
                 .await,
@@ -424,6 +461,9 @@ impl PluginManager {
             let map = self.admin_handlers.read().await;
             map.get(page_path).cloned()?
         };
+        if let Err(err) = self.guard_plugin_enabled(&binding.plugin_name).await {
+            return Some(Err(err));
+        }
         Some(
             self.call_handler_no_args(&binding.plugin_name, &binding.handler_key)
                 .await,
@@ -512,7 +552,53 @@ impl PluginManager {
         roots
     }
 
+    pub async fn set_plugin_enabled(
+        &self,
+        plugin_name: &str,
+        enabled: bool,
+        actor: Option<&str>,
+        reason: Option<&str>,
+    ) -> Result<PluginInfo, String> {
+        if let Some(repo) = &self.state_repo {
+            let state = repo.set_enabled(plugin_name, enabled, actor, reason).await?;
+            let mut info = self.plugin_info.write().await;
+            let item = info
+                .get_mut(plugin_name)
+                .ok_or_else(|| format!("plugin not found: {plugin_name}"))?;
+            item.plugin_id = state.plugin_id;
+            item.source_kind = state.source_kind;
+            item.enabled = state.enabled;
+            return Ok(item.clone());
+        }
+
+        let mut info = self.plugin_info.write().await;
+        let item = info
+            .get_mut(plugin_name)
+            .ok_or_else(|| format!("plugin not found: {plugin_name}"))?;
+        item.enabled = enabled;
+        Ok(item.clone())
+    }
+
     // -- private helpers --
+
+    async fn guard_plugin_enabled(&self, plugin_name: &str) -> Result<(), String> {
+        if let Some(repo) = &self.state_repo {
+            if let Some(state) = repo.get_by_name(plugin_name).await? {
+                if !state.enabled {
+                    return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
+                }
+            }
+        }
+
+        let info = self.plugin_info.read().await;
+        if let Some(plugin) = info.get(plugin_name) {
+            if !plugin.enabled {
+                return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
+            }
+        }
+
+        Ok(())
+    }
 
     async fn call_handler_no_args(
         &self,
@@ -668,7 +754,10 @@ mod tests {
         let plugins = manager.list_plugins().await;
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].name, "kv-store");
+        assert_eq!(plugins[0].plugin_id, "kv-store");
+        assert_eq!(plugins[0].source_kind, "third_party");
         assert_eq!(plugins[0].version, "1.0.0");
+        assert!(plugins[0].enabled);
         assert!(!plugins[0].loaded);
         assert_eq!(plugins[0].permissions.database, "write");
     }
