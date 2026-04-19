@@ -1506,6 +1506,61 @@ end
     }
 
     #[tokio::test]
+    async fn disabled_plugin_is_not_invoked_after_scan_registration() {
+        let ctx = test_context().await;
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .await
+            .unwrap();
+
+        let manifest = PluginManifest {
+            plugin: crate::plugin::PluginMeta {
+                name: "notes".to_string(),
+                version: "0.1.0".to_string(),
+                description: "notes".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: crate::plugin::Permissions::default(),
+            policies: crate::plugin::PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+
+        ctx.plugins
+            .register_plugin_manifest_with_permissions_and_identity(
+                &manifest,
+                &crate::plugin::Permissions::default(),
+                "third_party/notes",
+                crate::plugin::PluginKind::ThirdParty,
+            )
+            .await;
+
+        ctx.plugins
+            .set_plugin_enabled("notes", false, Some("admin"), Some("seed"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ctx.plugins
+                .list_plugins()
+                .await
+                .into_iter()
+                .find(|p| p.name == "notes")
+                .unwrap()
+                .enabled,
+            false
+        );
+    }
+
+    #[tokio::test]
     async fn plugin_load_fails_when_declared_policy_outside_scope() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("third_party").join("policy_mismatch");
