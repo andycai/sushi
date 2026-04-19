@@ -67,16 +67,21 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
             .await?;
 
             let plugins = ctx.plugins.list_plugins().await;
-            for item in plugins.into_iter().filter(|p| {
-                plugin
-                    .as_ref()
-                    .map(|name| p.name == *name)
-                    .unwrap_or(true)
-            }) {
+            if let Some(plugin_name) = plugin.as_ref() {
+                let Some(item) = plugins.into_iter().find(|p| p.name == *plugin_name) else {
+                    anyhow::bail!("plugin not found: {}", plugin_name);
+                };
                 println!(
                     "{}\t{}\tenabled={}\tloaded={}\tsource_kind={}",
                     item.name, item.version, item.enabled, item.loaded, item.source_kind
                 );
+            } else {
+                for item in plugins {
+                    println!(
+                        "{}\t{}\tenabled={}\tloaded={}\tsource_kind={}",
+                        item.name, item.version, item.enabled, item.loaded, item.source_kind
+                    );
+                }
             }
         }
         PluginCommand::Enable { plugin, reason } => {
@@ -130,6 +135,36 @@ mod tests {
         match cli.command {
             PluginCommand::Enable { plugin, .. } => assert_eq!(plugin, "kv-store"),
             _ => panic!("expected enable command"),
+        }
+    }
+
+    #[test]
+    fn parse_status_subcommand() {
+        let cli = TestCli::try_parse_from(["plugin", "status", "kv-store"]).unwrap();
+        match cli.command {
+            PluginCommand::Status { plugin } => {
+                assert_eq!(plugin.as_deref(), Some("kv-store"));
+            }
+            _ => panic!("expected status command"),
+        }
+    }
+
+    #[test]
+    fn parse_disable_subcommand() {
+        let cli = TestCli::try_parse_from([
+            "plugin",
+            "disable",
+            "kv-store",
+            "--reason",
+            "maintenance",
+        ])
+        .unwrap();
+        match cli.command {
+            PluginCommand::Disable { plugin, reason } => {
+                assert_eq!(plugin, "kv-store");
+                assert_eq!(reason.as_deref(), Some("maintenance"));
+            }
+            _ => panic!("expected disable command"),
         }
     }
 }
