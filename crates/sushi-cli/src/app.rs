@@ -370,10 +370,15 @@ async fn recover_plugin_governance_migration(storage: &SqliteStorage) -> Result<
 
     for (column, alter_sql) in required_columns {
         if !existing_columns.iter().any(|existing| existing == column) {
-            storage
-                .execute(alter_sql, vec![])
-                .await
-                .with_context(|| format!("failed to add missing plugin_state column `{column}`"))?;
+            match storage.execute(alter_sql, vec![]).await {
+                Ok(()) => {}
+                Err(err) if is_duplicate_column_error(&err.to_string()) => {}
+                Err(err) => {
+                    return Err(err).with_context(|| {
+                        format!("failed to add missing plugin_state column `{column}`")
+                    });
+                }
+            }
         }
     }
 
