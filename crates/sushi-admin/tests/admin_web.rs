@@ -2624,6 +2624,72 @@ async fn admin_can_toggle_plugin_enabled_state() {
 }
 
 #[tokio::test]
+async fn admin_toggle_plugin_state_returns_not_found_for_unknown_plugin() {
+    let app = build_app(None).await;
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/admin/api/plugins/does-not-exist/state")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"enabled":false,"reason":"missing plugin"}"#))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    assert_eq!(
+        payload.get("error").and_then(Value::as_str),
+        Some("plugin not found")
+    );
+}
+
+#[tokio::test]
+async fn admin_toggle_plugin_state_returns_internal_error_when_state_write_fails() {
+    let (app, ctx) = build_app_with_context(None).await;
+    register_test_plugin(&ctx, "toggle-target").await;
+    let token = admin_bearer_token();
+
+    ctx.db
+        .execute("DROP TABLE plugin_state_events", vec![])
+        .await
+        .expect("failed to break plugin_state_events table");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/admin/api/plugins/toggle-target/state")
+                .header("authorization", format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"enabled":false,"reason":"force write failure"}"#,
+                ))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    assert_eq!(
+        payload.get("error").and_then(Value::as_str),
+        Some("failed to update plugin state")
+    );
+}
+
+#[tokio::test]
 async fn viewer_cannot_toggle_plugin_enabled_state() {
     let (app, ctx) = build_app_with_context(None).await;
     register_test_plugin(&ctx, "toggle-target").await;

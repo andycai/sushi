@@ -115,13 +115,21 @@ pub async fn plugin_state_api(
             })),
         )
             .into_response(),
-        Err(err) => (
-            StatusCode::BAD_REQUEST,
-            axum::Json(serde_json::json!({
-                "error": err
-            })),
-        )
-            .into_response(),
+        Err(err) => {
+            tracing::warn!(
+                "failed to update plugin state: plugin={} enabled={} error={}",
+                plugin,
+                payload.enabled,
+                err
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({
+                    "error": "failed to update plugin state"
+                })),
+            )
+                .into_response()
+        }
     }
 }
 
