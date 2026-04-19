@@ -181,7 +181,11 @@ pub async fn workspace_partial(
         }
         Some(Err(err)) => {
             if is_plugin_disabled_error(&err) {
-                return (StatusCode::FORBIDDEN, plugin_disabled_message(&err)).into_response();
+                let message = plugin_disabled_message(&err);
+                let warn_message = format!("plugin disabled on workspace page {path}: {message}");
+                tracing::warn!("{warn_message}");
+                ctx.logs.warn(&warn_message).await;
+                return (StatusCode::FORBIDDEN, message).into_response();
             }
             let message = format!("plugin runtime error on workspace page {path}: {err}");
             tracing::error!("{message}");

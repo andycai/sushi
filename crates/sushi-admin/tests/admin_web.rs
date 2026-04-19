@@ -905,6 +905,13 @@ async fn build_app_with_plugin_page_assets(
 }
 
 async fn build_app_with_plugin_admin_page(page_path: &str) -> axum::Router {
+    let (app, _ctx) = build_app_with_plugin_admin_page_and_context(page_path).await;
+    app
+}
+
+async fn build_app_with_plugin_admin_page_and_context(
+    page_path: &str,
+) -> (axum::Router, SushiContext) {
     let templates_dir = templates_root();
     let static_dir = static_root();
 
@@ -981,7 +988,7 @@ async fn build_app_with_plugin_admin_page(page_path: &str) -> axum::Router {
         )
         .await;
 
-    build_admin_router(&ctx).await
+    (build_admin_router(&ctx).await, ctx)
 }
 
 async fn build_app_with_legacy_menu_table() -> axum::Router {
@@ -1136,6 +1143,31 @@ async fn admin_cms_workspace_page_renders() {
         .expect("failed to read body");
     let html = String::from_utf8_lossy(&body);
     assert!(html.contains("CMS workspace"));
+}
+
+#[tokio::test]
+async fn plugin_admin_page_returns_forbidden_when_plugin_disabled() {
+    let (app, ctx) = build_app_with_plugin_admin_page_and_context("/admin/cms").await;
+    ctx.plugins
+        .set_plugin_enabled("cms", false, Some("admin"), Some("disabled by test"))
+        .await
+        .expect("failed to disable cms plugin");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/cms")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", admin_bearer_token()),
+                )
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[test]
@@ -2307,6 +2339,29 @@ async fn workspace_cms_module_loads_for_authenticated_admin() {
         !html.contains("<!DOCTYPE html>"),
         "workspace partial must not include full page document: {html}"
     );
+}
+
+#[tokio::test]
+async fn workspace_plugin_module_returns_forbidden_when_plugin_disabled() {
+    let (app, ctx) = build_app_with_plugin_admin_page_and_context("/admin/cms").await;
+    ctx.plugins
+        .set_plugin_enabled("cms", false, Some("admin"), Some("disabled by test"))
+        .await
+        .expect("failed to disable cms plugin");
+    let token = admin_bearer_token();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/workspace/cms")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

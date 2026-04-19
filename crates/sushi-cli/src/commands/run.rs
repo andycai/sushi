@@ -23,11 +23,14 @@ pub async fn run(args: RunArgs, role: &str) -> Result<()> {
     {
         Some(Ok(output)) => println!("{output}"),
         Some(Err(e)) => {
-            if is_plugin_disabled_error(&e) {
-                anyhow::bail!(
-                    "plugin is disabled by administrator: {}",
+            if let Some(disabled_error) = map_cli_plugin_error(&args.plugin_name, &e) {
+                let warn_message = format!(
+                    "plugin CLI command {} blocked because plugin is disabled by administrator",
                     args.plugin_name
                 );
+                tracing::warn!("{warn_message}");
+                ctx.logs.warn(&warn_message).await;
+                return Err(disabled_error);
             }
             tracing::error!(
                 "plugin runtime error on CLI command {}: {e}",
@@ -49,4 +52,27 @@ pub async fn run(args: RunArgs, role: &str) -> Result<()> {
 
 fn is_plugin_disabled_error(err: &str) -> bool {
     err.starts_with("plugin_disabled:")
+}
+
+fn map_cli_plugin_error(plugin_name: &str, err: &str) -> Option<anyhow::Error> {
+    if is_plugin_disabled_error(err) {
+        return Some(disabled_command_error(plugin_name));
+    }
+    None
+}
+
+fn disabled_command_error(plugin_name: &str) -> anyhow::Error {
+    anyhow::anyhow!("plugin is disabled by administrator: {plugin_name}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_cli_plugin_error_returns_disabled_message() {
+        let err = map_cli_plugin_error("cms", "plugin_disabled: plugin 'cms' is disabled")
+            .expect("expected disabled plugin mapping");
+        assert_eq!(err.to_string(), "plugin is disabled by administrator: cms");
+    }
 }

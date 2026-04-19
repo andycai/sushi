@@ -242,11 +242,12 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
                     }
                     Some(Err(e)) => {
                         if is_plugin_disabled_error(&e) {
-                            return (
-                                axum::http::StatusCode::FORBIDDEN,
-                                plugin_disabled_message(&e),
-                            )
-                                .into_response();
+                            let message = plugin_disabled_message(&e);
+                            let warn_message =
+                                format!("plugin disabled on admin page {path}: {message}");
+                            tracing::warn!("{warn_message}");
+                            logs.warn(&warn_message).await;
+                            return (axum::http::StatusCode::FORBIDDEN, message).into_response();
                         }
                         let message = format!("plugin runtime error on admin page {path}: {e}");
                         tracing::error!("{message}");
