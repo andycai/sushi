@@ -80,6 +80,8 @@ database = "read" # or "write" / false
 - For `third_party` plugins: request only what is required.
 - `database = "write"` (or above) must have explicit business need.
 - For `official` plugins: runtime enforces full permissions (`routes`, `commands`, `admin`, `database = "admin"`), regardless of manifest declaration.
+- Runtime activation (`enabled` / `disabled`) is controlled by platform governance state, not by plugin self-declaration.
+- `plugin.toml` permissions are declaration-time capability ceilings and cannot force runtime enablement.
 
 ### 3.4 Admin asset bundles
 
