@@ -121,6 +121,22 @@ async fn file_browser_public_routes_support_core_operations() {
     let db = SqliteStorage::new_in_memory()
         .await
         .expect("create sqlite db");
+    db.run_migrations(include_str!("../../../migrations/001_init.sql"))
+        .await
+        .expect("run migration 001");
+    db.run_migrations(include_str!("../../../migrations/003_rbac.sql"))
+        .await
+        .expect("run migration 003");
+    db.run_migrations(include_str!(
+        "../../../migrations/006_unified_policy_v2.sql"
+    ))
+    .await
+    .expect("run migration 006");
+    db.run_migrations(include_str!(
+        "../../../migrations/008_plugin_governance_v1.sql"
+    ))
+    .await
+    .expect("run migration 008");
     let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
     let ctx = SushiContext::new(config, db, jwt, templates);
 
