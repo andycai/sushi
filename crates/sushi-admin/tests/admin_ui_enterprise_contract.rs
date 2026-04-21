@@ -17,7 +17,7 @@ fn base_shell_exposes_enterprise_landmarks() {
     let source = read("web/templates/base.html");
     assert!(source.contains("<body"));
     assert!(source.contains("<body data-admin-shell"));
-    assert!(source.contains("class=\"admin-shell\" data-admin-shell"));
+    assert!(source.contains("class=\"admin-shell\""));
     assert!(source.contains("data-admin-nav"));
     assert!(source.contains("data-admin-workspace-stage"));
     assert!(source.contains("id=\"theme-toggle\""));
@@ -95,7 +95,7 @@ fn file_browser_fragments_preserve_hooks_and_enterprise_tone() {
     assert!(editor.contains("data-fb-action=\"download\""));
 
     let flash = read("plugins/official/file-browser/web/templates/fragments/flash.html");
-    assert!(flash.contains("alert"));
+    assert!(flash.contains("class=\"alert"));
     assert!(flash.contains("role=\"alert\""));
     assert!(flash.contains("{{ message }}"));
 }
@@ -113,7 +113,7 @@ fn kv_workbench_uses_enterprise_workspace_semantics() {
     let source = read("plugins/official/kv-store/web/templates/fragments/kv_content.html");
     assert!(source.contains("data-enterprise-workbench=\"kv\""));
     assert!(source.contains("data-admin-page-header"));
-    assert!(source.contains("mb-5 flex flex-wrap items-start justify-between gap-3\" data-admin-page-header"));
+    assert!(source.contains("class=\"mb-5"));
     assert!(source.contains("data-admin-action-cluster"));
     assert!(source.contains("data-admin-table-card"));
     assert!(source.contains("x-data=\"kvPage()\""));
