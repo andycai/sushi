@@ -8,15 +8,20 @@
 {% block body_attrs %}class="flex items-center justify-center"{% endblock %}
 
 {% block content %}
-  <div class="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-    <section class="card border border-base-300 bg-base-100 shadow-xl">
+  <div data-admin-login-shell class="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+    <section data-enterprise-trust-panel class="card border border-base-300 bg-base-100 shadow-xl">
       <div class="card-body gap-6">
-        <div class="space-y-3">
-          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/60">Sushi Admin</p>
-          <h1 class="text-4xl font-bold tracking-tight">Operate with clarity, speed, and control.</h1>
-          <p class="max-w-2xl text-base text-base-content/70">
-            Unified command center for plugin lifecycle, user governance, runtime configuration, and data operations.
-          </p>
+        <div class="space-y-4">
+          <div class="badge badge-outline badge-sm w-fit rounded-full px-3 py-3 text-[0.68rem] uppercase tracking-[0.14em] text-base-content/70">
+            Enterprise Access
+          </div>
+          <div class="space-y-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-base-content/60">Sushi Admin</p>
+            <h1 class="text-4xl font-bold tracking-tight">Operate with clarity, speed, and control.</h1>
+            <p class="max-w-2xl text-base text-base-content/70">
+              Unified command center for plugin lifecycle, user governance, runtime configuration, and data operations.
+            </p>
+          </div>
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
@@ -35,6 +40,21 @@
             </div>
           </article>
         </div>
+
+        <ul class="space-y-2 rounded-xl border border-base-300 bg-base-200/30 p-4 text-sm text-base-content/75">
+          <li class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-success"></span>
+            Authenticated access with role-based controls
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            Plugin operations remain policy-enforced
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-accent"></span>
+            Session feedback is delivered inline without reloads
+          </li>
+        </ul>
       </div>
     </section>
 

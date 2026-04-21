@@ -2611,6 +2611,28 @@ fn plugins_rows_template_opens_workspace_in_tab_when_available() {
     );
 }
 
+#[test]
+fn login_template_includes_enterprise_shell_markers() {
+    let template_path = templates_root().join("admin").join("login.html");
+    let html = fs::read_to_string(&template_path).expect("failed to read login template");
+
+    assert!(
+        html.contains("data-admin-login-shell"),
+        "login template missing admin login shell marker: {}",
+        template_path.display()
+    );
+    assert!(
+        html.contains("id=\"login-form\""),
+        "login template missing login form id contract: {}",
+        template_path.display()
+    );
+    assert!(
+        html.contains("data-enterprise-trust-panel"),
+        "login template missing enterprise trust panel marker: {}",
+        template_path.display()
+    );
+}
+
 #[tokio::test]
 async fn viewer_cannot_access_users_workspace_without_permission() {
     let app = build_app(None).await;
