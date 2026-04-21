@@ -15,12 +15,15 @@ pub enum ContractSchemaVersion {
 
 impl ContractSchemaVersion {
     pub fn as_str(self) -> &'static str {
-        "v2"
+        match self {
+            Self::V2 => "v2",
+        }
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 pub struct LuaCapabilityContract {
+    #[serde(default)]
     pub entries: Vec<LuaCapabilityEntry>,
 }
 
