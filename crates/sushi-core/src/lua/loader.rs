@@ -787,6 +787,19 @@ impl Plugin for LuaPlugin {
             let web_pages = web_adapter::snapshot_from_lua(lua, raw_registry.clone())?;
             let snapshot = api_adapter::snapshot_from_lua(lua, raw_registry)?;
 
+            if !self.effective_permissions.routes && !snapshot.api_routes.is_empty() {
+                return Err(PluginError::InitFailed(format!(
+                    "plugin '{}' contract registry includes api entries but routes permission is disabled",
+                    plugin_name
+                )));
+            }
+            if !self.effective_permissions.admin && !web_pages.is_empty() {
+                return Err(PluginError::InitFailed(format!(
+                    "plugin '{}' contract registry includes web page entries but admin permission is disabled",
+                    plugin_name
+                )));
+            }
+
             for route in snapshot.api_routes {
                 register_api_route_binding(
                     ctx,

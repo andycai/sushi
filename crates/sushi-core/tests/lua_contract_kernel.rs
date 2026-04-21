@@ -20,30 +20,39 @@ async fn make_test_context() -> (SushiContext, tempfile::TempDir) {
     (ctx, templates_dir)
 }
 
-async fn create_contract_test_plugin(
+async fn create_contract_test_plugin_with_manifest(
     source: &str,
+    permissions_toml: &str,
+    policy_scopes: &[&str],
 ) -> (LuaPlugin, SushiContext, tempfile::TempDir, tempfile::TempDir) {
     let plugin_root = tempfile::tempdir().unwrap();
     let plugin_dir = plugin_root.path().join("third_party").join("contract_case");
     std::fs::create_dir_all(&plugin_dir).unwrap();
 
+    let policies_toml = if policy_scopes.is_empty() {
+        String::new()
+    } else {
+        let scopes = policy_scopes
+            .iter()
+            .map(|scope| format!("\"{scope}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("\n[policies]\nscopes = [{scopes}]\n")
+    };
+
     std::fs::write(
         plugin_dir.join("plugin.toml"),
-        r#"
+        format!(
+            r#"
 [plugin]
 name = "contract_case"
 version = "0.1.0"
 kind = "third_party"
 entry = "init.lua"
 
-[permissions]
-routes = true
-commands = true
-admin = true
-
-[policies]
-scopes = ["admin.notes.*"]
-"#,
+{permissions_toml}{policies_toml}
+"#
+        ),
     )
     .unwrap();
     std::fs::write(plugin_dir.join("init.lua"), source).unwrap();
@@ -72,6 +81,22 @@ scopes = ["admin.notes.*"]
     let ctx = SushiContext::new(config, db, jwt, templates);
 
     (plugin, ctx, plugin_root, templates_dir)
+}
+
+async fn create_contract_test_plugin(
+    source: &str,
+) -> (LuaPlugin, SushiContext, tempfile::TempDir, tempfile::TempDir) {
+    create_contract_test_plugin_with_manifest(
+        source,
+        r#"[permissions]
+routes = true
+commands = true
+admin = true
+database = false
+"#,
+        &["admin.notes.*"],
+    )
+    .await
 }
 
 #[test]
@@ -174,6 +199,64 @@ end
         ctx.plugins.admin_page_policy("/admin/notes").await.is_some(),
         "web contract entry should persist admin page policy metadata",
     );
+}
+
+#[tokio::test]
+async fn contract_registry_api_requires_routes_permission() {
+    let source = r#"
+function sushi.init()
+  local noop = function() return "ok" end
+  sushi.capability.register({ surface = "api", method = "GET", path = "/api/notes", handler = noop })
+end
+"#;
+    let (plugin, ctx, _plugin_root, _templates_dir) = create_contract_test_plugin_with_manifest(
+        source,
+        r#"[permissions]
+routes = false
+commands = false
+admin = true
+database = false
+"#,
+        &[],
+    )
+    .await;
+
+    let err = plugin
+        .init(&ctx)
+        .await
+        .expect_err("api contract entry should require routes permission");
+    let message = err.to_string();
+    assert!(message.contains("api entries"));
+    assert!(message.contains("routes permission is disabled"));
+}
+
+#[tokio::test]
+async fn contract_registry_web_page_requires_admin_permission() {
+    let source = r#"
+function sushi.init()
+  local noop = function() return "ok" end
+  sushi.capability.register({ surface = "web", kind = "page", path = "/admin/notes", title = "Notes", handler = noop })
+end
+"#;
+    let (plugin, ctx, _plugin_root, _templates_dir) = create_contract_test_plugin_with_manifest(
+        source,
+        r#"[permissions]
+routes = true
+commands = false
+admin = false
+database = false
+"#,
+        &[],
+    )
+    .await;
+
+    let err = plugin
+        .init(&ctx)
+        .await
+        .expect_err("web page contract entry should require admin permission");
+    let message = err.to_string();
+    assert!(message.contains("web page entries"));
+    assert!(message.contains("admin permission is disabled"));
 }
 
 #[tokio::test]
