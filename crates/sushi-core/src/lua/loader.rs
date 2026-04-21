@@ -1064,6 +1064,23 @@ end)
         dir
     }
 
+    fn assert_contains_method_path_route(source: &str, method: &str, path: &str) {
+        let method_pattern = format!("method = \"{method}\"");
+        let path_pattern = format!("path = \"{path}\"");
+        let mut search_start = 0;
+
+        while let Some(relative_idx) = source[search_start..].find(&method_pattern) {
+            let method_idx = search_start + relative_idx;
+            let window_end = (method_idx + 220).min(source.len());
+            if source[method_idx..window_end].contains(&path_pattern) {
+                return;
+            }
+            search_start = method_idx + method_pattern.len();
+        }
+
+        panic!("missing combined method/path route for {method} {path}");
+    }
+
     #[test]
     fn kv_store_plugin_no_longer_embeds_html() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
@@ -1160,20 +1177,19 @@ end)
         assert!(source.contains("sushi.capability.register"));
         assert!(!source.contains("sushi.api.route("));
         assert!(source.contains("definition.surface = \"api\""));
-        assert!(source.contains("method = \"GET\""));
-        assert!(source.contains("method = \"POST\""));
-        assert!(source.contains("method = \"PUT\""));
-        assert!(source.contains("method = \"DELETE\""));
-        assert!(source.contains("path = \"/api/kv\""));
-        assert!(source.contains("path = \"/api/kv/*\""));
+        assert_contains_method_path_route(&source, "GET", "/api/kv");
+        assert_contains_method_path_route(&source, "GET", "/api/kv/*");
+        assert_contains_method_path_route(&source, "POST", "/api/kv");
+        assert_contains_method_path_route(&source, "PUT", "/api/kv/*");
+        assert_contains_method_path_route(&source, "DELETE", "/api/kv/*");
         assert!(source.contains("handler = deps.api.dispatch"));
         assert!(source.contains("handler = deps.api.delete_dispatch"));
         assert!(source.contains("policy = \"api.kv.read\""));
         assert!(source.contains("policy = \"api.kv.write\""));
         assert!(source.contains("policy = \"api.kv.delete\""));
-        assert!(source.contains("path = \"/admin/partials/kv/table\""));
-        assert!(source.contains("path = \"/admin/partials/kv/upsert\""));
-        assert!(source.contains("path = \"/admin/partials/kv/delete\""));
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/kv/table");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/kv/upsert");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/kv/delete");
         assert!(source.contains("handler = deps.admin.table_partial"));
         assert!(source.contains("handler = deps.admin.upsert_partial"));
         assert!(source.contains("handler = deps.admin.delete_partial"));
@@ -1233,16 +1249,16 @@ end)
         assert!(!source.contains("sushi.api.route("));
         assert!(source.contains("definition.surface = \"api\""));
         assert!(source.contains("definition.public = true"));
-        assert!(source.contains("path = \"/app/files\""));
-        assert!(source.contains("path = \"/app/files/list/*\""));
-        assert!(source.contains("path = \"/app/files/open/*\""));
-        assert!(source.contains("path = \"/app/files/save/*\""));
-        assert!(source.contains("path = \"/app/files/create-text\""));
-        assert!(source.contains("path = \"/app/files/create-dir\""));
-        assert!(source.contains("path = \"/app/files/rename\""));
-        assert!(source.contains("path = \"/app/files/delete\""));
-        assert!(source.contains("path = \"/app/files/upload/*\""));
-        assert!(source.contains("path = \"/app/files/download/*\""));
+        assert_contains_method_path_route(&source, "GET", "/app/files");
+        assert_contains_method_path_route(&source, "GET", "/app/files/list/*");
+        assert_contains_method_path_route(&source, "GET", "/app/files/open/*");
+        assert_contains_method_path_route(&source, "POST", "/app/files/save/*");
+        assert_contains_method_path_route(&source, "POST", "/app/files/create-text");
+        assert_contains_method_path_route(&source, "POST", "/app/files/create-dir");
+        assert_contains_method_path_route(&source, "POST", "/app/files/rename");
+        assert_contains_method_path_route(&source, "POST", "/app/files/delete");
+        assert_contains_method_path_route(&source, "POST", "/app/files/upload/*");
+        assert_contains_method_path_route(&source, "GET", "/app/files/download/*");
     }
 
     #[test]
