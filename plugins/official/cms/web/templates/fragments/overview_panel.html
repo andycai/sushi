@@ -1,85 +1,91 @@
 <article class="card border border-base-300 bg-base-100 shadow-sm cms-overview" data-cms-overview>
- <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
- <div>
- <h2 class="text-lg font-semibold">Today\'s queue</h2>
- <p class="text-sm text-base-content/70">Track publishing momentum and jump back into editing quickly.</p>
- </div>
- <button type="button" class="btn btn-sm btn-outline" data-cms-open-library data-scope="posts">Open library</button>
- </header>
+  <header class="card-body border-b border-base-300 pb-3">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-semibold">Today's queue</h2>
+        <p class="text-sm text-base-content/70">Track publishing momentum and jump back into editing quickly.</p>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline" data-cms-open-library data-scope="posts">Open library</button>
+    </div>
+  </header>
 
- <div class="card-body pt-4 cms-overview-grid">
- <section class="card border border-base-300 bg-base-100 shadow-sm">
- <p class="card border border-base-300 bg-base-100 shadow-sm-label">Pages</p>
- <p class="card border border-base-300 bg-base-100 shadow-sm-value">{{ page_counts.total | default(value=0) }}</p>
- <p class="card border border-base-300 bg-base-100 shadow-sm-note">Draft {{ page_counts.draft | default(value=0) }} · Published {{ page_counts.published | default(value=0) }}</p>
- </section>
- <section class="card border border-base-300 bg-base-100 shadow-sm">
- <p class="card border border-base-300 bg-base-100 shadow-sm-label">Posts</p>
- <p class="card border border-base-300 bg-base-100 shadow-sm-value">{{ post_counts.total | default(value=0) }}</p>
- <p class="card border border-base-300 bg-base-100 shadow-sm-note">Draft {{ post_counts.draft | default(value=0) }} · Published {{ post_counts.published | default(value=0) }}</p>
- </section>
- <section class="card border border-base-300 bg-base-100 shadow-sm">
- <p class="card border border-base-300 bg-base-100 shadow-sm-label">Attention</p>
- <p class="card border border-base-300 bg-base-100 shadow-sm-value">{{ (page_counts.draft | default(value=0)) + (post_counts.draft | default(value=0)) }}</p>
- <p class="card border border-base-300 bg-base-100 shadow-sm-note">Drafts waiting for the next publish action.</p>
- </section>
- </div>
+  <div class="card-body cms-overview-grid pt-4">
+    <section class="rounded-box border border-base-300 bg-base-200/30 p-4">
+      <p class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Pages</p>
+      <p class="mt-2 text-3xl font-semibold">{{ page_counts.total | default(value=0) }}</p>
+      <p class="mt-1 text-sm text-base-content/70">Draft {{ page_counts.draft | default(value=0) }} · Published {{ page_counts.published | default(value=0) }}</p>
+    </section>
+    <section class="rounded-box border border-base-300 bg-base-200/30 p-4">
+      <p class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Posts</p>
+      <p class="mt-2 text-3xl font-semibold">{{ post_counts.total | default(value=0) }}</p>
+      <p class="mt-1 text-sm text-base-content/70">Draft {{ post_counts.draft | default(value=0) }} · Published {{ post_counts.published | default(value=0) }}</p>
+    </section>
+    <section class="rounded-box border border-base-300 bg-base-200/30 p-4">
+      <p class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Attention</p>
+      <p class="mt-2 text-3xl font-semibold">{{ (page_counts.draft | default(value=0)) + (post_counts.draft | default(value=0)) }}</p>
+      <p class="mt-1 text-sm text-base-content/70">Drafts waiting for the next publish action.</p>
+    </section>
+  </div>
 
- <div class="cms-overview-lists">
- <section class="card border border-base-300 bg-base-100 shadow-sm cms-overview-list-card">
- <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
- <h3 class="text-base font-semibold">Recently edited posts</h3>
- <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="posts">All posts</button>
- </header>
- <div class="card-body pt-4">
- <ul class="cms-overview-list">
- {% for item in recent_posts %}
- <li>
- <div>
- <strong>{{ item.title }}</strong>
- <p class="text-sm text-slate-500">{{ item.slug }} · {{ item.status }}</p>
- </div>
- <button
- type="button"
- class="btn btn-sm btn-outline"
- data-cms-open-editor
- data-resource="posts"
- data-slug="{{ item.slug }}"
- >Resume</button>
- </li>
- {% else %}
- <li class="text-center py-6 text-sm text-base-content/60">No posts yet. Create your first story.</li>
- {% endfor %}
- </ul>
- </div>
- </section>
+  <div class="cms-overview-lists">
+    <section class="card border border-base-300 bg-base-100 shadow-sm cms-overview-list-card">
+      <header class="card-body border-b border-base-300 pb-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-base font-semibold">Recently edited posts</h3>
+          <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="posts">All posts</button>
+        </div>
+      </header>
+      <div class="card-body pt-4">
+        <ul class="cms-overview-list">
+          {% for item in recent_posts %}
+          <li>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p class="text-sm text-base-content/60">{{ item.slug }} · {{ item.status }}</p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              data-cms-open-editor
+              data-resource="posts"
+              data-slug="{{ item.slug }}"
+            >Resume</button>
+          </li>
+          {% else %}
+          <li class="py-6 text-center text-sm text-base-content/60">No posts yet. Create your first story.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
 
- <section class="card border border-base-300 bg-base-100 shadow-sm cms-overview-list-card">
- <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
- <h3 class="text-base font-semibold">Recently edited pages</h3>
- <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="pages">All pages</button>
- </header>
- <div class="card-body pt-4">
- <ul class="cms-overview-list">
- {% for item in recent_pages %}
- <li>
- <div>
- <strong>{{ item.title }}</strong>
- <p class="text-sm text-slate-500">{{ item.slug }} · {{ item.status }}</p>
- </div>
- <button
- type="button"
- class="btn btn-sm btn-outline"
- data-cms-open-editor
- data-resource="pages"
- data-slug="{{ item.slug }}"
- >Resume</button>
- </li>
- {% else %}
- <li class="text-center py-6 text-sm text-base-content/60">No pages yet. Start with a landing page draft.</li>
- {% endfor %}
- </ul>
- </div>
- </section>
- </div>
+    <section class="card border border-base-300 bg-base-100 shadow-sm cms-overview-list-card">
+      <header class="card-body border-b border-base-300 pb-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-base font-semibold">Recently edited pages</h3>
+          <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="pages">All pages</button>
+        </div>
+      </header>
+      <div class="card-body pt-4">
+        <ul class="cms-overview-list">
+          {% for item in recent_pages %}
+          <li>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p class="text-sm text-base-content/60">{{ item.slug }} · {{ item.status }}</p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              data-cms-open-editor
+              data-resource="pages"
+              data-slug="{{ item.slug }}"
+            >Resume</button>
+          </li>
+          {% else %}
+          <li class="py-6 text-center text-sm text-base-content/60">No pages yet. Start with a landing page draft.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+  </div>
 </article>
