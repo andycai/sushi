@@ -39,5 +39,5 @@ fn registry_rejects_public_policy_conflict() {
         })
         .expect_err("public routes cannot define policy");
 
-    assert_eq!(err.code(), LuaContractErrorCode::PublicPolicyConflict);
+    assert_eq!(err.code(), LuaContractErrorCode::RegistrationDenied);
 }

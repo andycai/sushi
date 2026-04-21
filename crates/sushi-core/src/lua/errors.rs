@@ -1,6 +1,10 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LuaContractErrorCode {
-    PublicPolicyConflict,
+    CapabilityNotVisible,
+    RegistrationDenied,
+    PolicyScopeViolation,
+    PluginDisabled,
+    PluginNotLoaded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

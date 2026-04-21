@@ -19,7 +19,7 @@ impl CapabilityRegistry {
     pub fn register_api(&mut self, route: ApiRouteContract) -> Result<(), LuaContractError> {
         if route.public && route.policy.is_some() {
             return Err(LuaContractError::new(
-                LuaContractErrorCode::PublicPolicyConflict,
+                LuaContractErrorCode::RegistrationDenied,
                 "api route cannot set both public=true and policy",
             ));
         }
