@@ -236,3 +236,55 @@ Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+
+
+<claude-mem-context>
+# Memory Context
+
+# [sushi] recent context, 2026-04-21 2:22pm GMT+8
+
+Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
+Format: ID TIME TYPE TITLE
+Fetch details: get_observations([IDs]) | Search: mem-search skill
+
+Stats: 34 obs (9,034t read) | 67,082t work | 87% savings
+
+### Apr 20, 2026
+1 9:14a 🟣 Plugin Governance Runtime Control Feature Branch Active
+2 " 🟣 Plugin Disabled State Returns HTTP 403 Forbidden
+3 9:15a 🔵 Plugin System Architecture: Runtime Governance Model V1
+4 " 🔴 Missing Plugin State Migration in file_browser Plugin Test
+5 9:16a ✅ Runtime Governance Control Model Documented
+6 9:17a 🔵 File Browser Test Missing Migration Setup
+7 9:18a 🔴 Fixed file_browser Test Missing Database Migrations
+8 " 🔴 All Workspace Tests Pass After Migration Fix
+9 9:20a 🔵 Task 8 spec compliance review scope confirmed
+10 " 🔵 Task 8 plan requirements extracted from plan document
+11 9:21a 🔵 Task 8 detailed acceptance criteria from plan
+12 " ✅ Commit 375f0a0 doc changes fully verified against plan spec
+13 " ✅ Task 7 Code Quality Review Approved
+14 " ✅ Commit 13b6fc4 adds governance schema bootstrap to test gate
+15 9:22a 🔵 Governance control model confirmed present in both doc files
+16 " 🔵 sushi-core test gate PASS - 167 tests
+17 " 🔵 Full workspace test gate PASS - all packages green
+18 9:23a 🔵 Task 8 complete compliance verification - all artifacts confirmed
+19 " ⚖️ Task 8 Spec Compliance Approved
+20 9:24a ⚖️ Task 8 Both Gates Approved
+21 9:28a 🟣 Plugin Governance Runtime Control Feature Complete Scope
+22 9:37a ✅ Feature Branch Reset to Clean State
+23 9:38a 🟣 Plugin Governance Runtime Control Merged to Main
+### Apr 21, 2026
+38 1:44p 🔵 Rust-Lua Export Interface Architecture Analysis
+39 " 🔵 Sushi Platform Architecture Overview
+40 1:45p 🔵 Current Lua Binding Architecture in bindings.rs
+41 " 🔵 Plugin Permission Model Architecture
+42 " 🔵 Plugin Loading and Permission Flow Architecture
+43 1:46p 🔵 Policy Scope Validation and Registration Flow
+44 " 🔵 Plugin Authoring Standards Document
+45 " 🔵 Plugin Governance Design Document (2026-04-19)
+46 " 🔵 Current Lua API Surface Summary
+47 " 🔵 Plugin System Architecture Overview
+48 2:13p 🟣 Architecture exploration for stable Lua plugin API
+
+Access 67k tokens of past work via get_observations([IDs]) or mem-search skill.
+</claude-mem-context>
