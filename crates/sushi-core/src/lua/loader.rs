@@ -1159,6 +1159,17 @@ end)
 
         assert!(source.contains("sushi.capability.register"));
         assert!(!source.contains("sushi.api.route("));
+        assert!(source.contains(
+            "register_api_route({ method = \"GET\", path = \"/api/kv\", handler = deps.api.dispatch, policy = \"api.kv.read\" })"
+        ));
+        assert!(source.contains(
+            "register_api_route({ method = \"POST\", path = \"/api/kv\", handler = deps.api.dispatch, policy = \"api.kv.write\" })"
+        ));
+        assert!(source.contains("method = \"DELETE\""));
+        assert!(source.contains("path = \"/api/kv/*\""));
+        assert!(source.contains("policy = \"api.kv.delete\""));
+        assert!(source.contains("path = \"/admin/partials/kv/upsert\""));
+        assert!(source.contains("policy = \"admin.kv.write\""));
     }
 
     #[test]
@@ -1211,6 +1222,25 @@ end)
 
         assert!(source.contains("sushi.capability.register"));
         assert!(!source.contains("sushi.api.route("));
+        assert!(source.contains("definition.public = true"));
+        assert!(source.contains(
+            "register_public_route({ method = \"GET\", path = \"/app/files/list/*\", handler = app.list_partial })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"GET\", path = \"/app/files/open/*\", handler = app.open_partial })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"POST\", path = \"/app/files/save/*\", handler = app.save_text })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"POST\", path = \"/app/files/create-text\", handler = app.create_text })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"POST\", path = \"/app/files/upload/*\", handler = app.upload_file })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"GET\", path = \"/app/files/download/*\", handler = app.download_file })"
+        ));
     }
 
     #[test]
