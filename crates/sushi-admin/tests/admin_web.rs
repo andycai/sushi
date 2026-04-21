@@ -1770,6 +1770,15 @@ async fn menu_api_returns_menu_items() {
             "route {route} should be grouped under System menu"
         );
     }
+
+    let system_plugins_entry = menu.iter().find(|item| {
+        item.get("route").and_then(Value::as_str) == Some("/admin/plugins")
+            && item.get("parent_id").and_then(Value::as_i64) == Some(system_id)
+    });
+    assert!(
+        system_plugins_entry.is_some(),
+        "Plugins management entry should exist under System menu"
+    );
 }
 
 #[tokio::test]
@@ -1839,6 +1848,15 @@ async fn menu_api_handles_legacy_menu_table_without_is_hidden_column() {
             "legacy route {route} should be re-parented under System menu"
         );
     }
+
+    let legacy_system_plugins_entry = menu.iter().find(|item| {
+        item.get("route").and_then(Value::as_str) == Some("/admin/plugins")
+            && item.get("parent_id").and_then(Value::as_i64) == Some(system_id)
+    });
+    assert!(
+        legacy_system_plugins_entry.is_some(),
+        "legacy schema should backfill a Plugins management entry under System menu"
+    );
 
     let response = app
         .oneshot(

@@ -171,6 +171,32 @@ async fn ensure_menu_schema(ctx: &SushiContext) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
 
+    // Seed plugin governance entry under System.
+    ctx.db
+        .execute(
+            "INSERT INTO menu_items (label, icon, position, parent_id, route)
+             SELECT 'Plugins', 'package', 50, (
+               SELECT id FROM menu_items
+               WHERE route = '/admin/system'
+               ORDER BY id
+               LIMIT 1
+             ), '/admin/plugins'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM menu_items
+               WHERE label = 'Plugins'
+                 AND route = '/admin/plugins'
+                 AND parent_id = (
+                   SELECT id FROM menu_items
+                   WHERE route = '/admin/system'
+                   ORDER BY id
+                   LIMIT 1
+                 )
+             )",
+            vec![],
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
     // Seed KV child menu only when no matching route exists.
     ctx.db
         .execute(
