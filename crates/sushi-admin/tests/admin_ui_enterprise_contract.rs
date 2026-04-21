@@ -15,7 +15,9 @@ fn read(path: &str) -> String {
 #[test]
 fn base_shell_exposes_enterprise_landmarks() {
     let source = read("web/templates/base.html");
-    assert!(source.contains("data-admin-shell"));
+    assert!(source.contains("<body"));
+    assert!(source.contains("<body data-admin-shell"));
+    assert!(source.contains("class=\"admin-shell\" data-admin-shell"));
     assert!(source.contains("data-admin-nav"));
     assert!(source.contains("data-admin-workspace-stage"));
     assert!(source.contains("id=\"theme-toggle\""));
@@ -26,7 +28,6 @@ fn base_shell_has_nav_and_stage_regions() {
     let source = read("web/templates/base.html");
     assert!(source.contains("data-admin-nav-section=\"primary\""));
     assert!(source.contains("data-admin-nav-section=\"system\""));
-    assert!(source.contains("data-admin-workspace-stage"));
 }
 
 #[test]
