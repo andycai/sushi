@@ -108,8 +108,11 @@ Rules:
 ### 4.1 Entry and Registration
 
 - Entry point is `function sushi.init()`.
-- Register routes/commands/pages during `sushi.init()` only.
+- Register capabilities during `sushi.init()` only.
 - Keep registration idempotent and deterministic.
+- Plugins register capabilities only via `sushi.capability.register({...})`.
+- Legacy direct registration APIs are removed in this major upgrade.
+- Capability visibility is deny-by-default at injection time.
 
 ### 4.2 Logging and Observability
 
@@ -131,9 +134,11 @@ Rules:
 
 ### 4.5 Admin UI Convention
 
-- Page registration:
-  - `sushi.web.page("/admin/<path>", "plugins/<tier>/<name>/<page>.html", { ... })`
-- If the page requires JS/CSS, declare `assets = { bundles = {...}, js = {...}, css = {...} }` in `sushi.web.page(...)`.
+- Page registration uses contract payloads through `sushi.capability.register({...})`:
+  - `surface = "web"`
+  - `kind = "page"`
+  - `path`, `title`, `template`, `handler`, `policy`
+- If the page requires JS/CSS, keep asset declaration in `plugin.toml` and render via `sushi.web.render(...)` in the page handler.
 - Partial endpoints should return template-rendered fragments.
 - Feedback fragments should follow shared flash protocol (`data-ui-flash`, `data-level`, `data-message`).
 - Navigation convention for scalable plugin IA:
@@ -143,6 +148,7 @@ Rules:
 
 ## 5. HTTP/API Contract Conventions
 
+- Register API routes via `sushi.capability.register({ surface = "api", ... })`.
 - Keep endpoint naming stable (`/api/<domain>`).
 - Use consistent method semantics:
   - `GET` list/read
@@ -150,10 +156,11 @@ Rules:
   - `PUT/PATCH` update
   - `DELETE` remove
 - For not found / validation / conflict, return clear `4xx` semantics.
+- Do not set both `policy` and `public = true` in the same route contract.
 
 ## 6. CLI Contract Conventions
 
-- Register commands with `sushi.cli.command(name, description, handler)`.
+- Register commands with `sushi.capability.register({ surface = "cli", ... })`.
 - Return concise success/error messages.
 - Validate args early and return usage hints on missing/invalid args.
 
