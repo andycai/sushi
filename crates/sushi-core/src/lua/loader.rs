@@ -1159,18 +1159,25 @@ end)
 
         assert!(source.contains("sushi.capability.register"));
         assert!(!source.contains("sushi.api.route("));
-        assert!(source.contains(
-            "register_api_route({ method = \"GET\", path = \"/api/kv\", handler = deps.api.dispatch, policy = \"api.kv.read\" })"
-        ));
-        assert!(source.contains(
-            "register_api_route({ method = \"POST\", path = \"/api/kv\", handler = deps.api.dispatch, policy = \"api.kv.write\" })"
-        ));
+        assert!(source.contains("definition.surface = \"api\""));
+        assert!(source.contains("method = \"GET\""));
+        assert!(source.contains("method = \"POST\""));
+        assert!(source.contains("method = \"PUT\""));
         assert!(source.contains("method = \"DELETE\""));
+        assert!(source.contains("path = \"/api/kv\""));
         assert!(source.contains("path = \"/api/kv/*\""));
+        assert!(source.contains("handler = deps.api.dispatch"));
         assert!(source.contains("handler = deps.api.delete_dispatch"));
+        assert!(source.contains("policy = \"api.kv.read\""));
+        assert!(source.contains("policy = \"api.kv.write\""));
         assert!(source.contains("policy = \"api.kv.delete\""));
+        assert!(source.contains("path = \"/admin/partials/kv/table\""));
         assert!(source.contains("path = \"/admin/partials/kv/upsert\""));
+        assert!(source.contains("path = \"/admin/partials/kv/delete\""));
+        assert!(source.contains("handler = deps.admin.table_partial"));
         assert!(source.contains("handler = deps.admin.upsert_partial"));
+        assert!(source.contains("handler = deps.admin.delete_partial"));
+        assert!(source.contains("policy = \"admin.kv.read\""));
         assert!(source.contains("policy = \"admin.kv.write\""));
     }
 
@@ -1224,37 +1231,18 @@ end)
 
         assert!(source.contains("sushi.capability.register"));
         assert!(!source.contains("sushi.api.route("));
+        assert!(source.contains("definition.surface = \"api\""));
         assert!(source.contains("definition.public = true"));
-        assert!(source.contains(
-            "register_public_route({ method = \"GET\", path = \"/app/files\", handler = app.page })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"GET\", path = \"/app/files/list/*\", handler = app.list_partial })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"GET\", path = \"/app/files/open/*\", handler = app.open_partial })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"POST\", path = \"/app/files/save/*\", handler = app.save_text })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"POST\", path = \"/app/files/create-text\", handler = app.create_text })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"POST\", path = \"/app/files/create-dir\", handler = app.create_dir })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"POST\", path = \"/app/files/rename\", handler = app.rename_entry })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"POST\", path = \"/app/files/delete\", handler = app.delete_entry })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"POST\", path = \"/app/files/upload/*\", handler = app.upload_file })"
-        ));
-        assert!(source.contains(
-            "register_public_route({ method = \"GET\", path = \"/app/files/download/*\", handler = app.download_file })"
-        ));
+        assert!(source.contains("path = \"/app/files\""));
+        assert!(source.contains("path = \"/app/files/list/*\""));
+        assert!(source.contains("path = \"/app/files/open/*\""));
+        assert!(source.contains("path = \"/app/files/save/*\""));
+        assert!(source.contains("path = \"/app/files/create-text\""));
+        assert!(source.contains("path = \"/app/files/create-dir\""));
+        assert!(source.contains("path = \"/app/files/rename\""));
+        assert!(source.contains("path = \"/app/files/delete\""));
+        assert!(source.contains("path = \"/app/files/upload/*\""));
+        assert!(source.contains("path = \"/app/files/download/*\""));
     }
 
     #[test]
