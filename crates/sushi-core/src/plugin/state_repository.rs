@@ -168,9 +168,7 @@ impl PluginStateRepository {
                 ],
             )
             .await
-            .map_err(|err| {
-                format!("failed to insert plugin_state_events row for {name}: {err}")
-            })?;
+            .map_err(|err| format!("failed to insert plugin_state_events row for {name}: {err}"))?;
 
         Ok(after)
     }
@@ -329,7 +327,9 @@ mod tests {
             .unwrap();
 
         sqlite
-            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .run_migrations(include_str!(
+                "../../../../migrations/008_plugin_governance_v1.sql"
+            ))
             .await
             .unwrap();
 
@@ -413,7 +413,9 @@ mod tests {
             .await
             .unwrap();
         sqlite
-            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .run_migrations(include_str!(
+                "../../../../migrations/008_plugin_governance_v1.sql"
+            ))
             .await
             .unwrap();
 

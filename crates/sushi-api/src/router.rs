@@ -568,7 +568,10 @@ mod tests {
 
         run_plugin_governance_migration_if_needed(&storage).await;
 
-        let columns = storage.query("PRAGMA table_info(plugin_state)", vec![]).await.unwrap();
+        let columns = storage
+            .query("PRAGMA table_info(plugin_state)", vec![])
+            .await
+            .unwrap();
         let has_plugin_id = columns
             .iter()
             .any(|column| column.get("name").and_then(Value::as_str) == Some("plugin_id"));

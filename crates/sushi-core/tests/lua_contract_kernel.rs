@@ -24,7 +24,12 @@ async fn create_contract_test_plugin_with_manifest(
     source: &str,
     permissions_toml: &str,
     policy_scopes: &[&str],
-) -> (LuaPlugin, SushiContext, tempfile::TempDir, tempfile::TempDir) {
+) -> (
+    LuaPlugin,
+    SushiContext,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
     let plugin_root = tempfile::tempdir().unwrap();
     let plugin_dir = plugin_root.path().join("third_party").join("contract_case");
     std::fs::create_dir_all(&plugin_dir).unwrap();
@@ -85,7 +90,12 @@ entry = "init.lua"
 
 async fn create_contract_test_plugin(
     source: &str,
-) -> (LuaPlugin, SushiContext, tempfile::TempDir, tempfile::TempDir) {
+) -> (
+    LuaPlugin,
+    SushiContext,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
     create_contract_test_plugin_with_manifest(
         source,
         r#"[permissions]
@@ -196,7 +206,10 @@ end
     plugin.init(&ctx).await.expect("plugin initializes");
 
     assert!(
-        ctx.plugins.admin_page_policy("/admin/notes").await.is_some(),
+        ctx.plugins
+            .admin_page_policy("/admin/notes")
+            .await
+            .is_some(),
         "web contract entry should persist admin page policy metadata",
     );
 }

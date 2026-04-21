@@ -657,7 +657,9 @@ impl PluginManager {
                 &known_plugin.version,
             )
             .await?;
-            let state = repo.set_enabled(plugin_name, enabled, actor, reason).await?;
+            let state = repo
+                .set_enabled(plugin_name, enabled, actor, reason)
+                .await?;
             let mut info = self.plugin_info.write().await;
             let item = info
                 .entry(plugin_name.to_string())
@@ -684,10 +686,7 @@ impl PluginManager {
         Ok(fallback)
     }
 
-    pub async fn acquire_plugin_runtime_lock(
-        &self,
-        plugin_name: &str,
-    ) -> OwnedMutexGuard<()> {
+    pub async fn acquire_plugin_runtime_lock(&self, plugin_name: &str) -> OwnedMutexGuard<()> {
         let lock = {
             let mut locks = self.plugin_runtime_locks.write().await;
             locks
@@ -725,8 +724,7 @@ impl PluginManager {
                                 routes: false,
                                 commands: false,
                                 admin: false,
-                                database: db_permission_name(&DatabasePermission::None)
-                                    .to_string(),
+                                database: db_permission_name(&DatabasePermission::None).to_string(),
                             },
                         },
                     );
@@ -747,7 +745,9 @@ impl PluginManager {
 
     async fn guard_plugin_enabled(&self, plugin_name: &str) -> Result<(), String> {
         if !self.plugin_runtime_enabled(plugin_name).await? {
-            return Err(format!("plugin_disabled: plugin '{plugin_name}' is disabled"));
+            return Err(format!(
+                "plugin_disabled: plugin '{plugin_name}' is disabled"
+            ));
         }
         Ok(())
     }
@@ -936,7 +936,9 @@ mod tests {
             .expect("create migration prerequisites");
 
         sqlite
-            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .run_migrations(include_str!(
+                "../../../../migrations/008_plugin_governance_v1.sql"
+            ))
             .await
             .expect("run migration 008");
 

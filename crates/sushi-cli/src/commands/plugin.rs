@@ -60,14 +60,11 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
             }
         }
         PluginCommand::Status { plugin } => {
-            crate::commands::authorization::ensure_command_authorized(
-                &ctx,
-                role,
-                "plugin:status",
-            )
-            .await?;
+            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:status")
+                .await?;
 
-            let targets = select_status_targets(ctx.plugins.list_plugins().await, plugin.as_deref())?;
+            let targets =
+                select_status_targets(ctx.plugins.list_plugins().await, plugin.as_deref())?;
             for item in targets {
                 println!(
                     "{}\t{}\tenabled={}\tloaded={}\tsource_kind={}",
@@ -76,12 +73,8 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
             }
         }
         PluginCommand::Enable { plugin, reason } => {
-            crate::commands::authorization::ensure_command_authorized(
-                &ctx,
-                role,
-                "plugin:enable",
-            )
-            .await?;
+            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:enable")
+                .await?;
 
             let state = ctx
                 .plugins
@@ -91,12 +84,8 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
             println!("enabled {} (loaded={})", state.name, state.loaded);
         }
         PluginCommand::Disable { plugin, reason } => {
-            crate::commands::authorization::ensure_command_authorized(
-                &ctx,
-                role,
-                "plugin:disable",
-            )
-            .await?;
+            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:disable")
+                .await?;
 
             let state = ctx
                 .plugins
@@ -109,7 +98,10 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
     Ok(())
 }
 
-fn select_status_targets(plugins: Vec<PluginInfo>, target: Option<&str>) -> Result<Vec<PluginInfo>> {
+fn select_status_targets(
+    plugins: Vec<PluginInfo>,
+    target: Option<&str>,
+) -> Result<Vec<PluginInfo>> {
     if let Some(plugin_name) = target {
         let Some(item) = plugins.into_iter().find(|p| p.name == plugin_name) else {
             anyhow::bail!("plugin not found: {}", plugin_name);
@@ -158,14 +150,9 @@ mod tests {
 
     #[test]
     fn parse_disable_subcommand() {
-        let cli = TestCli::try_parse_from([
-            "plugin",
-            "disable",
-            "kv-store",
-            "--reason",
-            "maintenance",
-        ])
-        .unwrap();
+        let cli =
+            TestCli::try_parse_from(["plugin", "disable", "kv-store", "--reason", "maintenance"])
+                .unwrap();
         match cli.command {
             PluginCommand::Disable { plugin, reason } => {
                 assert_eq!(plugin, "kv-store");

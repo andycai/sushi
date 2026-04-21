@@ -263,9 +263,7 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             }
         };
         if !enabled_before_init {
-            tracing::info!(
-                "plugin {plugin_name} is disabled by governance state; skipping init"
-            );
+            tracing::info!("plugin {plugin_name} is disabled by governance state; skipping init");
             ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
             continue;
         }
@@ -352,9 +350,8 @@ async fn hydrate_authorizer_snapshot(ctx: &SushiContext) -> Result<()> {
 
 async fn migration_applied(storage: &SqliteStorage, migration_name: &str) -> Result<bool> {
     let migration_name = migration_name.replace('\'', "''");
-    let query = format!(
-        "SELECT 1 AS found FROM _sushi_migrations WHERE name = '{migration_name}' LIMIT 1"
-    );
+    let query =
+        format!("SELECT 1 AS found FROM _sushi_migrations WHERE name = '{migration_name}' LIMIT 1");
 
     let rows = storage
         .query(&query, vec![])
@@ -371,7 +368,10 @@ async fn run_plugin_governance_migration_if_needed(storage: &SqliteStorage) -> R
         return Ok(());
     }
 
-    match storage.run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL).await {
+    match storage
+        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
+        .await
+    {
         Ok(()) => Ok(()),
         Err(err) => {
             let err_message = err.to_string();
@@ -469,7 +469,10 @@ mod tests {
         storage.run_migrations(KV_MIGRATION_SQL).await.unwrap();
         storage.run_migrations(RBAC_MIGRATION_SQL).await.unwrap();
         storage.run_migrations(MENU_MIGRATION_SQL).await.unwrap();
-        storage.run_migrations(MENUS_RBAC_MIGRATION_SQL).await.unwrap();
+        storage
+            .run_migrations(MENUS_RBAC_MIGRATION_SQL)
+            .await
+            .unwrap();
         storage
             .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
             .await
@@ -493,10 +496,13 @@ mod tests {
             .await
             .unwrap();
 
-        let columns = storage.query("PRAGMA table_info(plugin_state)", vec![]).await.unwrap();
-        let has_plugin_id = columns.iter().any(|column| {
-            column.get("name").and_then(|value| value.as_str()) == Some("plugin_id")
-        });
+        let columns = storage
+            .query("PRAGMA table_info(plugin_state)", vec![])
+            .await
+            .unwrap();
+        let has_plugin_id = columns
+            .iter()
+            .any(|column| column.get("name").and_then(|value| value.as_str()) == Some("plugin_id"));
 
         assert!(
             !has_plugin_id,
@@ -520,7 +526,13 @@ mod tests {
         );
 
         let columns = plugin_state_columns(&storage).await.unwrap();
-        for required in ["plugin_id", "source_kind", "updated_by", "updated_at", "reason"] {
+        for required in [
+            "plugin_id",
+            "source_kind",
+            "updated_by",
+            "updated_at",
+            "reason",
+        ] {
             assert!(
                 columns.iter().any(|column| column == required),
                 "expected column `{required}` to exist after applying migration"
@@ -550,7 +562,13 @@ mod tests {
                 .unwrap()
         );
         let columns = plugin_state_columns(&storage).await.unwrap();
-        for required in ["plugin_id", "source_kind", "updated_by", "updated_at", "reason"] {
+        for required in [
+            "plugin_id",
+            "source_kind",
+            "updated_by",
+            "updated_at",
+            "reason",
+        ] {
             assert!(
                 columns.iter().any(|column| column == required),
                 "expected column `{required}` to exist after recovery"
@@ -560,8 +578,12 @@ mod tests {
 
     #[test]
     fn duplicate_column_error_detection_is_case_insensitive() {
-        assert!(is_duplicate_column_error("duplicate column name: plugin_id"));
-        assert!(is_duplicate_column_error("DUPLICATE COLUMN NAME: plugin_id"));
+        assert!(is_duplicate_column_error(
+            "duplicate column name: plugin_id"
+        ));
+        assert!(is_duplicate_column_error(
+            "DUPLICATE COLUMN NAME: plugin_id"
+        ));
         assert!(!is_duplicate_column_error("no such table: plugin_state"));
     }
 
