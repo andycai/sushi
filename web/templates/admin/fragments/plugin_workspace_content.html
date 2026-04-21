@@ -5,37 +5,37 @@
   x-data="pluginWorkspacePage()"
   x-init="init()"
 >
-  <div class="ui-page-header">
+  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="ui-title">{{ plugin.name }} Workspace</h1>
-      <p class="ui-subtitle">
+      <h1 class="text-3xl font-bold tracking-tight">{{ plugin.name }} Workspace</h1>
+      <p class="text-sm text-base-content/70">
         {{ plugin.description | default(value="No description provided.") }}
       </p>
     </div>
-    <div class="ui-toolbar">
-      <span class="ui-badge muted">v{{ plugin.version | default(value="0.0.0") }}</span>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge badge-ghost">v{{ plugin.version | default(value="0.0.0") }}</span>
       {% if plugin.loaded %}
-        <span class="ui-badge ok">Active</span>
+        <span class="badge badge-success">Active</span>
       {% else %}
-        <span class="ui-badge danger">Inactive</span>
+        <span class="badge badge-error">Inactive</span>
       {% endif %}
-      <a href="/admin/plugins" class="ui-btn ui-btn-secondary">Back to Registry</a>
+      <a href="/admin/plugins" class="btn btn-sm btn-outline">Back to Registry</a>
     </div>
   </div>
 
-  <div class="ui-callout mb-3">
-    This plugin exposes <span class="ui-mono">{{ pages | length }}</span> admin page(s).
+  <div class="alert alert-info mb-3">
+    This plugin exposes <span class="font-mono text-xs sm:text-sm">{{ pages | length }}</span> admin page(s).
   </div>
 
-  <section class="ui-card mb-3" data-plugin-workspace-nav>
-    <header class="ui-card-header">
+  <section class="card border border-base-300 bg-base-100 shadow-sm mb-3" data-plugin-workspace-nav>
+    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
       <h2 class="text-lg font-semibold">Quick navigation</h2>
-      <span class="ui-results-text">Pin important pages and keep recent visits within reach.</span>
+      <span class="text-xs text-base-content/60">Pin important pages and keep recent visits within reach.</span>
     </header>
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 p-4">
       <div>
         <h3 class="font-semibold mb-2">Pinned pages</h3>
-        <div class="ui-empty" x-show="pinnedPages().length === 0">
+        <div class="text-center py-6 text-sm text-base-content/60" x-show="pinnedPages().length === 0">
           No pinned pages yet.
         </div>
         <ul class="space-y-2" x-show="pinnedPages().length > 0">
@@ -43,13 +43,13 @@
             <li class="flex items-center justify-between gap-3">
               <button
                 type="button"
-                class="ui-action-link"
+                class="btn btn-ghost btn-xs"
                 @click="openPage(page.path, page.title)"
                 x-text="page.title"
               ></button>
               <button
                 type="button"
-                class="ui-action-link danger"
+                class="btn btn-ghost btn-xs text-error hover:bg-error/10"
                 @click="togglePin(page.path)"
               >
                 Unpin
@@ -61,7 +61,7 @@
 
       <div>
         <h3 class="font-semibold mb-2">Recently visited</h3>
-        <div class="ui-empty" x-show="recentPages().length === 0">
+        <div class="text-center py-6 text-sm text-base-content/60" x-show="recentPages().length === 0">
           No recent pages yet.
         </div>
         <ul class="space-y-2" x-show="recentPages().length > 0">
@@ -69,13 +69,13 @@
             <li class="flex items-center justify-between gap-3">
               <button
                 type="button"
-                class="ui-action-link"
+                class="btn btn-ghost btn-xs"
                 @click="openPage(page.path, page.title)"
                 x-text="page.title"
               ></button>
               <button
                 type="button"
-                class="ui-action-link"
+                class="btn btn-ghost btn-xs"
                 @click="togglePin(page.path)"
                 x-text="isPinned(page.path) ? 'Unpin' : 'Pin'"
               ></button>
@@ -86,13 +86,13 @@
     </div>
   </section>
 
-  <section class="ui-card">
-    <header class="ui-card-header">
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
+    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
       <h2 class="text-lg font-semibold">Admin pages</h2>
-      <span class="ui-results-text">Route catalog for this plugin</span>
+      <span class="text-xs text-base-content/60">Route catalog for this plugin</span>
     </header>
-    <div class="ui-table-wrap">
-      <table class="ui-table">
+    <div class="overflow-x-auto">
+      <table class="table table-zebra">
         <thead>
           <tr>
             <th>Title</th>
@@ -107,10 +107,10 @@
               data-plugin-page-title="{{ page.title }}"
             >
               <td>{{ page.title }}</td>
-              <td><span class="ui-mono">{{ page.path }}</span></td>
+              <td><span class="font-mono text-xs sm:text-sm">{{ page.path }}</span></td>
               <td class="actions">
                 <a
-                  class="ui-action-link"
+                  class="btn btn-ghost btn-xs"
                   href="{{ page.path }}"
                   @click.prevent="openPage($el.closest('tr').dataset.pluginPagePath, $el.closest('tr').dataset.pluginPageTitle)"
                 >
@@ -118,7 +118,7 @@
                 </a>
                 <button
                   type="button"
-                  class="ui-action-link"
+                  class="btn btn-ghost btn-xs"
                   @click="togglePin($el.closest('tr').dataset.pluginPagePath)"
                   x-text="isPinned($el.closest('tr').dataset.pluginPagePath) ? 'Unpin' : 'Pin'"
                 ></button>
@@ -126,7 +126,7 @@
             </tr>
           {% else %}
             <tr>
-              <td colspan="3" class="ui-empty">No admin pages registered for this plugin.</td>
+              <td colspan="3" class="text-center py-6 text-sm text-base-content/60">No admin pages registered for this plugin.</td>
             </tr>
           {% endfor %}
         </tbody>

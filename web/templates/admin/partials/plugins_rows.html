@@ -1,36 +1,36 @@
 {% for p in plugins %}
   <tr data-row-search="{{ p.name }} {{ p.version }} {{ p.description }} routes:{{ p.permissions.routes }} commands:{{ p.permissions.commands }} admin:{{ p.permissions.admin }} db:{{ p.permissions.database }} loaded:{{ p.loaded }}" data-row-sort="{{ p.name }}">
     <td>{{ p.name }}</td>
-    <td class="ui-mono">{{ p.version }}</td>
+    <td class="font-mono text-xs sm:text-sm">{{ p.version }}</td>
     <td>{{ p.description }}</td>
     <td class="text-sm">
-      {% if p.permissions.routes %}<span class="ui-badge muted mr-1">routes</span>{% endif %}
-      {% if p.permissions.commands %}<span class="ui-badge muted mr-1">commands</span>{% endif %}
-      {% if p.permissions.admin %}<span class="ui-badge muted mr-1">admin</span>{% endif %}
+      {% if p.permissions.routes %}<span class="badge badge-ghost mr-1">routes</span>{% endif %}
+      {% if p.permissions.commands %}<span class="badge badge-ghost mr-1">commands</span>{% endif %}
+      {% if p.permissions.admin %}<span class="badge badge-ghost mr-1">admin</span>{% endif %}
       {% if p.permissions.database %}
-        <span class="ui-badge warn">db</span>
+        <span class="badge badge-warning">db</span>
       {% else %}
-        <span class="ui-badge info">db:off</span>
+        <span class="badge badge-info">db:off</span>
       {% endif %}
     </td>
     <td class="text-center">
       {% if p.loaded %}
-        <span class="ui-badge ok">Active</span>
+        <span class="badge badge-success">Active</span>
       {% else %}
-        <span class="ui-badge danger">Inactive</span>
+        <span class="badge badge-error">Inactive</span>
       {% endif %}
     </td>
     <td class="actions">
       <button
         type="button"
-        class="ui-action-link {% if p.enabled %}danger{% endif %}"
+        class="btn btn-ghost btn-xs {% if p.enabled %}text-error hover:bg-error/10{% endif %}"
         :disabled="isPluginBusy('{{ p.name }}')"
         @click="togglePlugin('{{ p.name }}', {{ p.enabled }})"
       >
         {% if p.enabled %}Disable{% else %}Enable{% endif %}
       </button>
       <a
-        class="ui-action-link"
+        class="btn btn-ghost btn-xs"
         href="/admin/plugins/{{ p.name }}"
         data-workspace-path="/admin/plugins/{{ p.name }}"
         data-workspace-title="{{ p.name }} Workspace"
@@ -42,6 +42,6 @@
   </tr>
 {% else %}
   <tr>
-    <td colspan="6" class="ui-empty">No plugins discovered.</td>
+    <td colspan="6" class="text-center py-6 text-sm text-base-content/60">No plugins discovered.</td>
   </tr>
 {% endfor %}

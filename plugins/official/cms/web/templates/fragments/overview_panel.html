@@ -1,13 +1,13 @@
-<article class="ui-card cms-overview" data-cms-overview>
-  <header class="ui-card-header">
+<article class="card border border-base-300 bg-base-100 shadow-sm cms-overview" data-cms-overview>
+  <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
     <div>
       <h2 class="text-lg font-semibold">Today\'s queue</h2>
-      <p class="ui-subtitle">Track publishing momentum and jump back into editing quickly.</p>
+      <p class="text-sm text-base-content/70">Track publishing momentum and jump back into editing quickly.</p>
     </div>
-    <button type="button" class="ui-btn ui-btn-secondary" data-cms-open-library data-scope="posts">Open library</button>
+    <button type="button" class="btn btn-sm btn-outline" data-cms-open-library data-scope="posts">Open library</button>
   </header>
 
-  <div class="ui-card-body cms-overview-grid">
+  <div class="card-body pt-4 cms-overview-grid">
     <section class="ui-kpi">
       <p class="ui-kpi-label">Pages</p>
       <p class="ui-kpi-value">{{ page_counts.total | default(value=0) }}</p>
@@ -26,12 +26,12 @@
   </div>
 
   <div class="cms-overview-lists">
-    <section class="ui-card cms-overview-list-card">
-      <header class="ui-card-header">
+    <section class="card border border-base-300 bg-base-100 shadow-sm cms-overview-list-card">
+      <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
         <h3 class="text-base font-semibold">Recently edited posts</h3>
-        <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="posts">All posts</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="posts">All posts</button>
       </header>
-      <div class="ui-card-body">
+      <div class="card-body pt-4">
         <ul class="cms-overview-list">
           {% for item in recent_posts %}
             <li>
@@ -41,25 +41,25 @@
               </div>
               <button
                 type="button"
-                class="ui-btn ui-btn-secondary"
+                class="btn btn-sm btn-outline"
                 data-cms-open-editor
                 data-resource="posts"
                 data-slug="{{ item.slug }}"
               >Resume</button>
             </li>
           {% else %}
-            <li class="ui-empty">No posts yet. Create your first story.</li>
+            <li class="text-center py-6 text-sm text-base-content/60">No posts yet. Create your first story.</li>
           {% endfor %}
         </ul>
       </div>
     </section>
 
-    <section class="ui-card cms-overview-list-card">
-      <header class="ui-card-header">
+    <section class="card border border-base-300 bg-base-100 shadow-sm cms-overview-list-card">
+      <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
         <h3 class="text-base font-semibold">Recently edited pages</h3>
-        <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="pages">All pages</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="pages">All pages</button>
       </header>
-      <div class="ui-card-body">
+      <div class="card-body pt-4">
         <ul class="cms-overview-list">
           {% for item in recent_pages %}
             <li>
@@ -69,14 +69,14 @@
               </div>
               <button
                 type="button"
-                class="ui-btn ui-btn-secondary"
+                class="btn btn-sm btn-outline"
                 data-cms-open-editor
                 data-resource="pages"
                 data-slug="{{ item.slug }}"
               >Resume</button>
             </li>
           {% else %}
-            <li class="ui-empty">No pages yet. Start with a landing page draft.</li>
+            <li class="text-center py-6 text-sm text-base-content/60">No pages yet. Start with a landing page draft.</li>
           {% endfor %}
         </ul>
       </div>

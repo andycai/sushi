@@ -1,16 +1,16 @@
-<article class="ui-card cms-library" data-cms-library data-cms-library-scope="{{ scope | default(value="posts") }}">
-  <header class="ui-card-header cms-library-header">
+<article class="card border border-base-300 bg-base-100 shadow-sm cms-library" data-cms-library data-cms-library-scope="{{ scope | default(value="posts") }}">
+  <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300 cms-library-header">
     <div>
       <h2 class="text-lg font-semibold">{{ scope | upper }} Library</h2>
-      <p class="ui-subtitle">Find content fast, then edit, publish, or delete with clear controls.</p>
+      <p class="text-sm text-base-content/70">Find content fast, then edit, publish, or delete with clear controls.</p>
     </div>
 
     <div class="cms-library-toolbar">
-      <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="posts">Posts</button>
-      <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="pages">Pages</button>
-      <button type="button" class="ui-btn ui-btn-ghost" data-cms-open-library data-scope="categories">Categories</button>
-      <input type="search" name="q" value="{{ query | default(value="") }}" placeholder="Search in current list" data-cms-library-search class="ui-input cms-library-search">
-      <button type="button" class="ui-btn ui-btn-primary" data-cms-open-editor data-resource="{{ scope | default(value="posts") }}" data-slug="new">
+      <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="posts">Posts</button>
+      <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="pages">Pages</button>
+      <button type="button" class="btn btn-sm btn-ghost" data-cms-open-library data-scope="categories">Categories</button>
+      <input type="search" name="q" value="{{ query | default(value="") }}" placeholder="Search in current list" data-cms-library-search class="input input-bordered w-full cms-library-search">
+      <button type="button" class="btn btn-sm btn-primary" data-cms-open-editor data-resource="{{ scope | default(value="posts") }}" data-slug="new">
         {% if scope == "pages" %}
           New Page
         {% elif scope == "categories" %}
@@ -22,8 +22,8 @@
     </div>
   </header>
 
-  <div class="ui-card-body">
-    <table class="ui-table cms-library-table">
+  <div class="card-body pt-4">
+    <table class="table table-zebra cms-library-table">
       <thead>
         {% if scope == "categories" %}
           <tr>

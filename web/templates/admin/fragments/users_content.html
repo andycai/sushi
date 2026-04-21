@@ -1,54 +1,54 @@
 <section class="admin-module" data-admin-workspace-module="users" x-data="usersPage()" x-on:users:close-modal.window="closeModal()">
-  <div class="ui-page-header">
+  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="ui-title">Identity & Access</h1>
-      <p class="ui-subtitle">Create, monitor, and remove administrator and editor accounts.</p>
+      <h1 class="text-3xl font-bold tracking-tight">Identity & Access</h1>
+      <p class="text-sm text-base-content/70">Create, monitor, and remove administrator and editor accounts.</p>
     </div>
-    <div class="ui-toolbar">
-      <div class="ui-table-search">
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="w-full sm:w-auto">
         <input
           type="text"
-          class="ui-input"
+          class="input input-bordered w-full"
           placeholder="Search by id, username, email, role..."
           x-model="table.query"
           @input.debounce.150ms="applySearch()"
         >
       </div>
-      <button type="button" class="ui-btn ui-btn-primary" @click="openModal()">Add User</button>
+      <button type="button" class="btn btn-sm btn-primary" @click="openModal()">Add User</button>
     </div>
   </div>
 
-  <div id="users-feedback" class="ui-feedback"></div>
+  <div id="users-feedback" class="space-y-2"></div>
 
-  <div class="ui-callout mb-3">
-    User lifecycle actions require the <span class="ui-mono">users.manage</span> permission.
+  <div class="alert alert-info mb-3">
+    User lifecycle actions require the <span class="font-mono text-xs sm:text-sm">users.manage</span> permission.
   </div>
 
-  <section class="ui-card">
-    <header class="ui-card-header">
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
+    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
       <h2 class="text-lg font-semibold">User directory</h2>
-      <div class="ui-toolbar">
-        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+      <div class="flex flex-wrap items-center gap-2">
+        <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
           <option value="default">Default order</option>
           <option value="alpha_asc">Username A-Z</option>
           <option value="alpha_desc">Username Z-A</option>
         </select>
-        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+        <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
           <template x-for="size in table.pageSizeOptions" :key="size">
             <option :value="size" x-text="`${size}/page`"></option>
           </template>
         </select>
-        <div class="ui-page-controls">
-          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
-          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
-          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        <div class="join">
+          <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
         </div>
-        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
-        <span class="ui-badge info">Role-based access</span>
+        <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+        <span class="badge badge-info">Role-based access</span>
       </div>
     </header>
-    <div class="ui-table-wrap">
-      <table class="ui-table">
+    <div class="overflow-x-auto">
+      <table class="table table-zebra">
         <thead>
           <tr>
             <th>ID</th>
@@ -66,11 +66,11 @@
           x-on:htmx:after-swap.camel="onUsersTableSwap()"
         >
           <tr>
-            <td colspan="5" class="ui-empty">Loading users...</td>
+            <td colspan="5" class="text-center py-6 text-sm text-base-content/60">Loading users...</td>
           </tr>
         </tbody>
       </table>
-      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+      <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
         No rows match your current search keyword.
       </div>
     </div>
@@ -80,7 +80,7 @@
     <div class="ui-drawer-panel">
       <div class="ui-drawer-head">
         <h2 class="ui-drawer-title">Create user</h2>
-        <button type="button" class="ui-btn ui-btn-ghost" @click="closeModal()">Close</button>
+        <button type="button" class="btn btn-sm btn-ghost" @click="closeModal()">Close</button>
       </div>
       <form
         class="ui-drawer-body space-y-4"
@@ -91,20 +91,20 @@
         x-on:htmx:after-request.camel="onCreateAfterRequest($event)"
       >
         <div>
-          <label class="ui-label" for="username">Username</label>
-          <input x-model="form.values.username" id="username" type="text" required name="username" class="ui-input" minlength="3" maxlength="32">
+          <label class="label-text font-semibold" for="username">Username</label>
+          <input x-model="form.values.username" id="username" type="text" required name="username" class="input input-bordered w-full" minlength="3" maxlength="32">
         </div>
         <div>
-          <label class="ui-label" for="email">Email</label>
-          <input x-model="form.values.email" id="email" type="email" required name="email" class="ui-input">
+          <label class="label-text font-semibold" for="email">Email</label>
+          <input x-model="form.values.email" id="email" type="email" required name="email" class="input input-bordered w-full">
         </div>
         <div>
-          <label class="ui-label" for="password">Password</label>
-          <input x-model="form.values.password" id="password" type="password" required name="password" class="ui-input" minlength="8">
+          <label class="label-text font-semibold" for="password">Password</label>
+          <input x-model="form.values.password" id="password" type="password" required name="password" class="input input-bordered w-full" minlength="8">
         </div>
         <div>
-          <label class="ui-label" for="role">Role</label>
-          <select x-model="form.values.role" id="role" name="role" class="ui-select">
+          <label class="label-text font-semibold" for="role">Role</label>
+          <select x-model="form.values.role" id="role" name="role" class="select select-bordered">
             {% for role in roles %}
               <option value="{{ role.slug }}">{{ role.name }} ({{ role.slug }})</option>
             {% else %}
@@ -113,8 +113,8 @@
           </select>
         </div>
         <div class="ui-drawer-actions">
-          <button type="button" class="ui-btn ui-btn-secondary" @click="closeModal()">Cancel</button>
-          <button type="submit" :disabled="form.busy" class="ui-btn ui-btn-primary">
+          <button type="button" class="btn btn-sm btn-outline" @click="closeModal()">Cancel</button>
+          <button type="submit" :disabled="form.busy" class="btn btn-sm btn-primary">
             <span x-show="!form.busy">Create</span>
             <span x-show="form.busy">Creating...</span>
           </button>
@@ -140,8 +140,8 @@
           Delete user <span class="font-semibold text-slate-900" x-text="confirmModal.payload.username"></span>? This action cannot be undone.
         </p>
         <div class="ui-modal-actions">
-          <button type="button" class="ui-btn ui-btn-secondary" @click="closeDeleteConfirm()">Cancel</button>
-          <button type="submit" :disabled="confirmModal.busy || !confirmModal.payload.id" class="ui-btn ui-btn-danger">
+          <button type="button" class="btn btn-sm btn-outline" @click="closeDeleteConfirm()">Cancel</button>
+          <button type="submit" :disabled="confirmModal.busy || !confirmModal.payload.id" class="btn btn-sm btn-error">
             <span x-show="!confirmModal.busy">Delete</span>
             <span x-show="confirmModal.busy">Deleting...</span>
           </button>

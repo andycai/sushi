@@ -1,54 +1,54 @@
 <section class="admin-module" data-admin-workspace-module="kv" x-data="kvPage()">
-  <div class="ui-page-header">
+  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="ui-title">KV Store</h1>
-      <p class="ui-subtitle">Manage runtime key-value entries used by plugins and operational workflows.</p>
+      <h1 class="text-3xl font-bold tracking-tight">KV Store</h1>
+      <p class="text-sm text-base-content/70">Manage runtime key-value entries used by plugins and operational workflows.</p>
     </div>
-    <div class="ui-toolbar">
-      <div class="ui-table-search">
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="w-full sm:w-auto">
         <input
           type="text"
-          class="ui-input"
+          class="input input-bordered w-full"
           placeholder="Search by key or value..."
           x-model="table.query"
           @input.debounce.150ms="applySearch()"
         >
       </div>
-      <button type="button" class="ui-btn ui-btn-primary" @click="openCreate()">Add Entry</button>
+      <button type="button" class="btn btn-sm btn-primary" @click="openCreate()">Add Entry</button>
     </div>
   </div>
 
-  <div id="kv-feedback" class="ui-feedback"></div>
+  <div id="kv-feedback" class="space-y-2"></div>
 
-  <div class="ui-callout mb-3">
-    Use namespaced keys (for example, <span class="ui-mono">plugin.feature.flag</span>) to avoid collisions.
+  <div class="alert alert-info mb-3">
+    Use namespaced keys (for example, <span class="font-mono text-xs sm:text-sm">plugin.feature.flag</span>) to avoid collisions.
   </div>
 
-  <section class="ui-card">
-    <header class="ui-card-header">
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
+    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
       <h2 class="text-lg font-semibold">Key registry</h2>
-      <div class="ui-toolbar">
-        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+      <div class="flex flex-wrap items-center gap-2">
+        <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
           <option value="default">Default order</option>
           <option value="alpha_asc">Key A-Z</option>
           <option value="alpha_desc">Key Z-A</option>
         </select>
-        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+        <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
           <template x-for="size in table.pageSizeOptions" :key="size">
             <option :value="size" x-text="`${size}/page`"></option>
           </template>
         </select>
-        <div class="ui-page-controls">
-          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
-          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
-          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        <div class="join">
+          <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
         </div>
-        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
-        <span class="ui-badge info">Persistent storage</span>
+        <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+        <span class="badge badge-info">Persistent storage</span>
       </div>
     </header>
-    <div class="ui-table-wrap">
-      <table class="ui-table">
+    <div class="overflow-x-auto">
+      <table class="table table-zebra">
         <thead>
           <tr>
             <th>Key</th>
@@ -64,11 +64,11 @@
           x-on:htmx:after-swap.camel="onKvTableSwap()"
         >
           <tr>
-            <td colspan="3" class="ui-empty">Loading KV entries...</td>
+            <td colspan="3" class="text-center py-6 text-sm text-base-content/60">Loading KV entries...</td>
           </tr>
         </tbody>
       </table>
-      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+      <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
         No KV rows match your current keyword.
       </div>
     </div>
@@ -78,7 +78,7 @@
     <div class="ui-drawer-panel">
       <div class="ui-drawer-head">
         <h2 class="ui-drawer-title" x-text="mode === 'create' ? 'Add entry' : 'Edit entry'"></h2>
-        <button type="button" class="ui-btn ui-btn-ghost" @click="closeModal()">Close</button>
+        <button type="button" class="btn btn-sm btn-ghost" @click="closeModal()">Close</button>
       </div>
       <form
         class="ui-drawer-body space-y-4"
@@ -90,31 +90,31 @@
       >
         <input type="hidden" name="original_key" x-model="entryForm.values.originalKey">
         <div>
-          <label class="ui-label" for="kv-key">Key</label>
+          <label class="label-text font-semibold" for="kv-key">Key</label>
           <input
             type="text"
             id="kv-key"
             x-model="entryForm.values.key"
             name="key"
             :readonly="mode === 'edit'"
-            class="ui-input"
+            class="input input-bordered w-full"
             required
           >
         </div>
         <div>
-          <label class="ui-label" for="kv-value">Value</label>
+          <label class="label-text font-semibold" for="kv-value">Value</label>
           <input
             type="text"
             id="kv-value"
             x-model="entryForm.values.value"
             name="value"
-            class="ui-input"
+            class="input input-bordered w-full"
             required
           >
         </div>
         <div class="ui-drawer-actions">
-          <button type="button" @click="closeModal()" class="ui-btn ui-btn-secondary">Cancel</button>
-          <button type="submit" :disabled="entryForm.busy" class="ui-btn ui-btn-primary">
+          <button type="button" @click="closeModal()" class="btn btn-sm btn-outline">Cancel</button>
+          <button type="submit" :disabled="entryForm.busy" class="btn btn-sm btn-primary">
             <span x-show="!entryForm.busy">Save</span>
             <span x-show="entryForm.busy">Saving...</span>
           </button>
@@ -138,11 +138,11 @@
       >
         <input type="hidden" name="key" x-model="confirmModal.payload.key">
         <p class="text-sm text-slate-600">
-          Delete key <span class="font-semibold ui-mono text-slate-900" x-text="confirmModal.payload.key"></span>? This action cannot be undone.
+          Delete key <span class="font-semibold font-mono text-xs sm:text-sm text-slate-900" x-text="confirmModal.payload.key"></span>? This action cannot be undone.
         </p>
         <div class="ui-modal-actions">
-          <button type="button" @click="closeDeleteConfirm()" class="ui-btn ui-btn-secondary">Cancel</button>
-          <button type="submit" :disabled="confirmModal.busy || !confirmModal.payload.key" class="ui-btn ui-btn-danger">
+          <button type="button" @click="closeDeleteConfirm()" class="btn btn-sm btn-outline">Cancel</button>
+          <button type="submit" :disabled="confirmModal.busy || !confirmModal.payload.key" class="btn btn-sm btn-error">
             <span x-show="!confirmModal.busy">Delete</span>
             <span x-show="confirmModal.busy">Deleting...</span>
           </button>

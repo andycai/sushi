@@ -14,45 +14,45 @@
     <td>
       <div class="font-semibold">{{ menu.label }}</div>
       {% if menu.icon %}
-        <div class="ui-results-text ui-mono">icon: {{ menu.icon }}</div>
+        <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">icon: {{ menu.icon }}</div>
       {% endif %}
     </td>
     <td>
       {% if menu.parent_label %}
-        <span class="ui-badge muted">{{ menu.parent_label }}</span>
+        <span class="badge badge-ghost">{{ menu.parent_label }}</span>
       {% else %}
-        <span class="ui-badge info">Top level</span>
+        <span class="badge badge-info">Top level</span>
       {% endif %}
     </td>
     <td>
       {% if menu.route %}
-        <span class="ui-mono">{{ menu.route }}</span>
+        <span class="font-mono text-xs sm:text-sm">{{ menu.route }}</span>
       {% else %}
-        <span class="ui-results-text">-</span>
+        <span class="text-xs text-base-content/60">-</span>
       {% endif %}
     </td>
-    <td><span class="ui-badge muted">{{ menu.position }}</span></td>
+    <td><span class="badge badge-ghost">{{ menu.position }}</span></td>
     <td>
       {% if menu.is_hidden %}
-        <span class="ui-badge warn">Hidden</span>
+        <span class="badge badge-warning">Hidden</span>
       {% else %}
-        <span class="ui-badge ok">Visible</span>
+        <span class="badge badge-success">Visible</span>
       {% endif %}
       {% if menu.is_system %}
-        <span class="ui-badge muted">System</span>
+        <span class="badge badge-ghost">System</span>
       {% endif %}
     </td>
     <td class="actions">
-      <button type="button" class="ui-action-link" @click="openEdit($el.closest('tr').dataset)">Edit</button>
+      <button type="button" class="btn btn-ghost btn-xs" @click="openEdit($el.closest('tr').dataset)">Edit</button>
       {% if menu.is_system %}
-        <span class="ui-badge muted">Protected</span>
+        <span class="badge badge-ghost">Protected</span>
       {% else %}
-        <button type="button" class="ui-action-link danger" @click="openDelete($el.closest('tr').dataset)">Delete</button>
+        <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10" @click="openDelete($el.closest('tr').dataset)">Delete</button>
       {% endif %}
     </td>
   </tr>
 {% else %}
   <tr>
-    <td colspan="6" class="ui-empty">No menu items found.</td>
+    <td colspan="6" class="text-center py-6 text-sm text-base-content/60">No menu items found.</td>
   </tr>
 {% endfor %}

@@ -1120,7 +1120,8 @@ end)
             repo_root.join("plugins/official/kv-store/web/templates/partials/flash.html");
         assert!(flash_template_path.exists());
         let flash_template_source = std::fs::read_to_string(&flash_template_path).unwrap();
-        assert!(flash_template_source.contains("class=\"ui-flash {{ tone }}\""));
+        assert!(flash_template_source.contains("data-ui-flash"));
+        assert!(flash_template_source.contains("class=\"alert {{ tone }} shadow-sm\""));
 
         let static_path = repo_root.join("plugins/official/kv-store/web/static/kv.js");
         assert!(static_path.exists());

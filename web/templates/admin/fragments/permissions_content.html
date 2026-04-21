@@ -1,53 +1,53 @@
 <section class="admin-module" data-admin-workspace-module="permissions" x-data="permissionsPage()" x-on:permissions:close-editor.window="closeEditor()">
-  <div class="ui-page-header">
+  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 class="ui-title">Permissions</h1>
-      <p class="ui-subtitle">Maintain permission catalog entries used by roles and access policies.</p>
+      <h1 class="text-3xl font-bold tracking-tight">Permissions</h1>
+      <p class="text-sm text-base-content/70">Maintain permission catalog entries used by roles and access policies.</p>
     </div>
-    <div class="ui-toolbar">
-      <div class="ui-table-search">
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="w-full sm:w-auto">
         <input
           type="text"
-          class="ui-input"
+          class="input input-bordered w-full"
           placeholder="Search by permission key, module, or description..."
           x-model="table.query"
           @input.debounce.150ms="applySearch()"
         >
       </div>
-      <button type="button" class="ui-btn ui-btn-primary" @click="openCreate()">Add Permission</button>
+      <button type="button" class="btn btn-sm btn-primary" @click="openCreate()">Add Permission</button>
     </div>
   </div>
 
-  <div id="permissions-feedback" class="ui-feedback"></div>
+  <div id="permissions-feedback" class="space-y-2"></div>
 
-  <div class="ui-callout mb-3">
-    Permission keys should be stable identifiers (example: <span class="ui-mono">users.manage</span>) used across API, admin, and CLI access checks.
+  <div class="alert alert-info mb-3">
+    Permission keys should be stable identifiers (example: <span class="font-mono text-xs sm:text-sm">users.manage</span>) used across API, admin, and CLI access checks.
   </div>
 
-  <section class="ui-card">
-    <header class="ui-card-header">
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
+    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
       <h2 class="text-lg font-semibold">Permission catalog</h2>
-      <div class="ui-toolbar">
-        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
+      <div class="flex flex-wrap items-center gap-2">
+        <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
           <option value="default">Default order</option>
           <option value="alpha_asc">Key A-Z</option>
           <option value="alpha_desc">Key Z-A</option>
         </select>
-        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
+        <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
           <template x-for="size in table.pageSizeOptions" :key="size">
             <option :value="size" x-text="`${size}/page`"></option>
           </template>
         </select>
-        <div class="ui-page-controls">
-          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
-          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
-          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+        <div class="join">
+          <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+          <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+          <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
         </div>
-        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+        <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
       </div>
     </header>
-    <div class="ui-table-wrap">
-      <table class="ui-table">
+    <div class="overflow-x-auto">
+      <table class="table table-zebra">
         <thead>
           <tr>
             <th>Permission</th>
@@ -65,11 +65,11 @@
           x-on:htmx:after-swap.camel="onPermissionsTableSwap()"
         >
           <tr>
-            <td colspan="5" class="ui-empty">Loading permissions...</td>
+            <td colspan="5" class="text-center py-6 text-sm text-base-content/60">Loading permissions...</td>
           </tr>
         </tbody>
       </table>
-      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
+      <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
         No permissions match your current keyword.
       </div>
     </div>
@@ -79,7 +79,7 @@
     <div class="ui-drawer-panel">
       <div class="ui-drawer-head">
         <h2 class="ui-drawer-title" x-text="editor.payload.mode === 'create' ? 'Add permission' : 'Edit permission'"></h2>
-        <button type="button" class="ui-btn ui-btn-ghost" @click="closeEditor()">Close</button>
+        <button type="button" class="btn btn-sm btn-ghost" @click="closeEditor()">Close</button>
       </div>
       <form
         class="ui-drawer-body space-y-4"
@@ -90,12 +90,12 @@
         x-on:htmx:after-request.camel="onEditorAfterRequest($event)"
       >
         <div>
-          <label class="ui-label" for="permission-slug">Permission key</label>
+          <label class="label-text font-semibold" for="permission-slug">Permission key</label>
           <input
             id="permission-slug"
             name="slug"
             type="text"
-            class="ui-input ui-mono"
+            class="input input-bordered w-full font-mono text-xs sm:text-sm"
             x-model="editor.payload.slug"
             :readonly="editor.payload.mode === 'edit'"
             maxlength="80"
@@ -103,43 +103,43 @@
           >
         </div>
         <div>
-          <label class="ui-label" for="permission-name">Display name</label>
+          <label class="label-text font-semibold" for="permission-name">Display name</label>
           <input
             id="permission-name"
             name="name"
             type="text"
-            class="ui-input"
+            class="input input-bordered w-full"
             x-model="editor.payload.name"
             maxlength="80"
             required
           >
         </div>
         <div>
-          <label class="ui-label" for="permission-module">Module</label>
+          <label class="label-text font-semibold" for="permission-module">Module</label>
           <input
             id="permission-module"
             name="module"
             type="text"
-            class="ui-input ui-mono"
+            class="input input-bordered w-full font-mono text-xs sm:text-sm"
             x-model="editor.payload.module"
             maxlength="40"
             required
           >
         </div>
         <div>
-          <label class="ui-label" for="permission-description">Description</label>
+          <label class="label-text font-semibold" for="permission-description">Description</label>
           <textarea
             id="permission-description"
             name="description"
-            class="ui-input"
+            class="input input-bordered w-full"
             rows="4"
             x-model="editor.payload.description"
             maxlength="280"
           ></textarea>
         </div>
         <div class="ui-drawer-actions">
-          <button type="button" class="ui-btn ui-btn-secondary" @click="closeEditor()">Cancel</button>
-          <button type="submit" class="ui-btn ui-btn-primary" :disabled="editor.busy">
+          <button type="button" class="btn btn-sm btn-outline" @click="closeEditor()">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary" :disabled="editor.busy">
             <span x-show="!editor.busy">Save permission</span>
             <span x-show="editor.busy">Saving...</span>
           </button>
@@ -162,11 +162,11 @@
         x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
       >
         <p class="text-sm text-slate-600">
-          Delete permission <span class="font-semibold text-slate-900 ui-mono" x-text="deleteModal.payload.slug"></span>? This action cannot be undone.
+          Delete permission <span class="font-semibold text-slate-900 font-mono text-xs sm:text-sm" x-text="deleteModal.payload.slug"></span>? This action cannot be undone.
         </p>
         <div class="ui-modal-actions">
-          <button type="button" class="ui-btn ui-btn-secondary" @click="closeDelete()">Cancel</button>
-          <button type="submit" class="ui-btn ui-btn-danger" :disabled="deleteModal.busy || !deleteModal.payload.id">
+          <button type="button" class="btn btn-sm btn-outline" @click="closeDelete()">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-error" :disabled="deleteModal.busy || !deleteModal.payload.id">
             <span x-show="!deleteModal.busy">Delete</span>
             <span x-show="deleteModal.busy">Deleting...</span>
           </button>
