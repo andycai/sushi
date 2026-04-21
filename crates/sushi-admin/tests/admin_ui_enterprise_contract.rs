@@ -85,11 +85,27 @@ fn kv_workbench_uses_enterprise_workspace_semantics() {
     let source = read("plugins/official/kv-store/web/templates/fragments/kv_content.html");
     assert!(source.contains("data-enterprise-workbench=\"kv\""));
     assert!(source.contains("data-admin-page-header"));
+    assert!(source.contains("mb-5 flex flex-wrap items-start justify-between gap-3\" data-admin-page-header"));
     assert!(source.contains("data-admin-action-cluster"));
     assert!(source.contains("data-admin-table-card"));
     assert!(source.contains("x-data=\"kvPage()\""));
     assert!(source.contains("hx-get=\"/admin/partials/kv/table\""));
     assert!(source.contains("hx-trigger=\"load, kv:refresh from:body\""));
+}
+
+#[test]
+fn kv_partials_preserve_row_and_flash_contracts() {
+    let rows = read("plugins/official/kv-store/web/templates/partials/rows.html");
+    assert!(rows.contains("data-row-search="));
+    assert!(rows.contains("data-row-sort="));
+    assert!(rows.contains("@click=\"openEdit("));
+    assert!(rows.contains("@click=\"openDeleteConfirm("));
+
+    let flash = read("plugins/official/kv-store/web/templates/partials/flash.html");
+    assert!(flash.contains("data-ui-flash"));
+    assert!(flash.contains("data-level"));
+    assert!(flash.contains("data-message"));
+    assert!(flash.contains("role=\"alert\""));
 }
 
 #[test]
