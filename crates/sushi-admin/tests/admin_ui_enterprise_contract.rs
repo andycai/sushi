@@ -66,9 +66,7 @@ fn users_fragment_has_enterprise_toolbar_and_table_card() {
 }
 
 #[test]
-fn official_plugin_templates_follow_enterprise_workspace_contract() {
-    let kv = read("plugins/official/kv-store/web/templates/fragments/kv_content.html");
-    assert!(kv.contains("data-admin-workspace-module=\"kv\""));
+fn file_browser_template_exposes_workspace_bootstrap_contract() {
     let fb = read("plugins/official/file-browser/web/templates/file_browser.html");
     assert!(fb.contains("id=\"theme-toggle\""));
     assert!(fb.contains("fileBrowserPage("));
@@ -80,6 +78,18 @@ fn cms_workbench_uses_enterprise_workspace_semantics() {
     assert!(source.contains("data-enterprise-workbench=\"cms\""));
     assert!(source.contains("data-admin-page-header"));
     assert!(source.contains("data-admin-action-cluster"));
+}
+
+#[test]
+fn kv_workbench_uses_enterprise_workspace_semantics() {
+    let source = read("plugins/official/kv-store/web/templates/fragments/kv_content.html");
+    assert!(source.contains("data-enterprise-workbench=\"kv\""));
+    assert!(source.contains("data-admin-page-header"));
+    assert!(source.contains("data-admin-action-cluster"));
+    assert!(source.contains("data-admin-table-card"));
+    assert!(source.contains("x-data=\"kvPage()\""));
+    assert!(source.contains("hx-get=\"/admin/partials/kv/table\""));
+    assert!(source.contains("hx-trigger=\"load, kv:refresh from:body\""));
 }
 
 #[test]

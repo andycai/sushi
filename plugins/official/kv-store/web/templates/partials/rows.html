@@ -8,24 +8,26 @@
  <tr data-row-search="{{ item.key }} {{ item.value }}" data-row-sort="{{ item.key }}">
  <td class="font-mono text-xs sm:text-sm">{{ item.key }}</td>
  <td class="font-mono text-xs sm:text-sm truncate max-w-xs">{{ item.value }}</td>
- <td class="actions">
+ <td class="actions text-right">
+ <div class="inline-flex items-center justify-end gap-2">
  <button
  type="button"
  data-key="{{ item.key }}"
  data-value="{{ item.value }}"
  @click="openEdit($el.dataset.key, $el.dataset.value)"
- class="btn btn-ghost btn-xs"
+ class="btn btn-outline btn-xs"
  >
  Edit
  </button>
  <button
  type="button"
  data-key="{{ item.key }}"
- class="btn btn-ghost btn-xs text-error hover:bg-error/10"
+ class="btn btn-outline btn-error btn-xs"
  @click="openDeleteConfirm($el.dataset.key)"
  >
  Delete
  </button>
+ </div>
  </td>
  </tr>
 {% else %}
