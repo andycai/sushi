@@ -1,7 +1,7 @@
-{% set tone = "success" %}
+{% set tone = "alert-success" %}
 {% if level == "error" %}
-  {% set tone = "danger" %}
+ {% set tone = "alert-error" %}
 {% endif %}
-<div class="ui-flash {{ tone }}" data-ui-flash data-level="{{ level }}" data-message="{{ message }}">
-  {{ message }}
+<div class="alert {{ tone }} shadow-sm" data-ui-flash data-level="{{ level }}" data-message="{{ message }}">
+ {{ message }}
 </div>

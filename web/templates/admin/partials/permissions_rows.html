@@ -1,33 +1,33 @@
 {% for permission in permissions %}
-  <tr
-    data-row-search="{{ permission.slug }} {{ permission.name }} {{ permission.module }} {{ permission.description }} roles:{{ permission.role_count }}"
-    data-row-sort="{{ permission.slug }}"
-    data-permission-id="{{ permission.id }}"
-    data-permission-slug="{{ permission.slug }}"
-    data-permission-name="{{ permission.name }}"
-    data-permission-module="{{ permission.module }}"
-    data-permission-description="{{ permission.description }}"
-    data-permission-role-count="{{ permission.role_count }}"
-    data-permission-system="{{ permission.is_system }}"
-  >
-    <td>
-      <div class="font-semibold">{{ permission.name }}</div>
-      <div class="ui-results-text ui-mono">{{ permission.slug }}</div>
-    </td>
-    <td><span class="ui-badge muted ui-mono">{{ permission.module }}</span></td>
-    <td>{{ permission.description | default(value="No description") }}</td>
-    <td><span class="ui-badge info">{{ permission.role_count }} roles</span></td>
-    <td class="actions">
-      <button type="button" class="ui-action-link" @click="openEdit($el.closest('tr').dataset)">Edit</button>
-      {% if permission.is_system %}
-        <span class="ui-badge muted">System</span>
-      {% else %}
-        <button type="button" class="ui-action-link danger" @click="openDelete($el.closest('tr').dataset)">Delete</button>
-      {% endif %}
-    </td>
-  </tr>
+ <tr
+ data-row-search="{{ permission.slug }} {{ permission.name }} {{ permission.module }} {{ permission.description }} roles:{{ permission.role_count }}"
+ data-row-sort="{{ permission.slug }}"
+ data-permission-id="{{ permission.id }}"
+ data-permission-slug="{{ permission.slug }}"
+ data-permission-name="{{ permission.name }}"
+ data-permission-module="{{ permission.module }}"
+ data-permission-description="{{ permission.description }}"
+ data-permission-role-count="{{ permission.role_count }}"
+ data-permission-system="{{ permission.is_system }}"
+ >
+ <td>
+ <div class="font-semibold">{{ permission.name }}</div>
+ <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">{{ permission.slug }}</div>
+ </td>
+ <td><span class="badge badge-ghost font-mono text-xs sm:text-sm">{{ permission.module }}</span></td>
+ <td>{{ permission.description | default(value="No description") }}</td>
+ <td><span class="badge badge-info">{{ permission.role_count }} roles</span></td>
+ <td class="actions">
+ <button type="button" class="btn btn-ghost btn-xs" @click="openEdit($el.closest('tr').dataset)">Edit</button>
+ {% if permission.is_system %}
+ <span class="badge badge-ghost">System</span>
+ {% else %}
+ <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10" @click="openDelete($el.closest('tr').dataset)">Delete</button>
+ {% endif %}
+ </td>
+ </tr>
 {% else %}
-  <tr>
-    <td colspan="5" class="ui-empty">No permissions found.</td>
-  </tr>
+ <tr>
+ <td colspan="5" class="text-center py-6 text-sm text-base-content/60">No permissions found.</td>
+ </tr>
 {% endfor %}

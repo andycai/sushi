@@ -21,24 +21,24 @@ function M.register(deps)
         method = "GET",
         path = "/admin/partials/kv/table",
         handler = deps.admin.table_partial,
-        policy = "admin.kv.read",
+        policy = "admin.kv.manage",
     })
     register_api_route({
         method = "POST",
         path = "/admin/partials/kv/upsert",
         handler = deps.admin.upsert_partial,
-        policy = "admin.kv.write",
+        policy = "admin.kv.manage",
     })
     register_api_route({
         method = "POST",
         path = "/admin/partials/kv/delete",
         handler = deps.admin.delete_partial,
-        policy = "admin.kv.write",
+        policy = "admin.kv.manage",
     })
 
     sushi.web.page("/admin/kv", "plugins/official/kv-store/kv.html", {
         title = "KV Store",
-        policy = "admin.kv.read",
+        policy = "admin.kv.manage",
         assets = { bundles = { "workspace" } },
     })
 

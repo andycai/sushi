@@ -10,27 +10,27 @@
   x-data="cmsPage()"
   x-init="init()"
 >
-  <header class="cms-top-nav ui-card" data-cms-top-nav>
+  <header class="cms-top-nav card border border-base-300 bg-base-100 shadow-sm" data-cms-top-nav>
     <div class="cms-top-nav-left">
-      <h1 class="ui-title">CMS workspace</h1>
-      <p class="ui-subtitle">Editorial workbench for pages, posts, and categories.</p>
+      <h1 class="text-3xl font-bold tracking-tight">CMS workspace</h1>
+      <p class="text-sm text-base-content/70">Editorial workbench for pages, posts, and categories.</p>
     </div>
 
     <nav class="cms-top-nav-center" aria-label="CMS navigation">
-      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('overview') }" @click="goOverview()">Overview</button>
-      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('posts') }" @click="goLibrary('posts')">Posts</button>
-      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('pages') }" @click="goLibrary('pages')">Pages</button>
-      <button type="button" class="ui-btn ui-btn-ghost" :class="{ 'is-active': isNavActive('categories') }" @click="goLibrary('categories')">Categories</button>
+      <button type="button" class="btn btn-sm btn-ghost" :class="{ 'is-active': isNavActive('overview') }" @click="goOverview()">Overview</button>
+      <button type="button" class="btn btn-sm btn-ghost" :class="{ 'is-active': isNavActive('posts') }" @click="goLibrary('posts')">Posts</button>
+      <button type="button" class="btn btn-sm btn-ghost" :class="{ 'is-active': isNavActive('pages') }" @click="goLibrary('pages')">Pages</button>
+      <button type="button" class="btn btn-sm btn-ghost" :class="{ 'is-active': isNavActive('categories') }" @click="goLibrary('categories')">Categories</button>
     </nav>
 
     <div class="cms-top-nav-right">
-      <button type="button" class="ui-btn ui-btn-secondary" @click="openCommandPalette()" title="Cmd/Ctrl+K">Command</button>
-      <button type="button" class="ui-btn ui-btn-primary" @click="openEditor('posts', 'new')">New Post</button>
-      <button type="button" class="ui-btn ui-btn-primary" @click="openEditor('pages', 'new')">New Page</button>
+      <button type="button" class="btn btn-sm btn-outline" @click="openCommandPalette()" title="Cmd/Ctrl+K">Command</button>
+      <button type="button" class="btn btn-sm btn-primary" @click="openEditor('posts', 'new')">New Post</button>
+      <button type="button" class="btn btn-sm btn-primary" @click="openEditor('pages', 'new')">New Page</button>
     </div>
   </header>
 
-  <div id="cms-feedback" class="ui-feedback"></div>
+  <div id="cms-feedback" class="space-y-2"></div>
   <div id="cms-toast-stack" class="cms-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
   <section

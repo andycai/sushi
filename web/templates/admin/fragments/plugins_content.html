@@ -1,86 +1,88 @@
 <section class="admin-module" data-admin-workspace-module="plugins" x-data="pluginsPage()">
-  <div class="ui-page-header">
-    <div>
-      <h1 class="ui-title">Plugin Registry</h1>
-      <p class="ui-subtitle">Inspect plugin manifests, granted capabilities, and runtime load status.</p>
-    </div>
-    <div class="ui-toolbar">
-      <div class="ui-table-search">
-        <input
-          type="text"
-          class="ui-input"
-          placeholder="Search by name, version, permission..."
-          x-model="table.query"
-          @input.debounce.150ms="applySearch()"
-        >
-      </div>
-      <span class="ui-badge muted" x-text="lastUpdated ? `Updated ${lastUpdated}` : 'Not loaded yet'"></span>
-      <button
-        type="button"
-        class="ui-btn ui-btn-secondary"
-        hx-get="/admin/partials/plugins/table"
-        hx-target="#plugins-table-body"
-        hx-swap="innerHTML"
-      >
-        Refresh
-      </button>
-    </div>
-  </div>
+ <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <h1 class="text-3xl font-bold tracking-tight">Plugin Registry</h1>
+ <p class="text-sm text-base-content/70">Inspect plugin manifests, granted capabilities, and runtime load status.</p>
+ </div>
+ <div class="flex flex-wrap items-center gap-2">
+ <div class="w-full sm:w-auto">
+ <input
+ type="text"
+ class="input input-bordered w-full"
+ placeholder="Search by name, version, permission..."
+ x-model="table.query"
+ @input.debounce.150ms="applySearch()"
+ >
+ </div>
+ <span class="badge badge-ghost" x-text="lastUpdated ? `Updated ${lastUpdated}` : 'Not loaded yet'"></span>
+ <button
+ type="button"
+ class="btn btn-sm btn-outline"
+ hx-get="/admin/partials/plugins/table"
+ hx-target="#plugins-table-body"
+ hx-swap="innerHTML"
+ >
+ Refresh
+ </button>
+ </div>
+ </div>
 
-  <div class="ui-callout mb-3">
-    Enable database permission only for plugins that require direct data access.
-  </div>
+ <div class="alert alert-info mb-3">
+ Enable database permission only for plugins that require direct data access.
+ </div>
 
-  <section class="ui-card">
-    <header class="ui-card-header">
-      <h2 class="text-lg font-semibold">Installed plugins</h2>
-      <div class="ui-toolbar">
-        <select class="ui-select ui-select-compact" x-model="table.sortMode" @change="setSortMode()">
-          <option value="default">Default order</option>
-          <option value="alpha_asc">Name A-Z</option>
-          <option value="alpha_desc">Name Z-A</option>
-        </select>
-        <select class="ui-select ui-select-compact" x-model.number="table.pageSize" @change="setPageSize()">
-          <template x-for="size in table.pageSizeOptions" :key="size">
-            <option :value="size" x-text="`${size}/page`"></option>
-          </template>
-        </select>
-        <div class="ui-page-controls">
-          <button type="button" class="ui-btn ui-btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
-          <span class="ui-results-text" x-text="`Page ${table.page}/${table.totalPages}`"></span>
-          <button type="button" class="ui-btn ui-btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
-        </div>
-        <span class="ui-results-text" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
-        <span class="ui-badge info">Lua modules</span>
-      </div>
-    </header>
-    <div class="ui-table-wrap">
-      <table class="ui-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Version</th>
-            <th>Description</th>
-            <th>Permissions</th>
-            <th class="text-center">Status</th>
-            <th class="actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody
-          id="plugins-table-body"
-          hx-get="/admin/partials/plugins/table"
-          hx-trigger="load, plugins:refresh from:body"
-          hx-swap="innerHTML"
-          x-on:htmx:after-swap.camel="markLoaded()"
-        >
-          <tr>
-            <td colspan="6" class="ui-empty">Loading plugin inventory...</td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="ui-empty" x-show="table.emptyFiltered" style="display:none">
-        No plugins match the current keyword.
-      </div>
-    </div>
-  </section>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Installed plugins</h2>
+ <div class="w-full lg:w-auto overflow-x-auto">
+ <div class="flex w-max items-center gap-2 whitespace-nowrap pb-1">
+ <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
+ <option value="default">Default order</option>
+ <option value="alpha_asc">Name A-Z</option>
+ <option value="alpha_desc">Name Z-A</option>
+ </select>
+ <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
+ <template x-for="size in table.pageSizeOptions" :key="size">
+ <option :value="size" x-text="`${size}/page`"></option>
+ </template>
+ </select>
+ <div class="join join-horizontal">
+ <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+ <span class="btn btn-sm btn-ghost pointer-events-none" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+ <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+ </div>
+ <span class="text-xs text-base-content/60 whitespace-nowrap" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+ <span class="badge badge-info">Lua modules</span>
+ </div>
+ </div>
+ </header>
+ <div class="overflow-x-auto">
+ <table class="table table-zebra">
+ <thead>
+ <tr>
+ <th>Name</th>
+ <th>Version</th>
+ <th>Description</th>
+ <th>Permissions</th>
+ <th class="text-center">Status</th>
+ <th class="actions">Actions</th>
+ </tr>
+ </thead>
+ <tbody
+ id="plugins-table-body"
+ hx-get="/admin/partials/plugins/table"
+ hx-trigger="load, plugins:refresh from:body"
+ hx-swap="innerHTML"
+ x-on:htmx:after-swap.camel="markLoaded()"
+ >
+ <tr>
+ <td colspan="6" class="text-center py-6 text-sm text-base-content/60">Loading plugin inventory...</td>
+ </tr>
+ </tbody>
+ </table>
+ <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
+ No plugins match the current keyword.
+ </div>
+ </div>
+ </section>
 </section>

@@ -80,6 +80,11 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
     let mut router: Router<SushiContext> = Router::new()
         .merge(static_router)
         .merge(favicon_router)
+        .route("/", get(axum::response::Redirect::temporary("/admin/")))
+        .route(
+            "/index.html",
+            get(axum::response::Redirect::temporary("/admin/")),
+        )
         .route(
             "/admin-login",
             get(login::login_page).post(login::login_submit),
@@ -325,8 +330,8 @@ async fn admin_auth_middleware(
     let path = req.uri().path().to_string();
     let method = req.method().as_str().to_string();
 
-    // Redirect /admin (no trailing slash) to /admin/ (with trailing slash)
-    if path == "/admin" {
+    // Redirect top-level and /admin root paths to canonical admin entry.
+    if path == "/" || path == "/index.html" || path == "/admin" {
         return axum::response::Redirect::temporary("/admin/").into_response();
     }
 

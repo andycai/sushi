@@ -1,50 +1,58 @@
 <section class="admin-module" data-admin-workspace-module="dashboard" x-data="adminApp()">
-  <div class="ui-page-header">
-    <div>
-      <h1 class="ui-title">Operations Dashboard</h1>
-      <p class="ui-subtitle">High-level runtime posture across plugins, identity, and data surfaces.</p>
-    </div>
-    <div class="ui-toolbar">
-      <span class="ui-badge info">Control plane</span>
-      <span class="ui-badge muted" x-text="`Updated ${pulse}`"></span>
-      <button type="button" class="ui-btn ui-btn-secondary" @click="refreshPulse()">Refresh pulse</button>
-    </div>
-  </div>
+ <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+ <div class="space-y-1">
+ <h1 class="text-3xl font-bold tracking-tight">Operations Dashboard</h1>
+ <p class="text-sm text-base-content/70">High-level runtime posture across plugins, identity, and data surfaces.</p>
+ </div>
+ <div class="flex flex-wrap items-center gap-2">
+ <span class="badge badge-info badge-outline">Control plane</span>
+ <span class="badge badge-ghost" x-text="`Updated ${pulse}`"></span>
+ <button type="button" class="btn btn-outline btn-sm" @click="refreshPulse()">Refresh pulse</button>
+ </div>
+ </div>
 
-  <section class="ui-grid-kpi">
-    <article class="ui-kpi">
-      <div class="ui-kpi-label">Plugins loaded</div>
-      <div class="ui-kpi-value" x-text="stats.plugins"></div>
-      <div class="ui-kpi-note">Active Lua runtime modules</div>
-    </article>
-    <article class="ui-kpi">
-      <div class="ui-kpi-label">Total users</div>
-      <div class="ui-kpi-value" x-text="stats.users"></div>
-      <div class="ui-kpi-note">Accounts in identity store</div>
-    </article>
-    <article class="ui-kpi">
-      <div class="ui-kpi-label">Session uptime</div>
-      <div class="ui-kpi-value" x-text="stats.uptime"></div>
-      <div class="ui-kpi-note">Current admin session signal</div>
-    </article>
-    <article class="ui-kpi">
-      <div class="ui-kpi-label">Mode</div>
-      <div class="ui-kpi-value">Protected</div>
-      <div class="ui-kpi-note">Admin role required for panel actions</div>
-    </article>
-  </section>
+ <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+ <article class="card border border-base-300 bg-base-100 shadow-sm">
+ <div class="card-body gap-1">
+ <div class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/60">Plugins loaded</div>
+ <div class="text-3xl font-bold" x-text="stats.plugins"></div>
+ <div class="text-sm text-base-content/70">Active Lua runtime modules</div>
+ </div>
+ </article>
+ <article class="card border border-base-300 bg-base-100 shadow-sm">
+ <div class="card-body gap-1">
+ <div class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/60">Total users</div>
+ <div class="text-3xl font-bold" x-text="stats.users"></div>
+ <div class="text-sm text-base-content/70">Accounts in identity store</div>
+ </div>
+ </article>
+ <article class="card border border-base-300 bg-base-100 shadow-sm">
+ <div class="card-body gap-1">
+ <div class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/60">Session uptime</div>
+ <div class="text-3xl font-bold" x-text="stats.uptime"></div>
+ <div class="text-sm text-base-content/70">Current admin session signal</div>
+ </div>
+ </article>
+ <article class="card border border-base-300 bg-base-100 shadow-sm">
+ <div class="card-body gap-1">
+ <div class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/60">Mode</div>
+ <div class="text-3xl font-bold">Protected</div>
+ <div class="text-sm text-base-content/70">Admin role required for panel actions</div>
+ </div>
+ </article>
+ </section>
 
-  <section class="ui-card mt-4">
-    <header class="ui-card-header">
-      <h2 class="text-lg font-semibold">Next recommended actions</h2>
-      <span class="ui-badge warn">Prioritized</span>
-    </header>
-    <div class="ui-card-body">
-      <ul class="list-disc pl-5 space-y-2 text-sm text-slate-700">
-        <li>Review plugin permission assignments before enabling new modules.</li>
-        <li>Rotate administrator credentials periodically from the Users page.</li>
-        <li>Use KV Store for runtime flags and ensure key naming standards.</li>
-      </ul>
-    </div>
-  </section>
+ <section class="card mt-4 border border-base-300 bg-base-100 shadow-sm">
+ <div class="card-body">
+ <header class="mb-2 flex flex-wrap items-center justify-between gap-2">
+ <h2 class="text-lg font-semibold">Next recommended actions</h2>
+ <span class="badge badge-warning badge-outline">Prioritized</span>
+ </header>
+ <ul class="list-disc space-y-2 pl-5 text-sm text-base-content/80">
+ <li>Review plugin permission assignments before enabling new modules.</li>
+ <li>Rotate administrator credentials periodically from the Users page.</li>
+ <li>Use KV Store for runtime flags and ensure key naming standards.</li>
+ </ul>
+ </div>
+ </section>
 </section>

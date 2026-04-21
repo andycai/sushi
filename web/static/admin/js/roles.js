@@ -156,7 +156,7 @@
             const targetNode = document.querySelector(target);
             if (targetNode) {
               targetNode.innerHTML =
-                '<div class="ui-state-panel danger">Unable to load role permissions.</div>';
+                '<div class="rounded-box border border-error/40 bg-error/10 px-4 py-3 text-sm text-error">Unable to load role permissions.</div>';
             }
           });
       },

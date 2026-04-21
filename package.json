@@ -1,0 +1,13 @@
+{
+  "name": "sushi-web-assets",
+  "private": true,
+  "scripts": {
+    "css:build": "tailwindcss -i ./web/static/css/input.css -o ./web/static/css/style.css --minify",
+    "css:watch": "tailwindcss -i ./web/static/css/input.css -o ./web/static/css/style.css --minify --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.14",
+    "daisyui": "^5.3.0",
+    "tailwindcss": "^4.1.14"
+  }
+}

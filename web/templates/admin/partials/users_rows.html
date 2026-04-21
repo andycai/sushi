@@ -1,32 +1,32 @@
 {% for u in users %}
-  <tr data-row-search="{{ u.id }} {{ u.username }} {{ u.email }} {{ u.role }}" data-row-sort="{{ u.username }}">
-    <td class="ui-mono">{{ u.id }}</td>
-    <td class="font-semibold">{{ u.username }}</td>
-    <td>{{ u.email }}</td>
-    <td>
-      {% if u.role == "admin" %}
-        <span class="ui-badge warn">admin</span>
-      {% elif u.role == "editor" %}
-        <span class="ui-badge info">editor</span>
-      {% elif u.role == "viewer" %}
-        <span class="ui-badge muted">viewer</span>
-      {% else %}
-        <span class="ui-badge muted ui-mono">{{ u.role }}</span>
-      {% endif %}
-    </td>
-    <td class="actions">
-      <button
-        type="button"
-        data-username="{{ u.username }}"
-        class="ui-action-link danger"
-        @click="openDeleteConfirm({{ u.id }}, $el.dataset.username)"
-      >
-        Delete
-      </button>
-    </td>
-  </tr>
+ <tr data-row-search="{{ u.id }} {{ u.username }} {{ u.email }} {{ u.role }}" data-row-sort="{{ u.username }}">
+ <td class="font-mono text-xs sm:text-sm">{{ u.id }}</td>
+ <td class="font-semibold">{{ u.username }}</td>
+ <td>{{ u.email }}</td>
+ <td>
+ {% if u.role == "admin" %}
+ <span class="badge badge-warning">admin</span>
+ {% elif u.role == "editor" %}
+ <span class="badge badge-info">editor</span>
+ {% elif u.role == "viewer" %}
+ <span class="badge badge-ghost">viewer</span>
+ {% else %}
+ <span class="badge badge-ghost font-mono text-xs sm:text-sm">{{ u.role }}</span>
+ {% endif %}
+ </td>
+ <td class="actions">
+ <button
+ type="button"
+ data-username="{{ u.username }}"
+ class="btn btn-ghost btn-xs text-error hover:bg-error/10"
+ @click="openDeleteConfirm({{ u.id }}, $el.dataset.username)"
+ >
+ Delete
+ </button>
+ </td>
+ </tr>
 {% else %}
-  <tr>
-    <td colspan="5" class="ui-empty">No users found. Create one to get started.</td>
-  </tr>
+ <tr>
+ <td colspan="5" class="text-center py-6 text-sm text-base-content/60">No users found. Create one to get started.</td>
+ </tr>
 {% endfor %}
