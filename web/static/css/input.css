@@ -1,14 +1,6 @@
-/* 引入 Tailwind v4 */
 @import "tailwindcss";
+@plugin "daisyui";
 
-/* 引入 daisyUI (直接指向 CDN 或你下载到本地的 CSS 文件) */
-@plugin "../web/js/daisyui.js";
-
-/* 配置扫描路径 (v4 默认自动扫描，但 Lua 这种特殊后缀需要手动指定) */
-@source "../web/**/*.html";
-@source "../plugins/**/*.html";
-
-/* 定义主题（可选，v4 的推荐做法） */
-@theme {
-  --color-primary: var(--p); /* 让 Tailwind 能识别 daisyUI 的变量 */
-}
+/* Paths are resolved relative to this file: web/static/css/input.css */
+@source "../../templates/**/*.html";
+@source "../../../plugins/**/web/templates/**/*.html";
