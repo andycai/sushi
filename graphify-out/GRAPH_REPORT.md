@@ -732,9 +732,9 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `get()` connect `Community 0` to `Community 2`, `Community 4`, `Community 29`?**
-  _High betweenness centrality (0.021) - this node is a cross-community bridge._
-- **Why does `getPane()` connect `Community 18` to `Community 0`?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
+- **Why does `ae()` connect `Community 0` to `Community 1`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Why does `has()` connect `Community 0` to `Community 10`, `Community 2`, `Community 4`, `Community 29`?**
   _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
