@@ -1547,6 +1547,28 @@ async fn admin_requires_auth_without_token() {
 }
 
 #[tokio::test]
+async fn root_path_redirects_to_admin_root() {
+    let app = build_app(None).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(location, Some("/admin/"));
+}
+
+#[tokio::test]
 async fn workspace_route_requires_auth_without_token() {
     let app = build_app(None).await;
 
