@@ -2114,6 +2114,8 @@ async fn standard_login_submit_returns_login_template_error_for_invalid_credenti
     let html = String::from_utf8_lossy(&body);
     assert!(html.contains("Invalid credentials"), "html: {html}");
     assert!(html.contains("id=\"login-form\""), "html: {html}");
+    assert!(html.contains("data-admin-login-shell"), "html: {html}");
+    assert!(html.contains("data-enterprise-trust-panel"), "html: {html}");
 }
 
 #[tokio::test]
@@ -2619,11 +2621,6 @@ fn login_template_includes_enterprise_shell_markers() {
     assert!(
         html.contains("data-admin-login-shell"),
         "login template missing admin login shell marker: {}",
-        template_path.display()
-    );
-    assert!(
-        html.contains("id=\"login-form\""),
-        "login template missing login form id contract: {}",
         template_path.display()
     );
     assert!(
