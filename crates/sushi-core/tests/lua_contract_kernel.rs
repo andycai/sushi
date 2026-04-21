@@ -1,6 +1,23 @@
+use sushi_core::auth::jwt::JwtService;
+use sushi_core::config::{ConfigStore, SushiConfig};
+use sushi_core::context::SushiContext;
+use sushi_core::lua::bindings::inject_sushi_api;
 use sushi_core::lua::contract::{ContractSchemaVersion, LuaCapabilityContract};
 use sushi_core::lua::permission::engine::{CapabilityKind, PermissionDecisionEngine};
+use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::{DatabasePermission, Permissions};
+use sushi_core::storage::sqlite::SqliteStorage;
+use sushi_core::web::template_service::TemplateService;
+
+async fn make_test_context() -> (SushiContext, tempfile::TempDir) {
+    let config = ConfigStore::new(SushiConfig::default());
+    let db = SqliteStorage::new_in_memory().await.unwrap();
+    let jwt = JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800);
+    let templates_dir = tempfile::tempdir().unwrap();
+    let templates = TemplateService::new(templates_dir.path()).unwrap();
+    let ctx = SushiContext::new(config, db, jwt, templates);
+    (ctx, templates_dir)
+}
 
 #[test]
 fn contract_kernel_exports_v2_types() {
@@ -81,4 +98,18 @@ fn db_write_visibility_requires_write_or_admin() {
         true,
     );
     assert!(admin_db.is_visible(CapabilityKind::DbWrite));
+}
+
+#[tokio::test]
+async fn unauthorized_api_namespace_is_not_injected() {
+    let lua = create_sandboxed_vm().unwrap();
+    let (ctx, _templates_dir) = make_test_context().await;
+
+    inject_sushi_api(&lua, &ctx, &Permissions::default())
+        .await
+        .expect("lua bindings should inject into sandbox vm");
+
+    let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
+    assert!(!sushi.contains_key("api").unwrap());
+    assert!(sushi.contains_key("capability").unwrap());
 }

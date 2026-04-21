@@ -217,6 +217,11 @@ pub async fn inject_sushi_api(
     permissions: &Permissions,
 ) -> Result<(), mlua::Error> {
     let sushi = lua.create_table()?;
+    sushi.set("__contract_registry", lua.create_table()?)?;
+    lua.globals().set("sushi", sushi.clone())?;
+    crate::lua::injector::inject(lua, permissions.clone(), true)?;
+
+    let sushi: mlua::Table = lua.globals().get("sushi")?;
 
     // sushi.__handlers — stores actual handler functions keyed by unique ID
     let handlers_table = lua.create_table()?;
