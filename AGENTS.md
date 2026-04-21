@@ -241,50 +241,65 @@ Rules:
 <claude-mem-context>
 # Memory Context
 
-# [sushi] recent context, 2026-04-21 2:22pm GMT+8
+# [sushi] recent context, 2026-04-21 7:53pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 34 obs (9,034t read) | 67,082t work | 87% savings
+Stats: 50 obs (14,231t read) | 411,319t work | 97% savings
 
-### Apr 20, 2026
-1 9:14a 🟣 Plugin Governance Runtime Control Feature Branch Active
-2 " 🟣 Plugin Disabled State Returns HTTP 403 Forbidden
-3 9:15a 🔵 Plugin System Architecture: Runtime Governance Model V1
-4 " 🔴 Missing Plugin State Migration in file_browser Plugin Test
-5 9:16a ✅ Runtime Governance Control Model Documented
-6 9:17a 🔵 File Browser Test Missing Migration Setup
-7 9:18a 🔴 Fixed file_browser Test Missing Database Migrations
-8 " 🔴 All Workspace Tests Pass After Migration Fix
-9 9:20a 🔵 Task 8 spec compliance review scope confirmed
-10 " 🔵 Task 8 plan requirements extracted from plan document
-11 9:21a 🔵 Task 8 detailed acceptance criteria from plan
-12 " ✅ Commit 375f0a0 doc changes fully verified against plan spec
-13 " ✅ Task 7 Code Quality Review Approved
-14 " ✅ Commit 13b6fc4 adds governance schema bootstrap to test gate
-15 9:22a 🔵 Governance control model confirmed present in both doc files
-16 " 🔵 sushi-core test gate PASS - 167 tests
-17 " 🔵 Full workspace test gate PASS - all packages green
-18 9:23a 🔵 Task 8 complete compliance verification - all artifacts confirmed
-19 " ⚖️ Task 8 Spec Compliance Approved
-20 9:24a ⚖️ Task 8 Both Gates Approved
-21 9:28a 🟣 Plugin Governance Runtime Control Feature Complete Scope
-22 9:37a ✅ Feature Branch Reset to Clean State
-23 9:38a 🟣 Plugin Governance Runtime Control Merged to Main
 ### Apr 21, 2026
-38 1:44p 🔵 Rust-Lua Export Interface Architecture Analysis
-39 " 🔵 Sushi Platform Architecture Overview
-40 1:45p 🔵 Current Lua Binding Architecture in bindings.rs
-41 " 🔵 Plugin Permission Model Architecture
-42 " 🔵 Plugin Loading and Permission Flow Architecture
-43 1:46p 🔵 Policy Scope Validation and Registration Flow
-44 " 🔵 Plugin Authoring Standards Document
-45 " 🔵 Plugin Governance Design Document (2026-04-19)
-46 " 🔵 Current Lua API Surface Summary
-47 " 🔵 Plugin System Architecture Overview
-48 2:13p 🟣 Architecture exploration for stable Lua plugin API
+145 5:16p 🟣 Permission gate regression tests all passing
+146 5:17p 🟣 Permission gate enforcement committed to sushi-core
+147 5:18p 🔴 Task 6 Permission Fix Committed - Loader Now Enforces Permission Gates
+148 5:21p 🟣 Task 6 spec compliance verified: web/db/event/fs adapters integrated
+149 5:22p 🟣 Task 6 complete: web/db/event/fs Lua contract adapters integrated with permission gates
+150 5:25p 🔴 Task 6 Permission Gate Fix Committed and Fully Approved
+151 5:26p 🔄 Tasks 1-6 Complete - Task 7 Dispatched for Official Plugin Migration
+152 5:27p 🔄 Task 7: Migrate kv-store and file-browser Lua plugins to contract registration
+153 5:28p 🔄 Task 7: Added failing test assertions for kv and file-browser contract migration
+154 5:29p 🔵 Task 7: Fail-first test running for kv bootstrap contract migration
+155 " 🔄 Task 7: TDD fail-first tests confirmed failing as expected
+156 5:30p 🔄 Task 7: Migrated both Lua bootstrap files to contract registration
+157 " 🔄 Task 7: kv-store contract migration test passes
+158 5:31p 🔄 Task 7: All tests pass confirming successful migration
+159 " 🔄 Task 7: Final state before commit - all files migrated and tests passing
+160 5:32p 🔄 Task 7 COMPLETED: Committed kv and file-browser contract registration migration
+161 " 🔄 Task 7 FINAL STATUS: All work completed and committed
+162 5:33p 🔄 Task 7 Complete - KV Store and File Browser Migrated to Contract Registration
+163 5:35p 🔄 Sushi plugin bootstrap contract registration migration
+164 5:37p 🔴 Task 7 Fix Dispatched - Restore Route Coverage Assertions
+165 " 🔄 Task 7: Migrate kv-store and file-browser plugins to contract registration
+166 " 🔄 Added TDD assertions for contract registration in loader tests
+167 5:39p 🔵 kv-store plugin already uses contract registration
+168 " 🔵 Both plugins already migrated to contract registration
+169 5:40p 🔄 Task 7 complete: loader tests committed with route coverage assertions
+170 5:44p 🔴 Task 7 verification: KV and File-Browser plugin contract migration complete
+171 5:47p 🔵 kv-store bootstrap handler patterns verified
+172 5:48p 🔄 Task 7 completed with second commit adding file-browser route coverage
+173 5:49p 🔄 KV store and file-browser migrated to capability.register
+174 5:50p 🔄 Contract bootstrap tests completed with full route coverage
+175 " 🔵 Contract API schema supports public routes via boolean flag
+176 5:53p 🔵 Task 7 Final Code Review Scope Defined
+177 5:54p 🔄 Plugin registration migrated to capability-based contract pattern
+178 5:55p 🔵 kv-store and file-browser interface handlers verified
+179 5:56p 🔴 Template service integration test failing - alpine.js version mismatch
+180 5:57p 🔄 Simplified loader tests to component-wise assertions
+181 5:59p 🔄 Task 7 refactored tests to component-wise assertions
+185 6:04p 🔴 Test contract enforcement strengthened with combined method-path assertions
+186 6:05p 🔴 Task 7 test fix committed: method-path contract coverage enforced
+187 6:07p 🟣 Contract-based plugin registration enforced with comprehensive route coverage tests
+188 " 🔵 base_template_uses_local_assets_only test fails — Alpine.js version string mismatch
+189 6:11p 🟣 **kv-store and file-browser migrated to contract registration API**
+190 6:12p 🔄 CMS plugin migrated to contract registration
+191 6:16p ✅ Added cms_bootstrap_uses_contract_registration test to loader.rs
+192 6:18p 🔄 CMS bootstrap migrated to contract registration
+193 6:19p 🔵 cms_plugin_behavior test needs update for contract format
+194 " ✅ Updated cms_plugin_behavior test for contract format
+195 " 🔵 Contract registration tests pass
+196 6:20p 🟣 Task 9: CMS Official Plugin Bootstrap Migration Complete
+197 " 🟣 Task 9 Complete - CMS Plugin Contract Migration
 
-Access 67k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 411k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
