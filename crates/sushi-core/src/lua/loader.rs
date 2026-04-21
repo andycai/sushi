@@ -1167,8 +1167,10 @@ end)
         ));
         assert!(source.contains("method = \"DELETE\""));
         assert!(source.contains("path = \"/api/kv/*\""));
+        assert!(source.contains("handler = deps.api.delete_dispatch"));
         assert!(source.contains("policy = \"api.kv.delete\""));
         assert!(source.contains("path = \"/admin/partials/kv/upsert\""));
+        assert!(source.contains("handler = deps.admin.upsert_partial"));
         assert!(source.contains("policy = \"admin.kv.write\""));
     }
 
@@ -1224,6 +1226,9 @@ end)
         assert!(!source.contains("sushi.api.route("));
         assert!(source.contains("definition.public = true"));
         assert!(source.contains(
+            "register_public_route({ method = \"GET\", path = \"/app/files\", handler = app.page })"
+        ));
+        assert!(source.contains(
             "register_public_route({ method = \"GET\", path = \"/app/files/list/*\", handler = app.list_partial })"
         ));
         assert!(source.contains(
@@ -1234,6 +1239,15 @@ end)
         ));
         assert!(source.contains(
             "register_public_route({ method = \"POST\", path = \"/app/files/create-text\", handler = app.create_text })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"POST\", path = \"/app/files/create-dir\", handler = app.create_dir })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"POST\", path = \"/app/files/rename\", handler = app.rename_entry })"
+        ));
+        assert!(source.contains(
+            "register_public_route({ method = \"POST\", path = \"/app/files/delete\", handler = app.delete_entry })"
         ));
         assert!(source.contains(
             "register_public_route({ method = \"POST\", path = \"/app/files/upload/*\", handler = app.upload_file })"
