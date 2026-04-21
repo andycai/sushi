@@ -82,9 +82,9 @@ fn base_template_uses_local_assets_only() {
     let svc = TemplateService::new(&templates_dir).unwrap();
     let html = svc.render("base.html", serde_json::json!({})).unwrap();
 
-    assert!(html.contains("alpine-3.15.11.js"));
-    assert!(html.contains("htmx.min-2.0.8.js"));
-    assert!(html.contains("tailwindcss-4.2.2.js"));
+    assert!(html.contains("js/alpine.min.js"));
+    assert!(html.contains("js/htmx.min.js"));
+    assert!(html.contains("css/style.css"));
     assert!(
         !html.contains("https://"),
         "base template should not reference https:// resources"
