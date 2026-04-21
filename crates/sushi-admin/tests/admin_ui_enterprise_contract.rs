@@ -22,6 +22,14 @@ fn base_shell_exposes_enterprise_landmarks() {
 }
 
 #[test]
+fn base_shell_has_nav_and_stage_regions() {
+    let source = read("web/templates/base.html");
+    assert!(source.contains("data-admin-nav-section=\"primary\""));
+    assert!(source.contains("data-admin-nav-section=\"system\""));
+    assert!(source.contains("data-admin-workspace-stage"));
+}
+
+#[test]
 fn core_admin_fragments_expose_page_header_contract() {
     let files = [
         "web/templates/admin/fragments/dashboard_content.html",

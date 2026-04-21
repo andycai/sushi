@@ -7,11 +7,11 @@
 
 @layer components {
   .admin-shell {
-    @apply min-h-screen bg-base-200/60 text-base-content lg:flex;
+    @apply min-h-screen bg-base-200 text-base-content lg:flex;
   }
 
   .admin-sidebar {
-    @apply w-full border-b border-base-300 bg-base-100/95 backdrop-blur lg:h-screen lg:w-80 lg:shrink-0 lg:border-r lg:border-b-0;
+    @apply w-full border-b border-base-300 bg-base-100/95 lg:h-screen lg:w-80 lg:shrink-0 lg:border-r lg:border-b-0;
   }
 
   .admin-brand {
@@ -97,15 +97,15 @@
   }
 
   .admin-main {
-    @apply min-w-0 flex-1 p-4 sm:p-5 lg:p-6;
+    @apply min-w-0 flex-1 px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6;
   }
 
   .admin-workspace {
-    @apply flex min-h-[70vh] flex-col gap-3;
+    @apply flex min-h-[72vh] flex-col gap-4;
   }
 
   .admin-workspace-tabs {
-    @apply flex flex-wrap items-center gap-1 rounded-lg border border-base-300 bg-base-100 p-1 shadow-sm;
+    @apply flex flex-wrap items-center gap-1.5 rounded-xl border border-base-300 bg-base-100 px-2 py-1.5 shadow-sm;
   }
 
   .admin-workspace-tab {
