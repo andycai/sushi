@@ -73,6 +73,34 @@ fn file_browser_template_exposes_workspace_bootstrap_contract() {
 }
 
 #[test]
+fn file_browser_workbench_uses_enterprise_workspace_semantics() {
+    let source = read("plugins/official/file-browser/web/templates/file_browser.html");
+    assert!(source.contains("data-enterprise-workbench=\"file-browser\""));
+    assert!(source.contains("data-admin-workspace-module=\"file-browser\""));
+    assert!(source.contains("data-admin-page-header"));
+    assert!(source.contains("data-admin-action-cluster"));
+}
+
+#[test]
+fn file_browser_fragments_preserve_hooks_and_enterprise_tone() {
+    let list = read("plugins/official/file-browser/web/templates/fragments/list.html");
+    assert!(list.contains("data-admin-table-card"));
+    assert!(list.contains("data-fb-list-root="));
+    assert!(list.contains("data-fb-node=\"1\""));
+    assert!(list.contains("data-fb-children-for="));
+
+    let editor = read("plugins/official/file-browser/web/templates/fragments/editor.html");
+    assert!(editor.contains("data-fb-action=\"refresh-list\""));
+    assert!(editor.contains("data-fb-action=\"save-form\""));
+    assert!(editor.contains("data-fb-action=\"download\""));
+
+    let flash = read("plugins/official/file-browser/web/templates/fragments/flash.html");
+    assert!(flash.contains("alert"));
+    assert!(flash.contains("role=\"alert\""));
+    assert!(flash.contains("{{ message }}"));
+}
+
+#[test]
 fn cms_workbench_uses_enterprise_workspace_semantics() {
     let source = read("plugins/official/cms/web/templates/cms.html");
     assert!(source.contains("data-enterprise-workbench=\"cms\""));
