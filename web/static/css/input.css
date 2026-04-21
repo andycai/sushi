@@ -6,12 +6,142 @@
 @source "../../../plugins/**/web/templates/**/*.html";
 
 @layer components {
+  .admin-shell {
+    @apply min-h-screen bg-base-200/60 text-base-content lg:flex;
+  }
+
+  .admin-sidebar {
+    @apply w-full border-b border-base-300 bg-base-100/95 backdrop-blur lg:h-screen lg:w-80 lg:shrink-0 lg:border-r lg:border-b-0;
+  }
+
+  .admin-brand {
+    @apply mx-4 mt-4 mb-3 flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 shadow-sm;
+  }
+
+  .admin-brand-logo {
+    @apply flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30;
+  }
+
+  .admin-brand-logo img {
+    @apply h-6 w-6;
+  }
+
+  .admin-brand-title {
+    @apply min-w-0;
+  }
+
+  .admin-brand-title strong {
+    @apply block truncate text-sm font-semibold;
+  }
+
+  .admin-brand-title span {
+    @apply block truncate text-xs text-base-content/60;
+  }
+
+  .admin-nav {
+    @apply flex h-[calc(100vh-6.5rem)] flex-col;
+  }
+
+  .admin-nav-list {
+    @apply flex-1 space-y-1 overflow-y-auto px-3 pb-3;
+  }
+
+  .nav-footer {
+    @apply border-t border-base-300 p-3;
+  }
+
+  .admin-nav-link {
+    @apply flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-base-content/75 transition-colors hover:bg-base-200 hover:text-base-content;
+  }
+
+  .admin-nav-link.active {
+    @apply bg-primary/12 text-primary ring-1 ring-primary/30;
+  }
+
+  .admin-nav-link.has-children {
+    @apply justify-between;
+  }
+
+  .admin-nav-icon {
+    @apply inline-flex h-4 w-4 shrink-0 items-center justify-center;
+  }
+
+  .admin-nav-label {
+    @apply truncate;
+  }
+
+  .admin-nav-arrow,
+  .nav-child-arrow {
+    @apply ml-auto text-xs text-base-content/40 transition-transform;
+  }
+
+  .admin-nav-arrow.expanded,
+  .nav-child-arrow.expanded {
+    @apply rotate-90;
+  }
+
+  .nav-children {
+    @apply mt-1 space-y-1 pl-3;
+  }
+
+  .nav-child-link {
+    @apply flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-base-content/70 transition-colors hover:bg-base-200 hover:text-base-content;
+  }
+
+  .nav-child-link.active {
+    @apply bg-base-300/80 text-base-content;
+  }
+
+  .nav-child-link.level-3 {
+    @apply pl-5;
+  }
+
+  .admin-main {
+    @apply min-w-0 flex-1 p-4 sm:p-5 lg:p-6;
+  }
+
+  .admin-workspace {
+    @apply flex min-h-[70vh] flex-col gap-3;
+  }
+
+  .admin-workspace-tabs {
+    @apply flex flex-wrap items-center gap-1 rounded-lg border border-base-300 bg-base-100 p-1 shadow-sm;
+  }
+
+  .admin-workspace-tab {
+    @apply inline-flex items-center gap-1 rounded-md border border-transparent pr-1;
+  }
+
+  .admin-workspace-tab.is-active {
+    @apply border-base-300 bg-base-200;
+  }
+
+  .admin-workspace-tab-trigger {
+    @apply btn btn-ghost btn-sm h-8 min-h-8 px-3;
+  }
+
+  .admin-workspace-tab.is-active .admin-workspace-tab-trigger {
+    @apply text-base-content;
+  }
+
+  .admin-workspace-tab-close {
+    @apply btn btn-ghost btn-xs text-base-content/55 hover:text-error;
+  }
+
+  .admin-workspace-panel {
+    @apply min-h-[60vh];
+  }
+
+  .admin-workspace-pane {
+    @apply h-full;
+  }
+
   .ui-toast-stack {
     @apply fixed bottom-4 right-4 z-[70] flex w-full max-w-sm flex-col gap-2;
   }
 
   .ui-toast {
-    @apply relative rounded-box border border-base-300 bg-base-100 p-3 shadow-lg;
+    @apply relative rounded-lg border border-base-300 bg-base-100 p-3 shadow-lg;
   }
 
   .ui-toast-title {
