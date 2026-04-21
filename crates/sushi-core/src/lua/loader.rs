@@ -20,6 +20,14 @@ mod admin_adapter;
 mod api_adapter;
 #[path = "adapters/cli.rs"]
 mod cli_adapter;
+#[path = "adapters/db.rs"]
+mod db_adapter;
+#[path = "adapters/event.rs"]
+mod event_adapter;
+#[path = "adapters/fs.rs"]
+mod fs_adapter;
+#[path = "adapters/web.rs"]
+mod web_adapter;
 
 /// A Lua-based plugin loaded from the filesystem.
 pub struct LuaPlugin {
@@ -611,6 +619,65 @@ async fn register_api_route_binding(
     Ok(())
 }
 
+async fn register_admin_page_binding(
+    ctx: &SushiContext,
+    policy_repo: &PolicyRepository,
+    plugin_name: &str,
+    allowed_policy_scopes: &[String],
+    path: &str,
+    title: &str,
+    handler_key: &str,
+    assets: PageResolvedAssets,
+    policy_key: Option<&str>,
+) -> Result<(), PluginError> {
+    if let Some(policy_key_value) = policy_key {
+        validate_policy_scope(
+            plugin_name,
+            &format!("page {path}"),
+            policy_key_value,
+            allowed_policy_scopes,
+        )?;
+        policy_repo
+            .upsert_plugin_http_binding("admin", "GET", path, policy_key_value, plugin_name)
+            .await
+            .map_err(|err| {
+                PluginError::InitFailed(format!(
+                    "failed to persist policy binding for page {path}: {err}"
+                ))
+            })?;
+    } else {
+        policy_repo
+            .delete_plugin_http_binding("admin", "GET", path, plugin_name)
+            .await
+            .map_err(|err| {
+                PluginError::InitFailed(format!(
+                    "failed to clear stale policy binding for page {path}: {err}"
+                ))
+            })?;
+    }
+
+    ctx.plugins
+        .register_admin_handler_with_assets_and_policy(
+            path,
+            plugin_name,
+            title,
+            handler_key,
+            assets,
+            policy_key,
+        )
+        .await;
+    tracing::debug!(
+        "plugin {} registered page {} ({}) (handler: {}, policy: {:?})",
+        plugin_name,
+        path,
+        title,
+        handler_key,
+        policy_key
+    );
+
+    Ok(())
+}
+
 #[async_trait]
 impl Plugin for LuaPlugin {
     fn name(&self) -> &str {
@@ -710,9 +777,14 @@ impl Plugin for LuaPlugin {
         });
 
         if let Ok(raw_registry) = sushi.get::<mlua::Table>("__contract_registry") {
-            // Parse all known surfaces even though Task 5 only consumes API routes.
+            // Parse all known surfaces for schema validation; API and web currently
+            // register runtime bindings from the contract snapshot path.
             let _ = admin_adapter::snapshot_from_lua(raw_registry.clone())?;
             let _ = cli_adapter::snapshot_from_lua(raw_registry.clone())?;
+            let _ = db_adapter::snapshot_from_lua(raw_registry.clone())?;
+            let _ = event_adapter::snapshot_from_lua(raw_registry.clone())?;
+            let _ = fs_adapter::snapshot_from_lua(raw_registry.clone())?;
+            let web_pages = web_adapter::snapshot_from_lua(lua, raw_registry.clone())?;
             let snapshot = api_adapter::snapshot_from_lua(lua, raw_registry)?;
 
             for route in snapshot.api_routes {
@@ -726,6 +798,21 @@ impl Plugin for LuaPlugin {
                     &route.handler_key,
                     route.policy.as_deref(),
                     route.public,
+                )
+                .await?;
+            }
+
+            for page in web_pages {
+                register_admin_page_binding(
+                    ctx,
+                    &policy_repo,
+                    plugin_name,
+                    allowed_policy_scopes,
+                    &page.path,
+                    &page.title,
+                    &page.handler_key,
+                    PageResolvedAssets::default(),
+                    page.policy.as_deref(),
                 )
                 .await?;
             }
@@ -823,37 +910,6 @@ impl Plugin for LuaPlugin {
                     let title: String = entry.get("title").unwrap_or_default();
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     let policy_key = parse_entry_policy(&entry, "page entry")?;
-                    if let Some(policy_key_value) = policy_key.as_deref() {
-                        validate_policy_scope(
-                            plugin_name,
-                            &format!("page {path}"),
-                            policy_key_value,
-                            allowed_policy_scopes,
-                        )?;
-                        policy_repo
-                            .upsert_plugin_http_binding(
-                                "admin",
-                                "GET",
-                                &path,
-                                policy_key_value,
-                                plugin_name,
-                            )
-                            .await
-                            .map_err(|err| {
-                                PluginError::InitFailed(format!(
-                                    "failed to persist policy binding for page {path}: {err}"
-                                ))
-                            })?;
-                    } else {
-                        policy_repo
-                            .delete_plugin_http_binding("admin", "GET", &path, plugin_name)
-                            .await
-                            .map_err(|err| {
-                                PluginError::InitFailed(format!(
-                                    "failed to clear stale policy binding for page {path}: {err}"
-                                ))
-                            })?;
-                    }
                     let (bundle_names, page_js, page_css) = parse_page_assets_entry(&entry)?;
                     let assets = resolve_page_assets(
                         &self.plugin_path_id,
@@ -864,24 +920,18 @@ impl Plugin for LuaPlugin {
                         &plugin_static_root,
                         &static_prefix,
                     )?;
-                    ctx.plugins
-                        .register_admin_handler_with_assets_and_policy(
-                            &path,
-                            plugin_name,
-                            &title,
-                            &handler_key,
-                            assets,
-                            policy_key.as_deref(),
-                        )
-                        .await;
-                    tracing::debug!(
-                        "plugin {} registered page {} ({}) (handler: {}, policy: {:?})",
+                    register_admin_page_binding(
+                        ctx,
+                        &policy_repo,
                         plugin_name,
-                        path,
-                        title,
-                        handler_key,
-                        policy_key
-                    );
+                        allowed_policy_scopes,
+                        &path,
+                        &title,
+                        &handler_key,
+                        assets,
+                        policy_key.as_deref(),
+                    )
+                    .await?;
                 }
             }
         }
