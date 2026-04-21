@@ -1,9 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    (function () {
+      var key = "sushi-theme";
+      var theme = "light";
+      try {
+        var stored = window.localStorage.getItem(key);
+        if (stored === "light" || stored === "dark") {
+          theme = stored;
+        }
+      } catch (_) {}
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <title>File Browser</title>
+  <link rel="stylesheet" href="{{ static_url_prefix }}/css/style.css">
   <link rel="stylesheet" href="{{ static_url_prefix }}/plugins/official/file-browser/file_browser.css?v={{ asset_version }}">
   <script defer src="{{ static_url_prefix }}/plugins/official/file-browser/file_browser.js?v={{ asset_version }}"></script>
   <script defer src="{{ static_url_prefix }}/js/alpine.min.js"></script>
@@ -32,6 +46,9 @@
 
         {% if has_roots %}
         <div class="flex flex-wrap items-center gap-2">
+          <button id="theme-toggle" type="button" class="btn btn-ghost btn-xs" aria-pressed="false">
+            Theme: light
+          </button>
           <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500" for="fb-root">Root</label>
           <select id="fb-root" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm" x-model="rootId" @change="switchRoot()">
             {% for item in roots %}
@@ -283,5 +300,32 @@
     <input id="fb-context-upload-input" type="file" class="hidden" aria-hidden="true">
     {% endif %}
   </main>
+  <script>
+    (function () {
+      var key = "sushi-theme";
+      var toggle = document.getElementById("theme-toggle");
+      if (!toggle) return;
+
+      function readTheme() {
+        return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      }
+
+      function render(theme) {
+        var isDark = theme === "dark";
+        toggle.setAttribute("aria-pressed", isDark ? "true" : "false");
+        toggle.textContent = "Theme: " + theme;
+      }
+
+      render(readTheme());
+      toggle.addEventListener("click", function () {
+        var next = readTheme() === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        try {
+          window.localStorage.setItem(key, next);
+        } catch (_) {}
+        render(next);
+      });
+    })();
+  </script>
 </body>
 </html>
