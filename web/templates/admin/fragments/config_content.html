@@ -1,73 +1,73 @@
 <section class="admin-module" data-admin-workspace-module="config" x-data="configPage()">
-  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight">Runtime Configuration</h1>
-      <p class="text-sm text-base-content/70">Read-only operational snapshot of loaded server configuration.</p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <span class="badge badge-ghost">Read only</span>
-      <button class="btn btn-sm btn-outline" type="button" @click="init()">Reload</button>
-    </div>
-  </div>
+ <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <h1 class="text-3xl font-bold tracking-tight">Runtime Configuration</h1>
+ <p class="text-sm text-base-content/70">Read-only operational snapshot of loaded server configuration.</p>
+ </div>
+ <div class="flex flex-wrap items-center gap-2">
+ <span class="badge badge-ghost">Read only</span>
+ <button class="btn btn-sm btn-outline" type="button" @click="init()">Reload</button>
+ </div>
+ </div>
 
-  <div x-show="!loaded" class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
-    Loading configuration...
-  </div>
+ <div x-show="!loaded" class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
+ Loading configuration...
+ </div>
 
-  <div x-show="loaded && error" class="rounded-box border border-error/40 bg-error/10 px-4 py-3 text-sm text-error">
-    <p class="m-0" x-text="error"></p>
-  </div>
+ <div x-show="loaded && error" class="rounded-box border border-error/40 bg-error/10 px-4 py-3 text-sm text-error">
+ <p class="m-0" x-text="error"></p>
+ </div>
 
-  <div x-show="loaded && !error" class="grid gap-4 md:grid-cols-2">
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-        <h2 class="text-lg font-semibold">Server</h2>
-        <span class="badge badge-info">Network</span>
-      </header>
-      <div class="card-body pt-4">
-        <dl class="space-y-3 text-sm">
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Host</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.server?.host"></dd></div>
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Port</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.server?.port"></dd></div>
-        </dl>
-      </div>
-    </section>
+ <div x-show="loaded && !error" class="grid gap-4 md:grid-cols-2">
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Server</h2>
+ <span class="badge badge-info">Network</span>
+ </header>
+ <div class="card-body pt-4">
+ <dl class="space-y-3 text-sm">
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Host</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.server?.host"></dd></div>
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Port</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.server?.port"></dd></div>
+ </dl>
+ </div>
+ </section>
 
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-        <h2 class="text-lg font-semibold">Database</h2>
-        <span class="badge badge-info">Storage</span>
-      </header>
-      <div class="card-body pt-4">
-        <dl class="space-y-3 text-sm">
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Path</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.database?.path"></dd></div>
-        </dl>
-      </div>
-    </section>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Database</h2>
+ <span class="badge badge-info">Storage</span>
+ </header>
+ <div class="card-body pt-4">
+ <dl class="space-y-3 text-sm">
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Path</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.database?.path"></dd></div>
+ </dl>
+ </div>
+ </section>
 
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-        <h2 class="text-lg font-semibold">JWT</h2>
-        <span class="badge badge-warning">Sensitive</span>
-      </header>
-      <div class="card-body pt-4">
-        <dl class="space-y-3 text-sm">
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Secret</dt><dd class="font-mono text-xs sm:text-sm text-rose-600">••••••••</dd></div>
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Access TTL</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.jwt?.access_ttl + 's'"></dd></div>
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Refresh TTL</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.jwt?.refresh_ttl + 's'"></dd></div>
-        </dl>
-      </div>
-    </section>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">JWT</h2>
+ <span class="badge badge-warning">Sensitive</span>
+ </header>
+ <div class="card-body pt-4">
+ <dl class="space-y-3 text-sm">
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Secret</dt><dd class="font-mono text-xs sm:text-sm text-rose-600">••••••••</dd></div>
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Access TTL</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.jwt?.access_ttl + 's'"></dd></div>
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Refresh TTL</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.jwt?.refresh_ttl + 's'"></dd></div>
+ </dl>
+ </div>
+ </section>
 
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-        <h2 class="text-lg font-semibold">Plugins</h2>
-        <span class="badge badge-info">Discovery</span>
-      </header>
-      <div class="card-body pt-4">
-        <dl class="space-y-3 text-sm">
-          <div class="flex justify-between gap-4"><dt class="text-slate-500">Directory</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.plugins?.directory"></dd></div>
-        </dl>
-      </div>
-    </section>
-  </div>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Plugins</h2>
+ <span class="badge badge-info">Discovery</span>
+ </header>
+ <div class="card-body pt-4">
+ <dl class="space-y-3 text-sm">
+ <div class="flex justify-between gap-4"><dt class="text-slate-500">Directory</dt><dd class="font-mono text-xs sm:text-sm" x-text="config.plugins?.directory"></dd></div>
+ </dl>
+ </div>
+ </section>
+ </div>
 </section>

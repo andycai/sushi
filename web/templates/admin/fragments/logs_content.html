@@ -1,99 +1,99 @@
 <section class="admin-module" data-admin-workspace-module="logs" x-data="logsPage()">
-  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight">Runtime Logs</h1>
-      <p class="text-sm text-base-content/70">Streamed operational events emitted by API, admin, and plugin runtime.</p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <div class="w-full sm:w-auto">
-        <input
-          type="text"
-          class="input input-bordered w-full"
-          placeholder="Search by timestamp, level, message..."
-          x-model="table.query"
-          @input.debounce.150ms="applySearch()"
-        >
-      </div>
-      <span x-show="loading" class="badge badge-ghost">Refreshing...</span>
-      <button type="button" class="btn btn-sm btn-outline" @click="loadLogs">Refresh</button>
-      <label class="text-sm flex items-center gap-2 text-slate-600">
-        <input type="checkbox" x-model="autoRefresh" class="rounded border-slate-300">
-        Auto-refresh (5s)
-      </label>
-    </div>
-  </div>
+ <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <h1 class="text-3xl font-bold tracking-tight">Runtime Logs</h1>
+ <p class="text-sm text-base-content/70">Streamed operational events emitted by API, admin, and plugin runtime.</p>
+ </div>
+ <div class="flex flex-wrap items-center gap-2">
+ <div class="w-full sm:w-auto">
+ <input
+ type="text"
+ class="input input-bordered w-full"
+ placeholder="Search by timestamp, level, message..."
+ x-model="table.query"
+ @input.debounce.150ms="applySearch()"
+ >
+ </div>
+ <span x-show="loading" class="badge badge-ghost">Refreshing...</span>
+ <button type="button" class="btn btn-sm btn-outline" @click="loadLogs">Refresh</button>
+ <label class="text-sm flex items-center gap-2 text-slate-600">
+ <input type="checkbox" x-model="autoRefresh" class="rounded border-slate-300">
+ Auto-refresh (5s)
+ </label>
+ </div>
+ </div>
 
-  <div class="alert alert-info mb-3">
-    Use level filters and keyword search to isolate high-signal operational events quickly.
-  </div>
+ <div class="alert alert-info mb-3">
+ Use level filters and keyword search to isolate high-signal operational events quickly.
+ </div>
 
-  <section class="card border border-base-300 bg-base-100 shadow-sm">
-    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-      <h2 class="text-lg font-semibold">Event stream</h2>
-      <div class="flex flex-wrap items-center gap-2">
-        <select class="select select-bordered select-sm" x-model="levelFilter" @change="applyLevelFilter()">
-          <option value="ALL">All levels</option>
-          <option value="INFO">INFO</option>
-          <option value="WARN">WARN</option>
-          <option value="ERROR">ERROR</option>
-          <option value="DEBUG">DEBUG</option>
-        </select>
-        <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
-          <option value="default">Default order</option>
-          <option value="alpha_desc">Timestamp newest</option>
-          <option value="alpha_asc">Timestamp oldest</option>
-        </select>
-        <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
-          <template x-for="size in table.pageSizeOptions" :key="size">
-            <option :value="size" x-text="`${size}/page`"></option>
-          </template>
-        </select>
-        <div class="join">
-          <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
-          <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
-          <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
-        </div>
-        <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
-        <span class="badge badge-info" x-text="`${logs.length} fetched`"></span>
-      </div>
-    </header>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Event stream</h2>
+ <div class="flex flex-wrap items-center gap-2">
+ <select class="select select-bordered select-sm" x-model="levelFilter" @change="applyLevelFilter()">
+ <option value="ALL">All levels</option>
+ <option value="INFO">INFO</option>
+ <option value="WARN">WARN</option>
+ <option value="ERROR">ERROR</option>
+ <option value="DEBUG">DEBUG</option>
+ </select>
+ <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
+ <option value="default">Default order</option>
+ <option value="alpha_desc">Timestamp newest</option>
+ <option value="alpha_asc">Timestamp oldest</option>
+ </select>
+ <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
+ <template x-for="size in table.pageSizeOptions" :key="size">
+ <option :value="size" x-text="`${size}/page`"></option>
+ </template>
+ </select>
+ <div class="join">
+ <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+ <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+ <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+ </div>
+ <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+ <span class="badge badge-info" x-text="`${logs.length} fetched`"></span>
+ </div>
+ </header>
 
-    <div class="card-body pt-4">
-      <div x-show="error" class="rounded-box border border-error/40 bg-error/10 px-4 py-3 text-sm text-error" x-text="error"></div>
-      <div x-show="!error && logs.length === 0" class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
-        No logs available yet.
-      </div>
+ <div class="card-body pt-4">
+ <div x-show="error" class="rounded-box border border-error/40 bg-error/10 px-4 py-3 text-sm text-error" x-text="error"></div>
+ <div x-show="!error && logs.length === 0" class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
+ No logs available yet.
+ </div>
 
-      <div x-show="!error" class="overflow-x-auto">
-        <table class="table table-zebra ui-log-table">
-          <thead>
-            <tr>
-              <th class="font-mono text-xs sm:text-sm">Timestamp</th>
-              <th>Level</th>
-              <th>Message</th>
-            </tr>
-          </thead>
-          <tbody id="logs-table-body">
-            <template x-for="(log, index) in logs" :key="`${index}-${log.timestamp || ''}-${log.level || ''}`">
-              <tr
-                data-log-row
-                :data-row-search="`${log.timestamp || ''} ${(log.level || 'INFO').toUpperCase()} ${log.message || ''}`"
-                :data-row-sort="log.timestamp || ''"
-                :data-log-level="(log.level || 'INFO').toUpperCase()"
-              >
-                <td class="font-mono text-xs sm:text-sm text-slate-500" x-text="log.timestamp || '--'"></td>
-                <td>
-                  <span class="badge" :class="badgeTone(log.level)" x-text="(log.level || 'INFO').toUpperCase()"></span>
-                </td>
-                <td class="font-mono text-xs sm:text-sm break-all" x-text="log.message || ''"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-        <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
-          No logs match the current level filter and search keyword.
-        </div>
-      </div>
-    </div>
-  </section>
+ <div x-show="!error" class="overflow-x-auto">
+ <table class="table table-zebra ">
+ <thead>
+ <tr>
+ <th class="font-mono text-xs sm:text-sm">Timestamp</th>
+ <th>Level</th>
+ <th>Message</th>
+ </tr>
+ </thead>
+ <tbody id="logs-table-body">
+ <template x-for="(log, index) in logs" :key="`${index}-${log.timestamp || ''}-${log.level || ''}`">
+ <tr
+ data-log-row
+ :data-row-search="`${log.timestamp || ''} ${(log.level || 'INFO').toUpperCase()} ${log.message || ''}`"
+ :data-row-sort="log.timestamp || ''"
+ :data-log-level="(log.level || 'INFO').toUpperCase()"
+ >
+ <td class="font-mono text-xs sm:text-sm text-slate-500" x-text="log.timestamp || '--'"></td>
+ <td>
+ <span class="badge" :class="badgeTone(log.level)" x-text="(log.level || 'INFO').toUpperCase()"></span>
+ </td>
+ <td class="font-mono text-xs sm:text-sm break-all" x-text="log.message || ''"></td>
+ </tr>
+ </template>
+ </tbody>
+ </table>
+ <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
+ No logs match the current level filter and search keyword.
+ </div>
+ </div>
+ </div>
+ </section>
 </section>

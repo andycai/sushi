@@ -1,36 +1,36 @@
 {% for role in roles %}
-  <tr
-    data-row-search="{{ role.slug }} {{ role.name }} {{ role.description }} users:{{ role.user_count }} permissions:{{ role.permission_count }}"
-    data-row-sort="{{ role.slug }}"
-    data-role-id="{{ role.id }}"
-    data-role-slug="{{ role.slug }}"
-    data-role-name="{{ role.name }}"
-    data-role-description="{{ role.description }}"
-    data-role-system="{{ role.is_system }}"
-  >
-    <td>
-      <div class="font-semibold">{{ role.name }}</div>
-      <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">{{ role.slug }}</div>
-    </td>
-    <td>{{ role.description | default(value="No description") }}</td>
-    <td>
-      <span class="badge badge-ghost">{{ role.permission_count }} permissions</span>
-    </td>
-    <td>
-      <span class="badge badge-info">{{ role.user_count }} users</span>
-    </td>
-    <td class="actions">
-      <button type="button" class="btn btn-ghost btn-xs" @click="openRoleEditor($el.closest('tr').dataset)">Edit</button>
-      <button type="button" class="btn btn-ghost btn-xs" @click="openRolePermissions($el.closest('tr').dataset)">Permissions</button>
-      {% if role.is_system %}
-        <span class="badge badge-ghost">System</span>
-      {% else %}
-        <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10" @click="openDelete($el.closest('tr').dataset)">Delete</button>
-      {% endif %}
-    </td>
-  </tr>
+ <tr
+ data-row-search="{{ role.slug }} {{ role.name }} {{ role.description }} users:{{ role.user_count }} permissions:{{ role.permission_count }}"
+ data-row-sort="{{ role.slug }}"
+ data-role-id="{{ role.id }}"
+ data-role-slug="{{ role.slug }}"
+ data-role-name="{{ role.name }}"
+ data-role-description="{{ role.description }}"
+ data-role-system="{{ role.is_system }}"
+ >
+ <td>
+ <div class="font-semibold">{{ role.name }}</div>
+ <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">{{ role.slug }}</div>
+ </td>
+ <td>{{ role.description | default(value="No description") }}</td>
+ <td>
+ <span class="badge badge-ghost">{{ role.permission_count }} permissions</span>
+ </td>
+ <td>
+ <span class="badge badge-info">{{ role.user_count }} users</span>
+ </td>
+ <td class="actions">
+ <button type="button" class="btn btn-ghost btn-xs" @click="openRoleEditor($el.closest('tr').dataset)">Edit</button>
+ <button type="button" class="btn btn-ghost btn-xs" @click="openRolePermissions($el.closest('tr').dataset)">Permissions</button>
+ {% if role.is_system %}
+ <span class="badge badge-ghost">System</span>
+ {% else %}
+ <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10" @click="openDelete($el.closest('tr').dataset)">Delete</button>
+ {% endif %}
+ </td>
+ </tr>
 {% else %}
-  <tr>
-    <td colspan="5" class="text-center py-6 text-sm text-base-content/60">No roles found.</td>
-  </tr>
+ <tr>
+ <td colspan="5" class="text-center py-6 text-sm text-base-content/60">No roles found.</td>
+ </tr>
 {% endfor %}

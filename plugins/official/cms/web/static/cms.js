@@ -430,7 +430,7 @@
             target.innerHTML = html;
           })
           .catch(() => {
-            target.innerHTML = '<div class="ui-empty">Unable to load this panel.</div>';
+            target.innerHTML = '<div class="py-6 text-center text-sm text-base-content/60">Unable to load this panel.</div>';
           });
       },
 

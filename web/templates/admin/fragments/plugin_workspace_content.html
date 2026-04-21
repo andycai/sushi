@@ -1,136 +1,136 @@
 <section
-  class="admin-module"
-  data-admin-workspace-module="plugins/{{ plugin.name }}"
-  data-plugin-name="{{ plugin.name }}"
-  x-data="pluginWorkspacePage()"
-  x-init="init()"
+ class="admin-module"
+ data-admin-workspace-module="plugins/{{ plugin.name }}"
+ data-plugin-name="{{ plugin.name }}"
+ x-data="pluginWorkspacePage()"
+ x-init="init()"
 >
-  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight">{{ plugin.name }} Workspace</h1>
-      <p class="text-sm text-base-content/70">
-        {{ plugin.description | default(value="No description provided.") }}
-      </p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <span class="badge badge-ghost">v{{ plugin.version | default(value="0.0.0") }}</span>
-      {% if plugin.loaded %}
-        <span class="badge badge-success">Active</span>
-      {% else %}
-        <span class="badge badge-error">Inactive</span>
-      {% endif %}
-      <a href="/admin/plugins" class="btn btn-sm btn-outline">Back to Registry</a>
-    </div>
-  </div>
+ <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <h1 class="text-3xl font-bold tracking-tight">{{ plugin.name }} Workspace</h1>
+ <p class="text-sm text-base-content/70">
+ {{ plugin.description | default(value="No description provided.") }}
+ </p>
+ </div>
+ <div class="flex flex-wrap items-center gap-2">
+ <span class="badge badge-ghost">v{{ plugin.version | default(value="0.0.0") }}</span>
+ {% if plugin.loaded %}
+ <span class="badge badge-success">Active</span>
+ {% else %}
+ <span class="badge badge-error">Inactive</span>
+ {% endif %}
+ <a href="/admin/plugins" class="btn btn-sm btn-outline">Back to Registry</a>
+ </div>
+ </div>
 
-  <div class="alert alert-info mb-3">
-    This plugin exposes <span class="font-mono text-xs sm:text-sm">{{ pages | length }}</span> admin page(s).
-  </div>
+ <div class="alert alert-info mb-3">
+ This plugin exposes <span class="font-mono text-xs sm:text-sm">{{ pages | length }}</span> admin page(s).
+ </div>
 
-  <section class="card border border-base-300 bg-base-100 shadow-sm mb-3" data-plugin-workspace-nav>
-    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-      <h2 class="text-lg font-semibold">Quick navigation</h2>
-      <span class="text-xs text-base-content/60">Pin important pages and keep recent visits within reach.</span>
-    </header>
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 p-4">
-      <div>
-        <h3 class="font-semibold mb-2">Pinned pages</h3>
-        <div class="text-center py-6 text-sm text-base-content/60" x-show="pinnedPages().length === 0">
-          No pinned pages yet.
-        </div>
-        <ul class="space-y-2" x-show="pinnedPages().length > 0">
-          <template x-for="page in pinnedPages()" :key="'pin-' + page.path">
-            <li class="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs"
-                @click="openPage(page.path, page.title)"
-                x-text="page.title"
-              ></button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs text-error hover:bg-error/10"
-                @click="togglePin(page.path)"
-              >
-                Unpin
-              </button>
-            </li>
-          </template>
-        </ul>
-      </div>
+ <section class="card border border-base-300 bg-base-100 shadow-sm mb-3" data-plugin-workspace-nav>
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Quick navigation</h2>
+ <span class="text-xs text-base-content/60">Pin important pages and keep recent visits within reach.</span>
+ </header>
+ <div class="grid grid-cols-1 gap-4 lg:grid-cols-2 p-4">
+ <div>
+ <h3 class="font-semibold mb-2">Pinned pages</h3>
+ <div class="text-center py-6 text-sm text-base-content/60" x-show="pinnedPages().length === 0">
+ No pinned pages yet.
+ </div>
+ <ul class="space-y-2" x-show="pinnedPages().length > 0">
+ <template x-for="page in pinnedPages()" :key="'pin-' + page.path">
+ <li class="flex items-center justify-between gap-3">
+ <button
+ type="button"
+ class="btn btn-ghost btn-xs"
+ @click="openPage(page.path, page.title)"
+ x-text="page.title"
+ ></button>
+ <button
+ type="button"
+ class="btn btn-ghost btn-xs text-error hover:bg-error/10"
+ @click="togglePin(page.path)"
+ >
+ Unpin
+ </button>
+ </li>
+ </template>
+ </ul>
+ </div>
 
-      <div>
-        <h3 class="font-semibold mb-2">Recently visited</h3>
-        <div class="text-center py-6 text-sm text-base-content/60" x-show="recentPages().length === 0">
-          No recent pages yet.
-        </div>
-        <ul class="space-y-2" x-show="recentPages().length > 0">
-          <template x-for="page in recentPages()" :key="'recent-' + page.path">
-            <li class="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs"
-                @click="openPage(page.path, page.title)"
-                x-text="page.title"
-              ></button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs"
-                @click="togglePin(page.path)"
-                x-text="isPinned(page.path) ? 'Unpin' : 'Pin'"
-              ></button>
-            </li>
-          </template>
-        </ul>
-      </div>
-    </div>
-  </section>
+ <div>
+ <h3 class="font-semibold mb-2">Recently visited</h3>
+ <div class="text-center py-6 text-sm text-base-content/60" x-show="recentPages().length === 0">
+ No recent pages yet.
+ </div>
+ <ul class="space-y-2" x-show="recentPages().length > 0">
+ <template x-for="page in recentPages()" :key="'recent-' + page.path">
+ <li class="flex items-center justify-between gap-3">
+ <button
+ type="button"
+ class="btn btn-ghost btn-xs"
+ @click="openPage(page.path, page.title)"
+ x-text="page.title"
+ ></button>
+ <button
+ type="button"
+ class="btn btn-ghost btn-xs"
+ @click="togglePin(page.path)"
+ x-text="isPinned(page.path) ? 'Unpin' : 'Pin'"
+ ></button>
+ </li>
+ </template>
+ </ul>
+ </div>
+ </div>
+ </section>
 
-  <section class="card border border-base-300 bg-base-100 shadow-sm">
-    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-      <h2 class="text-lg font-semibold">Admin pages</h2>
-      <span class="text-xs text-base-content/60">Route catalog for this plugin</span>
-    </header>
-    <div class="overflow-x-auto">
-      <table class="table table-zebra">
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Path</th>
-            <th class="actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for page in pages %}
-            <tr
-              data-plugin-page-path="{{ page.path }}"
-              data-plugin-page-title="{{ page.title }}"
-            >
-              <td>{{ page.title }}</td>
-              <td><span class="font-mono text-xs sm:text-sm">{{ page.path }}</span></td>
-              <td class="actions">
-                <a
-                  class="btn btn-ghost btn-xs"
-                  href="{{ page.path }}"
-                  @click.prevent="openPage($el.closest('tr').dataset.pluginPagePath, $el.closest('tr').dataset.pluginPageTitle)"
-                >
-                  Open page
-                </a>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs"
-                  @click="togglePin($el.closest('tr').dataset.pluginPagePath)"
-                  x-text="isPinned($el.closest('tr').dataset.pluginPagePath) ? 'Unpin' : 'Pin'"
-                ></button>
-              </td>
-            </tr>
-          {% else %}
-            <tr>
-              <td colspan="3" class="text-center py-6 text-sm text-base-content/60">No admin pages registered for this plugin.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Admin pages</h2>
+ <span class="text-xs text-base-content/60">Route catalog for this plugin</span>
+ </header>
+ <div class="overflow-x-auto">
+ <table class="table table-zebra">
+ <thead>
+ <tr>
+ <th>Title</th>
+ <th>Path</th>
+ <th class="actions">Actions</th>
+ </tr>
+ </thead>
+ <tbody>
+ {% for page in pages %}
+ <tr
+ data-plugin-page-path="{{ page.path }}"
+ data-plugin-page-title="{{ page.title }}"
+ >
+ <td>{{ page.title }}</td>
+ <td><span class="font-mono text-xs sm:text-sm">{{ page.path }}</span></td>
+ <td class="actions">
+ <a
+ class="btn btn-ghost btn-xs"
+ href="{{ page.path }}"
+ @click.prevent="openPage($el.closest('tr').dataset.pluginPagePath, $el.closest('tr').dataset.pluginPageTitle)"
+ >
+ Open page
+ </a>
+ <button
+ type="button"
+ class="btn btn-ghost btn-xs"
+ @click="togglePin($el.closest('tr').dataset.pluginPagePath)"
+ x-text="isPinned($el.closest('tr').dataset.pluginPagePath) ? 'Unpin' : 'Pin'"
+ ></button>
+ </td>
+ </tr>
+ {% else %}
+ <tr>
+ <td colspan="3" class="text-center py-6 text-sm text-base-content/60">No admin pages registered for this plugin.</td>
+ </tr>
+ {% endfor %}
+ </tbody>
+ </table>
+ </div>
+ </section>
 </section>

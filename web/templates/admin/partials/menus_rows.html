@@ -1,58 +1,58 @@
 {% for menu in menus %}
-  <tr
-    data-row-search="{{ menu.label }} {{ menu.route | default(value='') }} {{ menu.parent_label | default(value='') }} {{ menu.icon | default(value='') }}"
-    data-row-sort="{{ menu.label }}"
-    data-menu-id="{{ menu.id }}"
-    data-menu-label="{{ menu.label }}"
-    data-menu-icon="{{ menu.icon | default(value='') }}"
-    data-menu-position="{{ menu.position }}"
-    data-menu-parent-id="{{ menu.parent_id | default(value='') }}"
-    data-menu-route="{{ menu.route | default(value='') }}"
-    data-menu-hidden="{{ menu.is_hidden }}"
-    data-menu-system="{{ menu.is_system }}"
-  >
-    <td>
-      <div class="font-semibold">{{ menu.label }}</div>
-      {% if menu.icon %}
-        <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">icon: {{ menu.icon }}</div>
-      {% endif %}
-    </td>
-    <td>
-      {% if menu.parent_label %}
-        <span class="badge badge-ghost">{{ menu.parent_label }}</span>
-      {% else %}
-        <span class="badge badge-info">Top level</span>
-      {% endif %}
-    </td>
-    <td>
-      {% if menu.route %}
-        <span class="font-mono text-xs sm:text-sm">{{ menu.route }}</span>
-      {% else %}
-        <span class="text-xs text-base-content/60">-</span>
-      {% endif %}
-    </td>
-    <td><span class="badge badge-ghost">{{ menu.position }}</span></td>
-    <td>
-      {% if menu.is_hidden %}
-        <span class="badge badge-warning">Hidden</span>
-      {% else %}
-        <span class="badge badge-success">Visible</span>
-      {% endif %}
-      {% if menu.is_system %}
-        <span class="badge badge-ghost">System</span>
-      {% endif %}
-    </td>
-    <td class="actions">
-      <button type="button" class="btn btn-ghost btn-xs" @click="openEdit($el.closest('tr').dataset)">Edit</button>
-      {% if menu.is_system %}
-        <span class="badge badge-ghost">Protected</span>
-      {% else %}
-        <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10" @click="openDelete($el.closest('tr').dataset)">Delete</button>
-      {% endif %}
-    </td>
-  </tr>
+ <tr
+ data-row-search="{{ menu.label }} {{ menu.route | default(value='') }} {{ menu.parent_label | default(value='') }} {{ menu.icon | default(value='') }}"
+ data-row-sort="{{ menu.label }}"
+ data-menu-id="{{ menu.id }}"
+ data-menu-label="{{ menu.label }}"
+ data-menu-icon="{{ menu.icon | default(value='') }}"
+ data-menu-position="{{ menu.position }}"
+ data-menu-parent-id="{{ menu.parent_id | default(value='') }}"
+ data-menu-route="{{ menu.route | default(value='') }}"
+ data-menu-hidden="{{ menu.is_hidden }}"
+ data-menu-system="{{ menu.is_system }}"
+ >
+ <td>
+ <div class="font-semibold">{{ menu.label }}</div>
+ {% if menu.icon %}
+ <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">icon: {{ menu.icon }}</div>
+ {% endif %}
+ </td>
+ <td>
+ {% if menu.parent_label %}
+ <span class="badge badge-ghost">{{ menu.parent_label }}</span>
+ {% else %}
+ <span class="badge badge-info">Top level</span>
+ {% endif %}
+ </td>
+ <td>
+ {% if menu.route %}
+ <span class="font-mono text-xs sm:text-sm">{{ menu.route }}</span>
+ {% else %}
+ <span class="text-xs text-base-content/60">-</span>
+ {% endif %}
+ </td>
+ <td><span class="badge badge-ghost">{{ menu.position }}</span></td>
+ <td>
+ {% if menu.is_hidden %}
+ <span class="badge badge-warning">Hidden</span>
+ {% else %}
+ <span class="badge badge-success">Visible</span>
+ {% endif %}
+ {% if menu.is_system %}
+ <span class="badge badge-ghost">System</span>
+ {% endif %}
+ </td>
+ <td class="actions">
+ <button type="button" class="btn btn-ghost btn-xs" @click="openEdit($el.closest('tr').dataset)">Edit</button>
+ {% if menu.is_system %}
+ <span class="badge badge-ghost">Protected</span>
+ {% else %}
+ <button type="button" class="btn btn-ghost btn-xs text-error hover:bg-error/10" @click="openDelete($el.closest('tr').dataset)">Delete</button>
+ {% endif %}
+ </td>
+ </tr>
 {% else %}
-  <tr>
-    <td colspan="6" class="text-center py-6 text-sm text-base-content/60">No menu items found.</td>
-  </tr>
+ <tr>
+ <td colspan="6" class="text-center py-6 text-sm text-base-content/60">No menu items found.</td>
+ </tr>
 {% endfor %}

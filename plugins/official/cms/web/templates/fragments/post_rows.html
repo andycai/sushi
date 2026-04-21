@@ -1,37 +1,37 @@
 {% for item in items %}
-  <tr data-cms-row data-resource="posts" data-slug="{{ item.slug }}">
-    <td class="font-mono text-xs sm:text-sm">{{ item.slug }}</td>
-    <td>{{ item.title }}</td>
-    <td>{{ item.category_name }}</td>
-    <td>
-      <form class="cms-inline-form" hx-post="/admin/partials/cms/status/transition" hx-target="#cms-feedback" hx-swap="innerHTML">
-        <input type="hidden" name="resource" value="posts">
-        <input type="hidden" name="slug" value="{{ item.slug }}">
-        <select name="next_status" class="select select-bordered">
-          <option value="draft" {% if item.status == "draft" %}selected{% endif %}>Draft</option>
-          <option value="published" {% if item.status == "published" %}selected{% endif %}>Published</option>
-          <option value="archived" {% if item.status == "archived" %}selected{% endif %}>Archived</option>
-        </select>
-        <button type="submit" class="btn btn-sm btn-ghost">Apply</button>
-      </form>
-    </td>
-    <td class="text-right">
-      <div class="cms-row-actions">
-        <button type="button" class="btn btn-sm btn-outline" data-cms-open-editor data-resource="posts" data-slug="{{ item.slug }}">Edit</button>
-        {% if item.status == "published" %}
-          <a class="btn btn-sm btn-ghost" href="/app/posts/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
-        {% else %}
-          <a class="btn btn-sm btn-ghost" href="/admin/preview/cms/posts/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
-        {% endif %}
-        <form hx-post="/admin/partials/cms/posts/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
-          <input type="hidden" name="slug" value="{{ item.slug }}">
-          <button type="submit" class="btn btn-sm btn-error" data-confirm="Delete this post?">Delete</button>
-        </form>
-      </div>
-    </td>
-  </tr>
+ <tr data-cms-row data-resource="posts" data-slug="{{ item.slug }}">
+ <td class="font-mono text-xs sm:text-sm">{{ item.slug }}</td>
+ <td>{{ item.title }}</td>
+ <td>{{ item.category_name }}</td>
+ <td>
+ <form class="cms-inline-form" hx-post="/admin/partials/cms/status/transition" hx-target="#cms-feedback" hx-swap="innerHTML">
+ <input type="hidden" name="resource" value="posts">
+ <input type="hidden" name="slug" value="{{ item.slug }}">
+ <select name="next_status" class="select select-bordered">
+ <option value="draft" {% if item.status == "draft" %}selected{% endif %}>Draft</option>
+ <option value="published" {% if item.status == "published" %}selected{% endif %}>Published</option>
+ <option value="archived" {% if item.status == "archived" %}selected{% endif %}>Archived</option>
+ </select>
+ <button type="submit" class="btn btn-sm btn-ghost">Apply</button>
+ </form>
+ </td>
+ <td class="text-right">
+ <div class="cms-row-actions">
+ <button type="button" class="btn btn-sm btn-outline" data-cms-open-editor data-resource="posts" data-slug="{{ item.slug }}">Edit</button>
+ {% if item.status == "published" %}
+ <a class="btn btn-sm btn-ghost" href="/app/posts/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
+ {% else %}
+ <a class="btn btn-sm btn-ghost" href="/admin/preview/cms/posts/{{ item.slug }}" target="_blank" rel="noopener">Preview</a>
+ {% endif %}
+ <form hx-post="/admin/partials/cms/posts/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
+ <input type="hidden" name="slug" value="{{ item.slug }}">
+ <button type="submit" class="btn btn-sm btn-error" data-confirm="Delete this post?">Delete</button>
+ </form>
+ </div>
+ </td>
+ </tr>
 {% else %}
-  <tr>
-    <td colspan="5" class="text-center py-6 text-sm text-base-content/60">No posts found.</td>
-  </tr>
+ <tr>
+ <td colspan="5" class="text-center py-6 text-sm text-base-content/60">No posts found.</td>
+ </tr>
 {% endfor %}

@@ -1,48 +1,48 @@
 <form
-  class="space-y-4"
-  hx-post="/admin/partials/roles/{{ role.id }}/permissions"
-  hx-target="#roles-feedback"
-  hx-swap="innerHTML"
-  x-on:htmx:before-request.camel="onRolePermissionsBeforeRequest()"
-  x-on:htmx:after-request.camel="onRolePermissionsAfterRequest($event)"
+ class="space-y-4"
+ hx-post="/admin/partials/roles/{{ role.id }}/permissions"
+ hx-target="#roles-feedback"
+ hx-swap="innerHTML"
+ x-on:htmx:before-request.camel="onRolePermissionsBeforeRequest()"
+ x-on:htmx:after-request.camel="onRolePermissionsAfterRequest($event)"
 >
-  <div class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
-    <div class="font-semibold">{{ role.name }}</div>
-    <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">{{ role.slug }}</div>
-    <div class="mt-2 text-sm">{{ role.description | default(value="No description") }}</div>
-  </div>
+ <div class="rounded-box border border-base-300 bg-base-200/40 px-4 py-3 text-sm text-base-content/70">
+ <div class="font-semibold">{{ role.name }}</div>
+ <div class="text-xs text-base-content/60 font-mono text-xs sm:text-sm">{{ role.slug }}</div>
+ <div class="mt-2 text-sm">{{ role.description | default(value="No description") }}</div>
+ </div>
 
-  <div class="space-y-2 max-h-80 overflow-auto pr-1">
-    {% for permission in permissions %}
-      <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-        <input
-          type="checkbox"
-          name="permission_ids"
-          value="{{ permission.id }}"
-          {% if permission.assigned %}checked{% endif %}
-          class="mt-1"
-        >
-        <div class="min-w-0">
-          <div class="font-semibold text-sm text-slate-900">{{ permission.name }}</div>
-          <div class="text-xs text-slate-500 font-mono text-xs sm:text-sm">{{ permission.slug }}</div>
-          <div class="text-xs text-slate-600 mt-1">
-            module: <span class="font-mono text-xs sm:text-sm">{{ permission.module }}</span>
-          </div>
-          {% if permission.description %}
-            <div class="text-xs text-slate-500 mt-1">{{ permission.description }}</div>
-          {% endif %}
-        </div>
-      </label>
-    {% else %}
-      <div class="text-center py-6 text-sm text-base-content/60">No permissions available to assign.</div>
-    {% endfor %}
-  </div>
+ <div class="space-y-2 max-h-80 overflow-auto pr-1">
+ {% for permission in permissions %}
+ <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+ <input
+ type="checkbox"
+ name="permission_ids"
+ value="{{ permission.id }}"
+ {% if permission.assigned %}checked{% endif %}
+ class="mt-1"
+ >
+ <div class="min-w-0">
+ <div class="font-semibold text-sm text-slate-900">{{ permission.name }}</div>
+ <div class="text-xs text-slate-500 font-mono text-xs sm:text-sm">{{ permission.slug }}</div>
+ <div class="text-xs text-slate-600 mt-1">
+ module: <span class="font-mono text-xs sm:text-sm">{{ permission.module }}</span>
+ </div>
+ {% if permission.description %}
+ <div class="text-xs text-slate-500 mt-1">{{ permission.description }}</div>
+ {% endif %}
+ </div>
+ </label>
+ {% else %}
+ <div class="text-center py-6 text-sm text-base-content/60">No permissions available to assign.</div>
+ {% endfor %}
+ </div>
 
-  <div class="ui-modal-actions">
-    <button type="button" class="btn btn-sm btn-outline" @click="closePermissionsModal()">Cancel</button>
-    <button type="submit" class="btn btn-sm btn-primary" :disabled="permissionsModal.busy">
-      <span x-show="!permissionsModal.busy">Save assignments</span>
-      <span x-show="permissionsModal.busy">Saving...</span>
-    </button>
-  </div>
+ <div class="flex items-center justify-end gap-2">
+ <button type="button" class="btn btn-sm btn-outline" @click="closePermissionsModal()">Cancel</button>
+ <button type="submit" class="btn btn-sm btn-primary" :disabled="permissionsModal.busy">
+ <span x-show="!permissionsModal.busy">Save assignments</span>
+ <span x-show="permissionsModal.busy">Saving...</span>
+ </button>
+ </div>
 </form>

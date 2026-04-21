@@ -1,177 +1,177 @@
 <section class="admin-module" data-admin-workspace-module="roles" x-data="rolesPage()" x-on:roles:close-role-drawer.window="closeRoleEditor()" x-on:roles:close-permissions-modal.window="closePermissionsModal()">
-  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <h1 class="text-3xl font-bold tracking-tight">Roles</h1>
-      <p class="text-sm text-base-content/70">Define role posture and curate permission bundles for platform operators.</p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <div class="w-full sm:w-auto">
-        <input
-          type="text"
-          class="input input-bordered w-full"
-          placeholder="Search by role key, name, or description..."
-          x-model="table.query"
-          @input.debounce.150ms="applySearch()"
-        >
-      </div>
-      <button type="button" class="btn btn-sm btn-primary" @click="openCreate()">Add Role</button>
-      <span class="badge badge-info">RBAC</span>
-    </div>
-  </div>
+ <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <h1 class="text-3xl font-bold tracking-tight">Roles</h1>
+ <p class="text-sm text-base-content/70">Define role posture and curate permission bundles for platform operators.</p>
+ </div>
+ <div class="flex flex-wrap items-center gap-2">
+ <div class="w-full sm:w-auto">
+ <input
+ type="text"
+ class="input input-bordered w-full"
+ placeholder="Search by role key, name, or description..."
+ x-model="table.query"
+ @input.debounce.150ms="applySearch()"
+ >
+ </div>
+ <button type="button" class="btn btn-sm btn-primary" @click="openCreate()">Add Role</button>
+ <span class="badge badge-info">RBAC</span>
+ </div>
+ </div>
 
-  <div id="roles-feedback" class="space-y-2"></div>
+ <div id="roles-feedback" class="space-y-2"></div>
 
-  <div class="alert alert-info mb-3">
-    Roles govern access semantics. Permission assignment changes are applied immediately after save.
-  </div>
+ <div class="alert alert-info mb-3">
+ Roles govern access semantics. Permission assignment changes are applied immediately after save.
+ </div>
 
-  <section class="card border border-base-300 bg-base-100 shadow-sm">
-    <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
-      <h2 class="text-lg font-semibold">Role registry</h2>
-      <div class="flex flex-wrap items-center gap-2">
-        <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
-          <option value="default">Default order</option>
-          <option value="alpha_asc">Role A-Z</option>
-          <option value="alpha_desc">Role Z-A</option>
-        </select>
-        <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
-          <template x-for="size in table.pageSizeOptions" :key="size">
-            <option :value="size" x-text="`${size}/page`"></option>
-          </template>
-        </select>
-        <div class="join">
-          <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
-          <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
-          <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
-        </div>
-        <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
-      </div>
-    </header>
-    <div class="overflow-x-auto">
-      <table class="table table-zebra">
-        <thead>
-          <tr>
-            <th>Role</th>
-            <th>Description</th>
-            <th>Assigned Permissions</th>
-            <th>Users</th>
-            <th class="actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody
-          id="roles-table-body"
-          hx-get="/admin/partials/roles/table"
-          hx-trigger="load, roles:refresh from:body"
-          hx-swap="innerHTML"
-          x-on:htmx:after-swap.camel="onRolesTableSwap()"
-        >
-          <tr>
-            <td colspan="5" class="text-center py-6 text-sm text-base-content/60">Loading roles...</td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
-        No roles match your current keyword.
-      </div>
-    </div>
-  </section>
+ <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
+ <h2 class="text-lg font-semibold">Role registry</h2>
+ <div class="flex flex-wrap items-center gap-2">
+ <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
+ <option value="default">Default order</option>
+ <option value="alpha_asc">Role A-Z</option>
+ <option value="alpha_desc">Role Z-A</option>
+ </select>
+ <select class="select select-bordered select-sm" x-model.number="table.pageSize" @change="setPageSize()">
+ <template x-for="size in table.pageSizeOptions" :key="size">
+ <option :value="size" x-text="`${size}/page`"></option>
+ </template>
+ </select>
+ <div class="join">
+ <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
+ <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+ <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
+ </div>
+ <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+ </div>
+ </header>
+ <div class="overflow-x-auto">
+ <table class="table table-zebra">
+ <thead>
+ <tr>
+ <th>Role</th>
+ <th>Description</th>
+ <th>Assigned Permissions</th>
+ <th>Users</th>
+ <th class="actions">Actions</th>
+ </tr>
+ </thead>
+ <tbody
+ id="roles-table-body"
+ hx-get="/admin/partials/roles/table"
+ hx-trigger="load, roles:refresh from:body"
+ hx-swap="innerHTML"
+ x-on:htmx:after-swap.camel="onRolesTableSwap()"
+ >
+ <tr>
+ <td colspan="5" class="text-center py-6 text-sm text-base-content/60">Loading roles...</td>
+ </tr>
+ </tbody>
+ </table>
+ <div class="text-center py-6 text-sm text-base-content/60" x-show="table.emptyFiltered" style="display:none">
+ No roles match your current keyword.
+ </div>
+ </div>
+ </section>
 
-  <div x-show="roleEditor.open" class="ui-drawer-overlay" style="display:none">
-    <div class="ui-drawer-panel">
-      <div class="ui-drawer-head">
-        <h2 class="ui-drawer-title" x-text="roleEditor.payload.mode === 'create' ? 'Add role' : 'Edit role'"></h2>
-        <button type="button" class="btn btn-sm btn-ghost" @click="closeRoleEditor()">Close</button>
-      </div>
-      <form
-        class="ui-drawer-body space-y-4"
-        :hx-post="roleEditor.payload.mode === 'create' ? '/admin/partials/roles/create' : '/admin/partials/roles/' + roleEditor.payload.id + '/update'"
-        hx-target="#roles-feedback"
-        hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="onRoleEditorBeforeRequest()"
-        x-on:htmx:after-request.camel="onRoleEditorAfterRequest($event)"
-      >
-        <div>
-          <label class="label-text font-semibold" for="role-key">Role key</label>
-          <input
-            id="role-key"
-            name="slug"
-            type="text"
-            class="input input-bordered w-full font-mono text-xs sm:text-sm"
-            x-model="roleEditor.payload.slug"
-            :readonly="roleEditor.payload.mode === 'edit'"
-            maxlength="40"
-            required
-          >
-        </div>
-        <div>
-          <label class="label-text font-semibold" for="role-name">Display name</label>
-          <input
-            id="role-name"
-            name="name"
-            type="text"
-            class="input input-bordered w-full"
-            x-model="roleEditor.payload.name"
-            maxlength="80"
-            required
-          >
-        </div>
-        <div>
-          <label class="label-text font-semibold" for="role-description">Description</label>
-          <textarea
-            id="role-description"
-            name="description"
-            class="input input-bordered w-full"
-            rows="4"
-            x-model="roleEditor.payload.description"
-            maxlength="280"
-          ></textarea>
-        </div>
-        <div class="ui-drawer-actions">
-          <button type="button" class="btn btn-sm btn-outline" @click="closeRoleEditor()">Cancel</button>
-          <button type="submit" class="btn btn-sm btn-primary" :disabled="roleEditor.busy || (roleEditor.payload.mode === 'edit' && !roleEditor.payload.id)">
-            <span x-show="!roleEditor.busy">Save role</span>
-            <span x-show="roleEditor.busy">Saving...</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+ <div x-show="roleEditor.open" class="fixed inset-0 z-50 bg-base-content/40 backdrop-blur-sm flex justify-end" style="display:none">
+ <div class="h-full w-full max-w-xl bg-base-100 border-l border-base-300 shadow-2xl flex flex-col">
+ <div class="flex items-center justify-between gap-3 border-b border-base-300 px-5 py-4">
+ <h2 class="text-lg font-semibold" x-text="roleEditor.payload.mode === 'create' ? 'Add role' : 'Edit role'"></h2>
+ <button type="button" class="btn btn-sm btn-ghost" @click="closeRoleEditor()">Close</button>
+ </div>
+ <form
+ class="flex-1 overflow-y-auto p-5 space-y-4"
+ :hx-post="roleEditor.payload.mode === 'create' ? '/admin/partials/roles/create' : '/admin/partials/roles/' + roleEditor.payload.id + '/update'"
+ hx-target="#roles-feedback"
+ hx-swap="innerHTML"
+ x-on:htmx:before-request.camel="onRoleEditorBeforeRequest()"
+ x-on:htmx:after-request.camel="onRoleEditorAfterRequest($event)"
+ >
+ <div>
+ <label class="label-text font-semibold" for="role-key">Role key</label>
+ <input
+ id="role-key"
+ name="slug"
+ type="text"
+ class="input input-bordered w-full font-mono text-xs sm:text-sm"
+ x-model="roleEditor.payload.slug"
+ :readonly="roleEditor.payload.mode === 'edit'"
+ maxlength="40"
+ required
+ >
+ </div>
+ <div>
+ <label class="label-text font-semibold" for="role-name">Display name</label>
+ <input
+ id="role-name"
+ name="name"
+ type="text"
+ class="input input-bordered w-full"
+ x-model="roleEditor.payload.name"
+ maxlength="80"
+ required
+ >
+ </div>
+ <div>
+ <label class="label-text font-semibold" for="role-description">Description</label>
+ <textarea
+ id="role-description"
+ name="description"
+ class="input input-bordered w-full"
+ rows="4"
+ x-model="roleEditor.payload.description"
+ maxlength="280"
+ ></textarea>
+ </div>
+ <div class="flex items-center justify-end gap-2 pt-2">
+ <button type="button" class="btn btn-sm btn-outline" @click="closeRoleEditor()">Cancel</button>
+ <button type="submit" class="btn btn-sm btn-primary" :disabled="roleEditor.busy || (roleEditor.payload.mode === 'edit' && !roleEditor.payload.id)">
+ <span x-show="!roleEditor.busy">Save role</span>
+ <span x-show="roleEditor.busy">Saving...</span>
+ </button>
+ </div>
+ </form>
+ </div>
+ </div>
 
-  <div x-show="permissionsModal.open" class="ui-modal-overlay" style="display:none">
-    <div class="ui-modal-card">
-      <div class="ui-modal-head">
-        <h2 class="ui-modal-title" x-text="`Role permissions · ${permissionsModal.payload.name || ''}`"></h2>
-      </div>
-      <div class="ui-modal-body" id="roles-permissions-form-shell">
-        <div class="text-center py-6 text-sm text-base-content/60">Loading permission matrix...</div>
-      </div>
-    </div>
-  </div>
+ <div x-show="permissionsModal.open" class="fixed inset-0 z-50 bg-base-content/40 backdrop-blur-sm p-4 flex items-center justify-center" style="display:none">
+ <div class="w-full max-w-lg rounded-box border border-base-300 bg-base-100 shadow-2xl">
+ <div class="border-b border-base-300 px-5 py-4">
+ <h2 class="text-lg font-semibold" x-text="`Role permissions · ${permissionsModal.payload.name || ''}`"></h2>
+ </div>
+ <div class="p-5 space-y-4" id="roles-permissions-form-shell">
+ <div class="text-center py-6 text-sm text-base-content/60">Loading permission matrix...</div>
+ </div>
+ </div>
+ </div>
 
-  <div x-show="deleteModal.open" class="ui-modal-overlay" style="display:none">
-    <div class="ui-modal-card">
-      <div class="ui-modal-head">
-        <h2 class="ui-modal-title">Delete role</h2>
-      </div>
-      <form
-        class="ui-modal-body"
-        :hx-delete="'/admin/partials/roles/' + deleteModal.payload.id"
-        hx-target="#roles-feedback"
-        hx-swap="innerHTML"
-        x-on:htmx:before-request.camel="onDeleteBeforeRequest()"
-        x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
-      >
-        <p class="text-sm text-slate-600">
-          Delete role <span class="font-semibold text-slate-900 font-mono text-xs sm:text-sm" x-text="deleteModal.payload.slug"></span>? This action cannot be undone.
-        </p>
-        <div class="ui-modal-actions">
-          <button type="button" class="btn btn-sm btn-outline" @click="closeDelete()">Cancel</button>
-          <button type="submit" class="btn btn-sm btn-error" :disabled="deleteModal.busy || !deleteModal.payload.id">
-            <span x-show="!deleteModal.busy">Delete</span>
-            <span x-show="deleteModal.busy">Deleting...</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+ <div x-show="deleteModal.open" class="fixed inset-0 z-50 bg-base-content/40 backdrop-blur-sm p-4 flex items-center justify-center" style="display:none">
+ <div class="w-full max-w-lg rounded-box border border-base-300 bg-base-100 shadow-2xl">
+ <div class="border-b border-base-300 px-5 py-4">
+ <h2 class="text-lg font-semibold">Delete role</h2>
+ </div>
+ <form
+ class="p-5 space-y-4"
+ :hx-delete="'/admin/partials/roles/' + deleteModal.payload.id"
+ hx-target="#roles-feedback"
+ hx-swap="innerHTML"
+ x-on:htmx:before-request.camel="onDeleteBeforeRequest()"
+ x-on:htmx:after-request.camel="onDeleteAfterRequest($event)"
+ >
+ <p class="text-sm text-slate-600">
+ Delete role <span class="font-semibold text-slate-900 font-mono text-xs sm:text-sm" x-text="deleteModal.payload.slug"></span>? This action cannot be undone.
+ </p>
+ <div class="flex items-center justify-end gap-2">
+ <button type="button" class="btn btn-sm btn-outline" @click="closeDelete()">Cancel</button>
+ <button type="submit" class="btn btn-sm btn-error" :disabled="deleteModal.busy || !deleteModal.payload.id">
+ <span x-show="!deleteModal.busy">Delete</span>
+ <span x-show="deleteModal.busy">Deleting...</span>
+ </button>
+ </div>
+ </form>
+ </div>
+ </div>
 </section>
