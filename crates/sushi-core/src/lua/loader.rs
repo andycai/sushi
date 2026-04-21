@@ -14,6 +14,13 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[path = "adapters/admin.rs"]
+mod admin_adapter;
+#[path = "adapters/api.rs"]
+mod api_adapter;
+#[path = "adapters/cli.rs"]
+mod cli_adapter;
+
 /// A Lua-based plugin loaded from the filesystem.
 pub struct LuaPlugin {
     manifest: PluginManifest,
@@ -538,6 +545,72 @@ fn parse_entry_public(entry: &mlua::Table, entry_name: &str) -> Result<bool, Plu
         .map(|value| value.unwrap_or(false))
 }
 
+async fn register_api_route_binding(
+    ctx: &SushiContext,
+    policy_repo: &PolicyRepository,
+    plugin_name: &str,
+    allowed_policy_scopes: &[String],
+    method: &str,
+    path: &str,
+    handler_key: &str,
+    policy_key: Option<&str>,
+    is_public: bool,
+) -> Result<(), PluginError> {
+    if is_public && policy_key.is_some() {
+        return Err(PluginError::InitFailed(format!(
+            "route {method} {path} cannot declare both policy and public=true"
+        )));
+    }
+
+    if let Some(policy_key_value) = policy_key {
+        validate_policy_scope(
+            plugin_name,
+            &format!("route {method} {path}"),
+            policy_key_value,
+            allowed_policy_scopes,
+        )?;
+        policy_repo
+            .upsert_plugin_http_binding("api", method, path, policy_key_value, plugin_name)
+            .await
+            .map_err(|err| {
+                PluginError::InitFailed(format!(
+                    "failed to persist policy binding for route {method} {path}: {err}"
+                ))
+            })?;
+    } else {
+        policy_repo
+            .delete_plugin_http_binding("api", method, path, plugin_name)
+            .await
+            .map_err(|err| {
+                PluginError::InitFailed(format!(
+                    "failed to clear stale policy binding for route {method} {path}: {err}"
+                ))
+            })?;
+    }
+
+    ctx.plugins
+        .register_api_handler_with_policy_and_public(
+            method,
+            path,
+            plugin_name,
+            handler_key,
+            policy_key,
+            is_public,
+        )
+        .await;
+    tracing::debug!(
+        "plugin {} registered route {} {} (handler: {}, policy: {:?}, public: {})",
+        plugin_name,
+        method,
+        path,
+        handler_key,
+        policy_key,
+        is_public
+    );
+
+    Ok(())
+}
+
 #[async_trait]
 impl Plugin for LuaPlugin {
     fn name(&self) -> &str {
@@ -636,7 +709,29 @@ impl Plugin for LuaPlugin {
             storage
         });
 
-        // Read pending routes, register with PluginManager
+        if let Ok(raw_registry) = sushi.get::<mlua::Table>("__contract_registry") {
+            // Parse all known surfaces even though Task 5 only consumes API routes.
+            let _ = admin_adapter::snapshot_from_lua(raw_registry.clone())?;
+            let _ = cli_adapter::snapshot_from_lua(raw_registry.clone())?;
+            let snapshot = api_adapter::snapshot_from_lua(lua, raw_registry)?;
+
+            for route in snapshot.api_routes {
+                register_api_route_binding(
+                    ctx,
+                    &policy_repo,
+                    plugin_name,
+                    allowed_policy_scopes,
+                    &route.method,
+                    &route.path,
+                    &route.handler_key,
+                    route.policy.as_deref(),
+                    route.public,
+                )
+                .await?;
+            }
+        }
+
+        // Compatibility path for legacy bindings still using __pending_routes.
         if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
             let len = pending.raw_len();
             for i in 1..=len {
@@ -646,61 +741,18 @@ impl Plugin for LuaPlugin {
                     let handler_key: String = entry.get("handler_key").unwrap_or_default();
                     let policy_key = parse_entry_policy(&entry, "route entry")?;
                     let is_public = parse_entry_public(&entry, "route entry")?;
-                    if is_public && policy_key.is_some() {
-                        return Err(PluginError::InitFailed(format!(
-                            "route {method} {path} cannot declare both policy and public=true"
-                        )));
-                    }
-                    if let Some(policy_key_value) = policy_key.as_deref() {
-                        validate_policy_scope(
-                            plugin_name,
-                            &format!("route {method} {path}"),
-                            policy_key_value,
-                            allowed_policy_scopes,
-                        )?;
-                        policy_repo
-                            .upsert_plugin_http_binding(
-                                "api",
-                                &method,
-                                &path,
-                                policy_key_value,
-                                plugin_name,
-                            )
-                            .await
-                            .map_err(|err| {
-                                PluginError::InitFailed(format!(
-                                    "failed to persist policy binding for route {method} {path}: {err}"
-                                ))
-                            })?;
-                    } else {
-                        policy_repo
-                            .delete_plugin_http_binding("api", &method, &path, plugin_name)
-                            .await
-                            .map_err(|err| {
-                                PluginError::InitFailed(format!(
-                                    "failed to clear stale policy binding for route {method} {path}: {err}"
-                                ))
-                            })?;
-                    }
-                    ctx.plugins
-                        .register_api_handler_with_policy_and_public(
-                            &method,
-                            &path,
-                            plugin_name,
-                            &handler_key,
-                            policy_key.as_deref(),
-                            is_public,
-                        )
-                        .await;
-                    tracing::debug!(
-                        "plugin {} registered route {} {} (handler: {}, policy: {:?}, public: {})",
+                    register_api_route_binding(
+                        ctx,
+                        &policy_repo,
                         plugin_name,
-                        method,
-                        path,
-                        handler_key,
-                        policy_key,
-                        is_public
-                    );
+                        allowed_policy_scopes,
+                        &method,
+                        &path,
+                        &handler_key,
+                        policy_key.as_deref(),
+                        is_public,
+                    )
+                    .await?;
                 }
             }
         }
@@ -1609,6 +1661,77 @@ end
         assert!(msg.contains("policy_mismatch"));
         assert!(msg.contains("admin.users.read"));
         assert!(msg.contains("api.plugin.*"));
+    }
+
+    #[tokio::test]
+    async fn loader_reads_contract_registry_for_api_routes() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("third_party").join("contract_case");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "contract_case"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+
+[permissions]
+routes = true
+
+[policies]
+scopes = ["api.notes.*"]
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    local h = function()
+        return "ok"
+    end
+    sushi.capability.register({
+        surface = "api",
+        method = "GET",
+        path = "/api/notes",
+        handler = h,
+        policy = "api.notes.read"
+    })
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .unwrap();
+
+        plugins[0].init(&ctx).await.expect("plugin initializes");
+
+        assert_eq!(
+            ctx.plugins
+                .api_route_policy("GET", "/api/notes")
+                .await
+                .as_deref(),
+            Some("api.notes.read")
+        );
     }
 
     #[tokio::test]
