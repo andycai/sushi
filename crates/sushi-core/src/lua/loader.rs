@@ -553,6 +553,14 @@ fn parse_entry_public(entry: &mlua::Table, entry_name: &str) -> Result<bool, Plu
         .map(|value| value.unwrap_or(false))
 }
 
+fn policy_surface_for_route_path(path: &str) -> &'static str {
+    if path == "/admin" || path.starts_with("/admin/") {
+        "admin"
+    } else {
+        "api"
+    }
+}
+
 async fn register_api_route_binding(
     ctx: &SushiContext,
     policy_repo: &PolicyRepository,
@@ -564,6 +572,8 @@ async fn register_api_route_binding(
     policy_key: Option<&str>,
     is_public: bool,
 ) -> Result<(), PluginError> {
+    let policy_surface = policy_surface_for_route_path(path);
+
     if is_public && policy_key.is_some() {
         return Err(PluginError::InitFailed(format!(
             "route {method} {path} cannot declare both policy and public=true"
@@ -578,22 +588,42 @@ async fn register_api_route_binding(
             allowed_policy_scopes,
         )?;
         policy_repo
-            .upsert_plugin_http_binding("api", method, path, policy_key_value, plugin_name)
+            .upsert_plugin_http_binding(policy_surface, method, path, policy_key_value, plugin_name)
             .await
             .map_err(|err| {
                 PluginError::InitFailed(format!(
-                    "failed to persist policy binding for route {method} {path}: {err}"
+                    "failed to persist policy binding for route {method} {path} ({policy_surface}): {err}"
                 ))
             })?;
+        if policy_surface == "admin" {
+            policy_repo
+                .delete_plugin_http_binding("api", method, path, plugin_name)
+                .await
+                .map_err(|err| {
+                    PluginError::InitFailed(format!(
+                        "failed to clear stale api policy binding for route {method} {path}: {err}"
+                    ))
+                })?;
+        }
     } else {
         policy_repo
-            .delete_plugin_http_binding("api", method, path, plugin_name)
+            .delete_plugin_http_binding(policy_surface, method, path, plugin_name)
             .await
             .map_err(|err| {
                 PluginError::InitFailed(format!(
-                    "failed to clear stale policy binding for route {method} {path}: {err}"
+                    "failed to clear stale policy binding for route {method} {path} ({policy_surface}): {err}"
                 ))
             })?;
+        if policy_surface == "admin" {
+            policy_repo
+                .delete_plugin_http_binding("api", method, path, plugin_name)
+                .await
+                .map_err(|err| {
+                    PluginError::InitFailed(format!(
+                        "failed to clear stale api policy binding for route {method} {path}: {err}"
+                    ))
+                })?;
+        }
     }
 
     ctx.plugins
@@ -1209,8 +1239,7 @@ end)
         assert!(source.contains("handler = deps.admin.table_partial"));
         assert!(source.contains("handler = deps.admin.upsert_partial"));
         assert!(source.contains("handler = deps.admin.delete_partial"));
-        assert!(source.contains("policy = \"admin.kv.read\""));
-        assert!(source.contains("policy = \"admin.kv.write\""));
+        assert!(source.contains("policy = \"admin.kv.manage\""));
     }
 
     #[test]
@@ -1983,6 +2012,10 @@ sushi.init = function()
         return "api"
     end, { policy = "api.notes.read" })
 
+    sushi.api.route("GET", "/admin/partials/notes/table", function()
+        return "admin partial"
+    end, { policy = "admin.notes.read" })
+
     sushi.cli.command("notes-run", "Run notes command", function()
         return "cli"
     end, { policy = "cli.notes.run" })
@@ -2019,6 +2052,13 @@ end
                 .await
                 .as_deref(),
             Some("api.notes.read")
+        );
+        assert_eq!(
+            ctx.plugins
+                .api_route_policy("GET", "/admin/partials/notes/table")
+                .await
+                .as_deref(),
+            Some("admin.notes.read")
         );
         assert_eq!(
             ctx.plugins.cli_command_policy("notes-run").await.as_deref(),
@@ -2071,7 +2111,7 @@ end
             )
             .await
             .unwrap();
-        assert_eq!(binding_rows.len(), 3);
+        assert_eq!(binding_rows.len(), 4);
 
         let api_route_binding = binding_rows
             .iter()
@@ -2080,6 +2120,11 @@ end
                     .and_then(Value::as_str)
                     .map(|surface| surface == "api")
                     .unwrap_or(false)
+                    && row
+                        .get("path_pattern")
+                        .and_then(Value::as_str)
+                        .map(|path| path == "/api/notes")
+                        .unwrap_or(false)
             })
             .expect("missing api policy binding");
         assert_eq!(
@@ -2111,8 +2156,13 @@ end
                     .and_then(Value::as_str)
                     .map(|surface| surface == "admin")
                     .unwrap_or(false)
+                    && row
+                        .get("path_pattern")
+                        .and_then(Value::as_str)
+                        .map(|path| path == "/admin/notes")
+                        .unwrap_or(false)
             })
-            .expect("missing admin policy binding");
+            .expect("missing admin page policy binding");
         assert_eq!(
             admin_page_binding
                 .get("target_type")
@@ -2133,6 +2183,42 @@ end
                 .and_then(Value::as_str)
                 .unwrap(),
             "admin.notes.read"
+        );
+
+        let admin_route_binding = binding_rows
+            .iter()
+            .find(|row| {
+                row.get("surface")
+                    .and_then(Value::as_str)
+                    .map(|surface| surface == "admin")
+                    .unwrap_or(false)
+                    && row
+                        .get("path_pattern")
+                        .and_then(Value::as_str)
+                        .map(|path| path == "/admin/partials/notes/table")
+                        .unwrap_or(false)
+            })
+            .expect("missing admin route policy binding");
+        assert_eq!(
+            admin_route_binding
+                .get("policy_key")
+                .and_then(Value::as_str)
+                .unwrap(),
+            "admin.notes.read"
+        );
+        assert!(
+            !binding_rows.iter().any(|row| {
+                row.get("surface")
+                    .and_then(Value::as_str)
+                    .map(|surface| surface == "api")
+                    .unwrap_or(false)
+                    && row
+                        .get("path_pattern")
+                        .and_then(Value::as_str)
+                        .map(|path| path == "/admin/partials/notes/table")
+                        .unwrap_or(false)
+            }),
+            "admin-prefixed routes must not persist api-surface bindings"
         );
 
         let cli_binding = binding_rows
