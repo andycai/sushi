@@ -1286,22 +1286,77 @@ end)
     }
 
     #[test]
-    fn cms_plugin_registration_contract_is_stable() {
+    fn cms_bootstrap_uses_contract_registration() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let plugin_path = repo_root.join("plugins/official/cms/lua/bootstrap/register.lua");
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
-        assert!(source.contains("sushi.web.page(\"/admin/cms\""));
-        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/overview\""));
-        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/library/*\""));
-        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/editor/*\""));
-        assert!(source.contains("sushi.api.route(\"POST\", \"/admin/partials/cms/editor/save\""));
-        assert!(
-            source.contains("sushi.api.route(\"POST\", \"/admin/partials/cms/status/transition\"")
+        assert!(source.contains("sushi.capability.register"));
+        assert!(!source.contains("sushi.api.route("));
+        assert!(!source.contains("sushi.cli.command("));
+        assert!(!source.contains("sushi.web.page("));
+
+        assert!(source.contains("definition.surface = \"api\""));
+        assert!(source.contains("definition.surface = \"web\""));
+        assert!(source.contains("definition.surface = \"cli\""));
+        assert!(source.contains("definition.kind = \"page\""));
+
+        assert_contains_method_path_route(&source, "GET", "/api/cms/pages");
+        assert_contains_method_path_route(&source, "POST", "/api/cms/pages");
+        assert_contains_method_path_route(&source, "PUT", "/api/cms/pages/*");
+        assert_contains_method_path_route(&source, "DELETE", "/api/cms/pages/*");
+        assert_contains_method_path_route(&source, "GET", "/api/cms/posts");
+        assert_contains_method_path_route(&source, "POST", "/api/cms/posts");
+        assert_contains_method_path_route(&source, "PUT", "/api/cms/posts/*");
+        assert_contains_method_path_route(&source, "DELETE", "/api/cms/posts/*");
+        assert_contains_method_path_route(&source, "GET", "/api/cms/categories");
+        assert_contains_method_path_route(&source, "POST", "/api/cms/categories");
+        assert_contains_method_path_route(&source, "PUT", "/api/cms/categories/*");
+        assert_contains_method_path_route(&source, "DELETE", "/api/cms/categories/*");
+        assert_contains_method_path_route(&source, "GET", "/app/cms");
+        assert_contains_method_path_route(&source, "GET", "/app/pages");
+        assert_contains_method_path_route(&source, "GET", "/app/pages/*");
+        assert_contains_method_path_route(&source, "GET", "/app/posts");
+        assert_contains_method_path_route(&source, "GET", "/app/partials/cms/posts");
+        assert_contains_method_path_route(&source, "GET", "/app/posts/*");
+        assert_contains_method_path_route(&source, "GET", "/app/categories/*");
+        assert_contains_method_path_route(&source, "GET", "/admin/preview/cms/pages/*");
+        assert_contains_method_path_route(&source, "GET", "/admin/preview/cms/posts/*");
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/pages/table");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/pages/upsert");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/pages/delete");
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/posts/table");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/posts/upsert");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/posts/delete");
+        assert_contains_method_path_route(
+            &source,
+            "GET",
+            "/admin/partials/cms/categories/table",
         );
-        assert!(source.contains("sushi.api.route(\"GET\", \"/admin/partials/cms/commands\""));
-        assert!(source.contains("sushi.api.route(\"GET\", \"/app/posts\""));
-        assert!(source.contains("sushi.cli.command(\"cms\""));
+        assert_contains_method_path_route(
+            &source,
+            "POST",
+            "/admin/partials/cms/categories/upsert",
+        );
+        assert_contains_method_path_route(
+            &source,
+            "POST",
+            "/admin/partials/cms/categories/delete",
+        );
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/overview");
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/library/*");
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/editor/*");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/editor/save");
+        assert_contains_method_path_route(
+            &source,
+            "POST",
+            "/admin/partials/cms/status/transition",
+        );
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/commands");
+        assert!(source.contains("path = \"/admin/cms\""));
+        assert!(source.contains("template = \"plugins/official/cms/cms.html\""));
+        assert!(source.contains("name = \"cms\""));
+        assert!(source.contains("description = \"CMS CRUD command\""));
     }
 
     #[test]

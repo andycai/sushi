@@ -174,6 +174,10 @@ fn cms_register_uses_v2_policy_key_shape_and_public_app_routes() {
     )
     .expect("failed to read cms bootstrap register");
 
+    assert!(source.contains("sushi.capability.register"));
+    assert!(!source.contains("sushi.api.route("));
+    assert!(!source.contains("sushi.cli.command("));
+    assert!(!source.contains("sushi.web.page("));
     assert!(source.contains("policy = \"api.cms.read\""));
     assert!(source.contains("policy = \"api.cms.write\""));
     assert!(source.contains("policy = \"api.cms.delete\""));
@@ -181,19 +185,23 @@ fn cms_register_uses_v2_policy_key_shape_and_public_app_routes() {
     assert!(!source.contains("api.cms.posts.read"));
     assert!(!source.contains("api.cms.categories.read"));
     assert!(!source.contains("api.cms.public.read"));
-    assert!(source.contains("/app/cms\", deps.api.public_home, { public = true }"));
-    assert!(source.contains("/app/pages\", deps.api.public_page_list, { public = true }"));
-    assert!(source.contains("/app/pages/*\", deps.api.public_page_detail, { public = true }"));
-    assert!(source.contains("/app/posts\", deps.api.public_post_list, { public = true }"));
-    assert!(source.contains("/app/partials/cms/posts\", deps.api.public_posts_partial, { public = true }"));
-    assert!(source.contains("/app/posts/*\", deps.api.public_post_detail, { public = true }"));
-    assert!(
-        source.contains("/app/categories/*\", deps.api.public_category_detail, { public = true }")
-    );
-    assert!(source.contains(
-        "/admin/preview/cms/pages/*\", deps.admin.preview_page_detail, { policy = \"admin.cms.read\" }"
-    ));
-    assert!(source.contains(
-        "/admin/preview/cms/posts/*\", deps.admin.preview_post_detail, { policy = \"admin.cms.read\" }"
-    ));
+    assert!(source.contains("path = \"/app/cms\""));
+    assert!(source.contains("handler = deps.api.public_home"));
+    assert!(source.contains("path = \"/app/pages\""));
+    assert!(source.contains("handler = deps.api.public_page_list"));
+    assert!(source.contains("path = \"/app/pages/*\""));
+    assert!(source.contains("handler = deps.api.public_page_detail"));
+    assert!(source.contains("path = \"/app/posts\""));
+    assert!(source.contains("handler = deps.api.public_post_list"));
+    assert!(source.contains("path = \"/app/partials/cms/posts\""));
+    assert!(source.contains("handler = deps.api.public_posts_partial"));
+    assert!(source.contains("path = \"/app/posts/*\""));
+    assert!(source.contains("handler = deps.api.public_post_detail"));
+    assert!(source.contains("path = \"/app/categories/*\""));
+    assert!(source.contains("handler = deps.api.public_category_detail"));
+    assert!(source.contains("public = true"));
+    assert!(source.contains("path = \"/admin/preview/cms/pages/*\""));
+    assert!(source.contains("handler = deps.admin.preview_page_detail"));
+    assert!(source.contains("path = \"/admin/preview/cms/posts/*\""));
+    assert!(source.contains("handler = deps.admin.preview_post_detail"));
 }
