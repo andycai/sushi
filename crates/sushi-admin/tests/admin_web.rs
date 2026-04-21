@@ -2061,7 +2061,7 @@ async fn htmx_login_submit_returns_error_snippet_for_invalid_credentials() {
         .await
         .expect("request failed");
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), 1024 * 1024)
         .await
         .expect("failed to read body");

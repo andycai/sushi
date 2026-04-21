@@ -101,7 +101,7 @@ fn render_login_flash_html(ctx: &SushiContext, message: &str) -> Option<String> 
 async fn login_error_response(ctx: &SushiContext, message: &str, is_htmx: bool) -> Response {
     if is_htmx {
         let body = render_login_flash_html(ctx, message).unwrap_or_else(|| message.to_string());
-        return (StatusCode::UNAUTHORIZED, axum::response::Html(body)).into_response();
+        return axum::response::Html(body).into_response();
     }
 
     let mut response = crate::render::render_template_with_context(
