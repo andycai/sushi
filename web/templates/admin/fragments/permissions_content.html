@@ -27,7 +27,8 @@
  <section class="card border border-base-300 bg-base-100 shadow-sm">
  <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
  <h2 class="text-lg font-semibold">Permission catalog</h2>
- <div class="flex flex-wrap items-center gap-2">
+ <div class="w-full lg:w-auto overflow-x-auto">
+ <div class="flex w-max items-center gap-2 whitespace-nowrap pb-1">
  <select class="select select-bordered select-sm" x-model="table.sortMode" @change="setSortMode()">
  <option value="default">Default order</option>
  <option value="alpha_asc">Key A-Z</option>
@@ -38,12 +39,13 @@
  <option :value="size" x-text="`${size}/page`"></option>
  </template>
  </select>
- <div class="join">
+ <div class="join join-horizontal">
  <button type="button" class="btn btn-sm btn-ghost" @click="prevPage()" :disabled="table.page <= 1">Prev</button>
- <span class="text-xs text-base-content/60" x-text="`Page ${table.page}/${table.totalPages}`"></span>
+ <span class="btn btn-sm btn-ghost pointer-events-none" x-text="`Page ${table.page}/${table.totalPages}`"></span>
  <button type="button" class="btn btn-sm btn-ghost" @click="nextPage()" :disabled="table.page >= table.totalPages">Next</button>
  </div>
- <span class="text-xs text-base-content/60" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+ <span class="text-xs text-base-content/60 whitespace-nowrap" x-text="`${table.visibleRows}/${table.filteredRows} shown · ${table.totalRows} total`"></span>
+ </div>
  </div>
  </header>
  <div class="overflow-x-auto">
