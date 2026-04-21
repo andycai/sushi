@@ -1,15 +1,40 @@
 local M = {}
 
-function M.register(deps)
-    sushi.api.route("GET", "/api/kv", deps.api.dispatch, { policy = "api.kv.read" })
-    sushi.api.route("GET", "/api/kv/*", deps.api.dispatch, { policy = "api.kv.read" })
-    sushi.api.route("POST", "/api/kv", deps.api.dispatch, { policy = "api.kv.write" })
-    sushi.api.route("PUT", "/api/kv/*", deps.api.dispatch, { policy = "api.kv.write" })
-    sushi.api.route("DELETE", "/api/kv/*", deps.api.delete_dispatch, { policy = "api.kv.delete" })
+local function register_api_route(definition)
+    definition.surface = "api"
+    sushi.capability.register(definition)
+end
 
-    sushi.api.route("GET", "/admin/partials/kv/table", deps.admin.table_partial, { policy = "admin.kv.read" })
-    sushi.api.route("POST", "/admin/partials/kv/upsert", deps.admin.upsert_partial, { policy = "admin.kv.write" })
-    sushi.api.route("POST", "/admin/partials/kv/delete", deps.admin.delete_partial, { policy = "admin.kv.write" })
+function M.register(deps)
+    register_api_route({ method = "GET", path = "/api/kv", handler = deps.api.dispatch, policy = "api.kv.read" })
+    register_api_route({ method = "GET", path = "/api/kv/*", handler = deps.api.dispatch, policy = "api.kv.read" })
+    register_api_route({ method = "POST", path = "/api/kv", handler = deps.api.dispatch, policy = "api.kv.write" })
+    register_api_route({ method = "PUT", path = "/api/kv/*", handler = deps.api.dispatch, policy = "api.kv.write" })
+    register_api_route({
+        method = "DELETE",
+        path = "/api/kv/*",
+        handler = deps.api.delete_dispatch,
+        policy = "api.kv.delete",
+    })
+
+    register_api_route({
+        method = "GET",
+        path = "/admin/partials/kv/table",
+        handler = deps.admin.table_partial,
+        policy = "admin.kv.read",
+    })
+    register_api_route({
+        method = "POST",
+        path = "/admin/partials/kv/upsert",
+        handler = deps.admin.upsert_partial,
+        policy = "admin.kv.write",
+    })
+    register_api_route({
+        method = "POST",
+        path = "/admin/partials/kv/delete",
+        handler = deps.admin.delete_partial,
+        policy = "admin.kv.write",
+    })
 
     sushi.web.page("/admin/kv", "plugins/official/kv-store/kv.html", {
         title = "KV Store",

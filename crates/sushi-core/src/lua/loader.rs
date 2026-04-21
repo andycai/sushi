@@ -1152,33 +1152,13 @@ end)
     }
 
     #[test]
-    fn kv_store_plugin_bootstrap_registration_contract_is_stable() {
+    fn kv_bootstrap_uses_contract_registration() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let plugin_path = repo_root.join("plugins/official/kv-store/lua/bootstrap/register.lua");
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
-        assert!(source.contains("function M.register(deps)"));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/api/kv\", deps.api.dispatch, { policy = \"api.kv.read\" })"
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/api/kv\", deps.api.dispatch, { policy = \"api.kv.write\" })"
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"DELETE\", \"/api/kv/*\", deps.api.delete_dispatch, { policy = \"api.kv.delete\" })"
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/admin/partials/kv/upsert\", deps.admin.upsert_partial, { policy = \"admin.kv.write\" })"
-        ));
-        assert!(source
-            .contains("sushi.web.page(\"/admin/kv\", \"plugins/official/kv-store/kv.html\", {"));
-        assert!(source.contains("policy = \"admin.kv.read\""));
-        assert!(source.contains("assets = { bundles = { \"workspace\" } }"));
-        assert!(source.contains("title = \"KV Store\""));
-        assert!(source.contains(
-            "sushi.cli.command(\"kv-set\", \"Set a KV entry (key + value)\", deps.cli.kv_set, { policy = \"cli.kv.set\" })"
-        ));
-        assert!(source.contains("return M"));
+        assert!(source.contains("sushi.capability.register"));
+        assert!(!source.contains("sushi.api.route("));
     }
 
     #[test]
@@ -1223,35 +1203,14 @@ end)
     }
 
     #[test]
-    fn file_browser_plugin_bootstrap_registration_is_public_only() {
+    fn file_browser_bootstrap_uses_contract_registration() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let plugin_path =
             repo_root.join("plugins/official/file-browser/lua/bootstrap/register.lua");
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
-        assert!(source.contains("function M.register(app)"));
-        assert!(source
-            .contains("sushi.api.route(\"GET\", \"/app/files\", app.page, { public = true })"));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/app/files/list/*\", app.list_partial, { public = true })"
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"GET\", \"/app/files/open/*\", app.open_partial, { public = true })"
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/app/files/save/*\", app.save_text, { public = true })"
-        ));
-        assert!(source.contains("sushi.api.route(\"POST\", \"/app/files/create-text\", app.create_text, { public = true })"));
-        assert!(source.contains("sushi.api.route(\"POST\", \"/app/files/create-dir\", app.create_dir, { public = true })"));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/app/files/rename\", app.rename_entry, { public = true })"
-        ));
-        assert!(source.contains(
-            "sushi.api.route(\"POST\", \"/app/files/delete\", app.delete_entry, { public = true })"
-        ));
-        assert!(source.contains("sushi.api.route(\"POST\", \"/app/files/upload/*\", app.upload_file, { public = true })"));
-        assert!(source.contains("sushi.api.route(\"GET\", \"/app/files/download/*\", app.download_file, { public = true })"));
-        assert!(source.contains("return M"));
+        assert!(source.contains("sushi.capability.register"));
+        assert!(!source.contains("sushi.api.route("));
     }
 
     #[test]

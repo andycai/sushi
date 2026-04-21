@@ -1,16 +1,22 @@
 local M = {}
 
+local function register_public_route(definition)
+    definition.surface = "api"
+    definition.public = true
+    sushi.capability.register(definition)
+end
+
 function M.register(app)
-    sushi.api.route("GET", "/app/files", app.page, { public = true })
-    sushi.api.route("GET", "/app/files/list/*", app.list_partial, { public = true })
-    sushi.api.route("GET", "/app/files/open/*", app.open_partial, { public = true })
-    sushi.api.route("POST", "/app/files/save/*", app.save_text, { public = true })
-    sushi.api.route("POST", "/app/files/create-text", app.create_text, { public = true })
-    sushi.api.route("POST", "/app/files/create-dir", app.create_dir, { public = true })
-    sushi.api.route("POST", "/app/files/rename", app.rename_entry, { public = true })
-    sushi.api.route("POST", "/app/files/delete", app.delete_entry, { public = true })
-    sushi.api.route("POST", "/app/files/upload/*", app.upload_file, { public = true })
-    sushi.api.route("GET", "/app/files/download/*", app.download_file, { public = true })
+    register_public_route({ method = "GET", path = "/app/files", handler = app.page })
+    register_public_route({ method = "GET", path = "/app/files/list/*", handler = app.list_partial })
+    register_public_route({ method = "GET", path = "/app/files/open/*", handler = app.open_partial })
+    register_public_route({ method = "POST", path = "/app/files/save/*", handler = app.save_text })
+    register_public_route({ method = "POST", path = "/app/files/create-text", handler = app.create_text })
+    register_public_route({ method = "POST", path = "/app/files/create-dir", handler = app.create_dir })
+    register_public_route({ method = "POST", path = "/app/files/rename", handler = app.rename_entry })
+    register_public_route({ method = "POST", path = "/app/files/delete", handler = app.delete_entry })
+    register_public_route({ method = "POST", path = "/app/files/upload/*", handler = app.upload_file })
+    register_public_route({ method = "GET", path = "/app/files/download/*", handler = app.download_file })
 end
 
 return M
