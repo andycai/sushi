@@ -1,12 +1,25 @@
 {% set static_prefix = static_url_prefix | default(value="/static") %}
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="{{ static_prefix }}/favicon.svg">
   <title>{% block title %}Sushi Admin{% endblock %}</title>
+  <script>
+    (function () {
+      var key = "sushi-theme";
+      var theme = "light";
+      try {
+        var stored = window.localStorage.getItem(key);
+        if (stored === "light" || stored === "dark") {
+          theme = stored;
+        }
+      } catch (_) {}
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <link rel="stylesheet" href="{{ static_prefix }}/css/style.css">
   <link rel="stylesheet" href="{{ static_prefix }}/admin/css/admin.css">
   <script defer src="{{ static_prefix }}/admin/js/ui-kit.js"></script>
@@ -91,6 +104,14 @@
         </div>
 
         <div class="nav-footer">
+          <button
+            id="theme-toggle"
+            type="button"
+            class="admin-nav-link logout-link btn btn-sm btn-ghost w-full justify-start"
+            aria-pressed="false"
+          >
+            <span class="admin-nav-label" id="theme-toggle-label">Theme: light</span>
+          </button>
           <a href="#" @click.prevent="logout()" class="admin-nav-link logout-link">
             <span class="admin-nav-icon" x-html="getIcon('log-out')"></span>
             <span class="admin-nav-label">Logout</span>
@@ -123,6 +144,41 @@
     <script src="{{ static_prefix }}/admin/js/menu.js"></script>
     <script src="{{ static_prefix }}/admin/js/workspace.js"></script>
   {% endif %}
+  <script>
+    (function () {
+      var key = "sushi-theme";
+      var toggle = document.getElementById("theme-toggle");
+      var label = document.getElementById("theme-toggle-label");
+      if (!toggle || !label) {
+        return;
+      }
+
+      function readTheme() {
+        var current = document.documentElement.getAttribute("data-theme");
+        return current === "dark" ? "dark" : "light";
+      }
+
+      function render(theme) {
+        var isDark = theme === "dark";
+        toggle.setAttribute("aria-pressed", isDark ? "true" : "false");
+        label.textContent = "Theme: " + theme;
+      }
+
+      function save(theme) {
+        try {
+          window.localStorage.setItem(key, theme);
+        } catch (_) {}
+      }
+
+      render(readTheme());
+      toggle.addEventListener("click", function () {
+        var next = readTheme() === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        save(next);
+        render(next);
+      });
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
