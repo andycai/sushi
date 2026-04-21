@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-04-21)
 
 ## Corpus Check
-- 136 files · ~181,239 words
+- 136 files · ~181,308 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1924 nodes · 3896 edges · 123 communities detected
+- 1925 nodes · 3898 edges · 124 communities detected
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 198 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -133,10 +133,11 @@
 - [[_COMMUNITY_Community 120|Community 120]]
 - [[_COMMUNITY_Community 121|Community 121]]
 - [[_COMMUNITY_Community 122|Community 122]]
+- [[_COMMUNITY_Community 123|Community 123]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `PluginManager` - 41 edges
-2. `build_app()` - 36 edges
+2. `build_app()` - 37 edges
 3. `He()` - 36 edges
 4. `inject_sushi_api()` - 35 edges
 5. `te()` - 31 edges
@@ -147,15 +148,15 @@
 10. `normalizePath()` - 26 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `notifyFeedback()` --calls--> `consumeFeedback()`  [INFERRED]
+  plugins/official/kv-store/web/static/kv.js → web/static/admin/js/ui-kit.js
+- `notifyFeedback()` --calls--> `notify()`  [INFERRED]
+  plugins/official/kv-store/web/static/kv.js → web/static/admin/js/ui-kit.js
+- `refreshTable()` --calls--> `refreshPartial()`  [INFERRED]
+  plugins/official/kv-store/web/static/kv.js → web/static/admin/js/ui-kit.js
 - `toScope()` --calls--> `has()`  [INFERRED]
   plugins/official/cms/web/static/cms.js → web/static/js/alpine.min.js
 - `runSearchNow()` --calls--> `has()`  [INFERRED]
-  plugins/official/file-browser/web/static/file_browser.js → web/static/js/alpine.min.js
-- `switchRoot()` --calls--> `set()`  [INFERRED]
-  plugins/official/file-browser/web/static/file_browser.js → web/static/js/alpine.min.js
-- `createText()` --calls--> `get()`  [INFERRED]
-  plugins/official/file-browser/web/static/file_browser.js → web/static/js/alpine.min.js
-- `createDir()` --calls--> `get()`  [INFERRED]
   plugins/official/file-browser/web/static/file_browser.js → web/static/js/alpine.min.js
 
 ## Hyperedges (group relationships)
@@ -169,24 +170,24 @@
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.03
-Nodes (155): _(), A(), ae(), ai(), an(), ao(), ar(), At() (+147 more)
+Cohesion: 0.02
+Nodes (157): _(), A(), ae(), ai(), an(), ao(), ar(), At() (+149 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (79): init(), closeDeleteConfirm(), closeModal(), isErrorFeedback(), isSuccessfulKvRequest(), notifyFeedback(), onDeleteAfterRequest(), onUpsertAfterRequest() (+71 more)
+Nodes (71): init(), onSubmitEnd(), badgeTone(), init(), loadLogs(), closeDelete(), closeEditor(), init() (+63 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.08
-Nodes (106): Bn(), closest(), a(), Ae(), an(), at(), B(), be() (+98 more)
+Cohesion: 0.1
+Nodes (103): closest(), a(), Ae(), an(), at(), B(), be(), bn() (+95 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.06
-Nodes (87): admin_bearer_token(), admin_can_crud_permissions_via_partials(), admin_can_crud_roles_and_assign_permissions(), admin_can_toggle_plugin_enabled_state(), admin_cms_category_delete_returns_flash_on_conflict(), admin_cms_template_uses_top_nav_and_panel_mounts(), admin_cms_workspace_page_includes_plugin_assets(), admin_cms_workspace_page_renders() (+79 more)
+Nodes (88): admin_bearer_token(), admin_can_crud_permissions_via_partials(), admin_can_crud_roles_and_assign_permissions(), admin_can_toggle_plugin_enabled_state(), admin_cms_category_delete_returns_flash_on_conflict(), admin_cms_template_uses_top_nav_and_panel_mounts(), admin_cms_workspace_page_includes_plugin_assets(), admin_cms_workspace_page_renders() (+80 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.07
-Nodes (84): bindDelegatedEvents(), can(), clearExpandedSubtree(), clearSearch(), closeContextMenu(), closeSearchPanel(), collapseDirectory(), contextMenu() (+76 more)
+Nodes (85): get(), bindDelegatedEvents(), can(), clearExpandedSubtree(), clearSearch(), closeContextMenu(), closeSearchPanel(), collapseDirectory() (+77 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.06
@@ -245,248 +246,248 @@ Cohesion: 0.18
 Nodes (26): activateTab(), bootstrapInitialPane(), canUseStorage(), closeTab(), createPane(), emitChange(), ensureDashboardTab(), ensurePane() (+18 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.09
-Nodes (24): Admin Asset Bundles Declaration, Admin Dynamic Menu System, Admin Workspace Tabbed Navigation, DbGateway (Permissioned SQL), Database Permission Tiers (read/write/admin), Effective Permissions (Official Override), EventBus (Plugin Inter-Communication), HTMX Partial Content Loading (+16 more)
+Cohesion: 0.1
+Nodes (8): closeDeleteConfirm(), closeModal(), isErrorFeedback(), isSuccessfulKvRequest(), notifyFeedback(), onDeleteAfterRequest(), onUpsertAfterRequest(), refreshTable()
 
 ### Community 20 - "Community 20"
-Cohesion: 0.14
-Nodes (10): AdminPageEntry, AdminRegistry, AdminWidgetEntry, ApiRegistry, CliCommandEntry, CliRegistry, RouteEntry, test_admin_registry() (+2 more)
+Cohesion: 0.09
+Nodes (24): Admin Asset Bundles Declaration, Admin Dynamic Menu System, Admin Workspace Tabbed Navigation, DbGateway (Permissioned SQL), Database Permission Tiers (read/write/admin), Effective Permissions (Official Override), EventBus (Plugin Inter-Communication), HTMX Partial Content Loading (+16 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.13
 Nodes (8): Authorizer, command_binding_presence_lookup_is_exact(), command_binding_requires_exact_name(), CompiledPolicySnapshot, HttpBinding, is_path_param(), path_pattern_matches(), split_path_segments()
 
 ### Community 22 - "Community 22"
-Cohesion: 0.2
-Nodes (15): CreateRoleForm, flash_response(), flash_response_with_trigger(), render_roles_rows(), role_permissions_form_partial(), role_permissions_update_partial(), roles_create_partial(), roles_delete_partial() (+7 more)
+Cohesion: 0.14
+Nodes (10): AdminPageEntry, AdminRegistry, AdminWidgetEntry, ApiRegistry, CliCommandEntry, CliRegistry, RouteEntry, test_admin_registry() (+2 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.2
-Nodes (12): bool_or_default(), optional_bool(), optional_non_empty_string(), plugin_state_upsert_and_toggle_round_trip(), PluginStateRepository, required_string(), row_to_event(), row_to_state() (+4 more)
+Nodes (15): CreateRoleForm, flash_response(), flash_response_with_trigger(), render_roles_rows(), role_permissions_form_partial(), role_permissions_update_partial(), roles_create_partial(), roles_delete_partial() (+7 more)
 
 ### Community 24 - "Community 24"
+Cohesion: 0.2
+Nodes (12): bool_or_default(), optional_bool(), optional_non_empty_string(), plugin_state_upsert_and_toggle_round_trip(), PluginStateRepository, required_string(), row_to_event(), row_to_state() (+4 more)
+
+### Community 25 - "Community 25"
 Cohesion: 0.15
 Nodes (19): Admin Menu Design, Admin Menu Refactor Implementation Plan, Admin UI Redesign Design, Admin UI Redesign Implementation Plan, Admin Workspace Tabs + HTMX Partial Navigation Design, Admin Workspace Tabs Implementation Plan, Sushi Coding Standards, Engineering Standards Index (+11 more)
 
-### Community 25 - "Community 25"
+### Community 26 - "Community 26"
 Cohesion: 0.27
 Nodes (16): bootstrap(), bootstrap_skips_disabled_plugin_init_side_effects(), hydrate_authorizer_snapshot(), is_duplicate_column_error(), migration_applied(), plugin_governance_migration_applies_when_marker_missing(), plugin_governance_migration_is_skipped_when_already_applied(), plugin_governance_migration_recovers_from_partial_apply() (+8 more)
 
-### Community 26 - "Community 26"
+### Community 27 - "Community 27"
 Cohesion: 0.18
 Nodes (10): classify_keyword(), classify_sql(), DbGateway, DbGatewayError, DbPermission, first_statement_keyword(), has_multiple_statements(), is_token_char() (+2 more)
 
-### Community 27 - "Community 27"
+### Community 28 - "Community 28"
 Cohesion: 0.25
 Nodes (15): CreatePermissionForm, flash_response(), flash_response_with_trigger(), permissions_create_partial(), permissions_delete_partial(), permissions_table_partial(), permissions_update_partial(), render_permissions_rows() (+7 more)
 
-### Community 28 - "Community 28"
+### Community 29 - "Community 29"
 Cohesion: 0.21
 Nodes (7): active_log_service_cell(), bridge_layer_collects_warn_and_error_only(), current_log_service(), EventVisitor, layer(), LogServiceBridgeLayer, register_log_service()
 
-### Community 29 - "Community 29"
+### Community 30 - "Community 30"
 Cohesion: 0.23
 Nodes (13): expandForRoute(), getChildren(), handleMenuClick(), hasActiveDescendant(), hasChildren(), init(), isActive(), loadMenu() (+5 more)
 
-### Community 30 - "Community 30"
+### Community 31 - "Community 31"
 Cohesion: 0.14
 Nodes (3): M.new(), parse_query_params(), url_decode()
 
-### Community 31 - "Community 31"
+### Community 32 - "Community 32"
 Cohesion: 0.19
 Nodes (9): map_toggle_error(), map_toggle_error_preserves_message(), PluginArgs, PluginCommand, run(), select_status_targets(), status_selection_returns_error_for_missing_plugin(), status_selection_returns_single_match_for_named_plugin() (+1 more)
 
-### Community 32 - "Community 32"
+### Community 33 - "Community 33"
 Cohesion: 0.25
 Nodes (11): config_for(), create_symlink(), list_rejects_parent_directory_escape(), list_sorts_directories_before_files(), read_text_rejects_non_whitelisted_extension(), read_text_rejects_symlink_target(), rename_directory_moves_nested_entries(), rename_rejects_directory_target_inside_source() (+3 more)
 
-### Community 33 - "Community 33"
+### Community 34 - "Community 34"
 Cohesion: 0.19
 Nodes (5): custom_role_round_trip_uses_slug(), LoginRequest, TokenResponse, User, UserRole
 
-### Community 34 - "Community 34"
+### Community 35 - "Community 35"
 Cohesion: 0.29
 Nodes (12): cms_admin_interface_exposes_workbench_handlers(), cms_category_delete_conflicts_when_posts_exist(), cms_cli_dispatch_supports_page_list(), cms_db_wrapper_returns_success_sentinel_for_execute(), cms_page_domain_exposes_overview_and_status_helpers(), cms_post_domain_exposes_overview_and_status_helpers(), cms_post_list_category_query_filters_rows(), cms_public_page_route_hides_draft_content() (+4 more)
 
-### Community 35 - "Community 35"
+### Community 36 - "Community 36"
 Cohesion: 0.29
 Nodes (7): allows_admin_when_command_binding_is_missing(), allows_command_when_role_has_grant(), denies_command_when_binding_exists_without_grant(), ensure_command_authorized(), ensure_command_authorized_with_authorizer(), normalize_role(), resolve_cli_role()
 
-### Community 36 - "Community 36"
+### Community 37 - "Community 37"
 Cohesion: 0.25
 Nodes (7): find_plugin(), plugin_pages_api(), plugin_workspace_context(), plugin_workspace_page(), PluginStateMutationRequest, PluginWorkspaceResponse, render_plugin_workspace_partial()
 
-### Community 37 - "Community 37"
+### Community 38 - "Community 38"
 Cohesion: 0.27
 Nodes (7): contract_registry_api_requires_routes_permission(), contract_registry_supports_web_db_event_fs_entries(), contract_registry_web_page_requires_admin_permission(), create_contract_test_plugin(), create_contract_test_plugin_with_manifest(), make_test_context(), unauthorized_api_namespace_is_not_injected()
 
-### Community 38 - "Community 38"
+### Community 39 - "Community 39"
 Cohesion: 0.35
 Nodes (5): Claims, JwtService, test_create_and_verify_access_token(), test_invalid_token(), test_refresh_token_type()
 
-### Community 39 - "Community 39"
+### Community 40 - "Community 40"
 Cohesion: 0.44
 Nodes (5): SqliteStorage, test_run_migrations(), test_sqlite_execute_and_query(), test_sqlite_multiple_rows(), test_sqlite_null_handling()
 
-### Community 40 - "Community 40"
+### Community 41 - "Community 41"
 Cohesion: 0.31
 Nodes (9): M.extract_root_id(), M.file_name(), M.join_rel(), M.normalize_rel_path(), M.parent_path(), M.parse_query(), M.read_query_value(), M.split_path_and_query() (+1 more)
 
-### Community 41 - "Community 41"
+### Community 42 - "Community 42"
 Cohesion: 0.38
 Nodes (8): CreateUserForm, flash_response(), flash_response_with_trigger(), render_users_rows(), users_create_partial(), users_delete_partial(), users_table_partial(), validate_create_user_form()
 
-### Community 42 - "Community 42"
+### Community 43 - "Community 43"
 Cohesion: 0.27
 Nodes (2): row_to_user(), UserRepository
 
-### Community 43 - "Community 43"
+### Community 44 - "Community 44"
 Cohesion: 0.4
 Nodes (6): load_template(), safe_join(), split_plugin_template_name(), TemplateService, validate_root(), validate_root_optional()
 
-### Community 44 - "Community 44"
+### Community 45 - "Community 45"
 Cohesion: 0.47
 Nodes (4): EventBus, test_emit_no_subscribers(), test_multiple_subscribers(), test_subscribe_and_emit()
 
-### Community 45 - "Community 45"
+### Community 46 - "Community 46"
 Cohesion: 0.22
 Nodes (4): create_user(), CreateUserRequest, PaginationParams, UsersRouteState
 
-### Community 46 - "Community 46"
+### Community 47 - "Community 47"
 Cohesion: 0.36
 Nodes (7): extract_workspace_module_fragment(), is_plugin_disabled_error(), module_template(), module_to_admin_path(), plugin_disabled_message(), workspace_partial(), WorkspaceAssetsResponse
 
-### Community 47 - "Community 47"
+### Community 48 - "Community 48"
 Cohesion: 0.36
 Nodes (8): admin_can_access_admin_partials(), auth_state(), AuthState, AuthUser, extract_token_from_cookie(), non_admin_cannot_access_admin_partials(), require_auth(), viewer_without_policy_grant_is_denied_api_route()
 
-### Community 48 - "Community 48"
+### Community 49 - "Community 49"
 Cohesion: 0.22
 Nodes (5): sqlite_to_json(), Storage, StorageConn, StorageConn<'a>, StorageError
 
-### Community 49 - "Community 49"
+### Community 50 - "Community 50"
 Cohesion: 0.31
 Nodes (4): ensure_rel_path(), friendly_error(), list_context(), root_id_or_unknown()
 
-### Community 50 - "Community 50"
+### Community 51 - "Community 51"
 Cohesion: 0.25
 Nodes (0): 
 
-### Community 51 - "Community 51"
+### Community 52 - "Community 52"
 Cohesion: 0.46
 Nodes (7): create_sandboxed_vm(), test_sandbox_allows_basic_lua(), test_sandbox_allows_string_ops(), test_sandbox_allows_tables(), test_sandbox_blocks_io(), test_sandbox_blocks_os_execute(), test_sandbox_blocks_require()
 
-### Community 52 - "Community 52"
+### Community 53 - "Community 53"
 Cohesion: 0.39
 Nodes (6): parse_assets(), parse_optional_string(), parse_optional_string_array(), resolve_handler_key(), snapshot_from_lua(), WebPageEntry
 
-### Community 53 - "Community 53"
+### Community 54 - "Community 54"
 Cohesion: 0.43
 Nodes (5): M.register(), register_api_route(), register_cli_command(), register_public_route(), register_web_page()
 
-### Community 54 - "Community 54"
+### Community 55 - "Community 55"
 Cohesion: 0.48
 Nodes (6): disabled_command_error(), is_plugin_disabled_error(), map_cli_plugin_error(), map_cli_plugin_error_returns_disabled_message(), run(), RunArgs
 
-### Community 55 - "Community 55"
+### Community 56 - "Community 56"
 Cohesion: 0.29
 Nodes (2): AuthRouteState, RefreshRequest
 
-### Community 56 - "Community 56"
+### Community 57 - "Community 57"
 Cohesion: 0.38
 Nodes (5): M.new(), parse_urlencoded(), request_path(), strip_query(), url_decode()
 
-### Community 57 - "Community 57"
+### Community 58 - "Community 58"
 Cohesion: 0.47
 Nodes (4): login_error_response(), login_submit(), LoginForm, render_login_flash_html()
 
-### Community 58 - "Community 58"
+### Community 59 - "Community 59"
 Cohesion: 0.33
 Nodes (2): LuaContractError, LuaContractErrorCode
 
-### Community 59 - "Community 59"
+### Community 60 - "Community 60"
 Cohesion: 0.6
 Nodes (5): install_plugin_require(), require_loads_plugin_local_module(), require_rejects_parent_traversal(), safe_module_join(), validate_module_name()
 
-### Community 60 - "Community 60"
+### Community 61 - "Community 61"
 Cohesion: 0.53
 Nodes (4): parse_optional_bool(), parse_optional_string(), resolve_handler_key(), snapshot_from_lua()
 
-### Community 61 - "Community 61"
+### Community 62 - "Community 62"
 Cohesion: 0.4
 Nodes (2): CapabilityRegistry, CapabilitySnapshot
 
-### Community 62 - "Community 62"
+### Community 63 - "Community 63"
 Cohesion: 0.7
 Nodes (4): merge_static_prefix(), normalize_static_url_prefix(), render_template(), render_template_with_context()
 
-### Community 63 - "Community 63"
+### Community 64 - "Community 64"
 Cohesion: 0.4
 Nodes (0): 
 
-### Community 64 - "Community 64"
+### Community 65 - "Community 65"
 Cohesion: 0.7
 Nodes (4): copy_dir_all(), dispatch(), file_browser_public_routes_support_core_operations(), write_manifest()
 
-### Community 65 - "Community 65"
+### Community 66 - "Community 66"
 Cohesion: 0.5
 Nodes (1): SushiContext
 
-### Community 66 - "Community 66"
+### Community 67 - "Community 67"
 Cohesion: 0.4
 Nodes (3): ContractSchemaVersion, LuaCapabilityContract, LuaCapabilityEntry
 
-### Community 67 - "Community 67"
+### Community 68 - "Community 68"
 Cohesion: 0.4
 Nodes (2): CapabilityKind, PermissionDecisionEngine
 
-### Community 68 - "Community 68"
+### Community 69 - "Community 69"
 Cohesion: 0.4
 Nodes (1): sushi.init()
 
-### Community 69 - "Community 69"
+### Community 70 - "Community 70"
 Cohesion: 0.4
 Nodes (1): M.new()
 
-### Community 70 - "Community 70"
+### Community 71 - "Community 71"
 Cohesion: 0.4
 Nodes (0): 
 
-### Community 71 - "Community 71"
+### Community 72 - "Community 72"
 Cohesion: 0.5
 Nodes (2): ConfigArgs, ConfigCommand
 
-### Community 72 - "Community 72"
+### Community 73 - "Community 73"
 Cohesion: 0.5
 Nodes (2): Cli, Commands
 
-### Community 73 - "Community 73"
+### Community 74 - "Community 74"
 Cohesion: 0.67
 Nodes (2): M.execute(), M.query()
 
-### Community 74 - "Community 74"
+### Community 75 - "Community 75"
 Cohesion: 0.83
 Nodes (2): M.parse_urlencoded(), url_decode()
 
-### Community 75 - "Community 75"
+### Community 76 - "Community 76"
 Cohesion: 0.5
 Nodes (0): 
 
-### Community 76 - "Community 76"
+### Community 77 - "Community 77"
 Cohesion: 0.5
 Nodes (4): Admin Panel, Alpine.js Framework, HTMX Framework, TailwindCSS Framework
 
-### Community 77 - "Community 77"
+### Community 78 - "Community 78"
 Cohesion: 0.67
 Nodes (1): ServeArgs
 
-### Community 78 - "Community 78"
-Cohesion: 0.67
-Nodes (1): SeedArgs
-
 ### Community 79 - "Community 79"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): SeedArgs
 
 ### Community 80 - "Community 80"
 Cohesion: 0.67
@@ -498,75 +499,75 @@ Nodes (0):
 
 ### Community 82 - "Community 82"
 Cohesion: 0.67
-Nodes (1): ApiRouteContract
+Nodes (0): 
 
 ### Community 83 - "Community 83"
 Cohesion: 0.67
-Nodes (1): EventEntry
+Nodes (1): ApiRouteContract
 
 ### Community 84 - "Community 84"
 Cohesion: 0.67
-Nodes (1): DbEntry
+Nodes (1): EventEntry
 
 ### Community 85 - "Community 85"
 Cohesion: 0.67
-Nodes (1): FsEntry
+Nodes (1): DbEntry
 
 ### Community 86 - "Community 86"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): FsEntry
 
 ### Community 87 - "Community 87"
 Cohesion: 0.67
 Nodes (0): 
 
 ### Community 88 - "Community 88"
+Cohesion: 0.67
+Nodes (0): 
+
+### Community 89 - "Community 89"
 Cohesion: 1.0
 Nodes (2): escape_html(), M.to_html()
 
-### Community 89 - "Community 89"
+### Community 90 - "Community 90"
 Cohesion: 0.67
 Nodes (0): 
 
-### Community 90 - "Community 90"
+### Community 91 - "Community 91"
 Cohesion: 0.67
 Nodes (3): Admin Workspace RBAC Mapping, RBAC Permission Model, Workspace Navigation (HTMX + Tabs)
 
-### Community 91 - "Community 91"
-Cohesion: 1.0
-Nodes (0): 
-
 ### Community 92 - "Community 92"
 Cohesion: 1.0
-Nodes (1): TemplateError
+Nodes (0): 
 
 ### Community 93 - "Community 93"
 Cohesion: 1.0
-Nodes (1): WebContract
+Nodes (1): TemplateError
 
 ### Community 94 - "Community 94"
 Cohesion: 1.0
-Nodes (1): EventContract
+Nodes (1): WebContract
 
 ### Community 95 - "Community 95"
 Cohesion: 1.0
-Nodes (1): DbContract
+Nodes (1): EventContract
 
 ### Community 96 - "Community 96"
 Cohesion: 1.0
-Nodes (1): FsContract
+Nodes (1): DbContract
 
 ### Community 97 - "Community 97"
 Cohesion: 1.0
-Nodes (1): AdminPageContract
+Nodes (1): FsContract
 
 ### Community 98 - "Community 98"
 Cohesion: 1.0
-Nodes (1): CliCommandContract
+Nodes (1): AdminPageContract
 
 ### Community 99 - "Community 99"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (1): CliCommandContract
 
 ### Community 100 - "Community 100"
 Cohesion: 1.0
@@ -598,27 +599,27 @@ Nodes (0):
 
 ### Community 107 - "Community 107"
 Cohesion: 1.0
-Nodes (2): Su Shi (苏轼) - Project Namesake, Sushi Platform
+Nodes (0): 
 
 ### Community 108 - "Community 108"
 Cohesion: 1.0
-Nodes (2): Database Migration Tables, RBAC Data Model (SQL)
+Nodes (2): Su Shi (苏轼) - Project Namesake, Sushi Platform
 
 ### Community 109 - "Community 109"
 Cohesion: 1.0
-Nodes (2): Sushi Favicon Su Shi Minimal Ink Design, Su Shi Minimal Ink Favicon Implementation Plan
+Nodes (2): Database Migration Tables, RBAC Data Model (SQL)
 
 ### Community 110 - "Community 110"
 Cohesion: 1.0
-Nodes (2): JWT Authentication (access + refresh tokens), RBAC (Role-Based Access Control)
+Nodes (2): Sushi Favicon Su Shi Minimal Ink Design, Su Shi Minimal Ink Favicon Implementation Plan
 
 ### Community 111 - "Community 111"
 Cohesion: 1.0
-Nodes (2): Su Shi Minimal Ink Mark (Poetry Abstract), Favicon SVG (Su Shi Minimal Ink Mark)
+Nodes (2): JWT Authentication (access + refresh tokens), RBAC (Role-Based Access Control)
 
 ### Community 112 - "Community 112"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (2): Su Shi Minimal Ink Mark (Poetry Abstract), Favicon SVG (Su Shi Minimal Ink Mark)
 
 ### Community 113 - "Community 113"
 Cohesion: 1.0
@@ -660,62 +661,64 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
+### Community 123 - "Community 123"
+Cohesion: 1.0
+Nodes (0): 
+
 ## Knowledge Gaps
 - **139 isolated node(s):** `ServeArgs`, `ConfigArgs`, `ConfigCommand`, `RunArgs`, `PluginArgs` (+134 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 91`** (2 nodes): `dashboard.rs`, `dashboard_page()`
+- **Thin community `Community 92`** (2 nodes): `dashboard.rs`, `dashboard_page()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (2 nodes): `template_error.rs`, `TemplateError`
+- **Thin community `Community 93`** (2 nodes): `template_error.rs`, `TemplateError`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (2 nodes): `web.rs`, `WebContract`
+- **Thin community `Community 94`** (2 nodes): `web.rs`, `WebContract`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (2 nodes): `event.rs`, `EventContract`
+- **Thin community `Community 95`** (2 nodes): `event.rs`, `EventContract`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (2 nodes): `db.rs`, `DbContract`
+- **Thin community `Community 96`** (2 nodes): `db.rs`, `DbContract`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (2 nodes): `fs.rs`, `FsContract`
+- **Thin community `Community 97`** (2 nodes): `fs.rs`, `FsContract`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (2 nodes): `AdminPageContract`, `admin.rs`
+- **Thin community `Community 98`** (2 nodes): `AdminPageContract`, `admin.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (2 nodes): `CliCommandContract`, `cli.rs`
+- **Thin community `Community 99`** (2 nodes): `CliCommandContract`, `cli.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (2 nodes): `snapshot_from_lua()`, `admin.rs`
+- **Thin community `Community 100`** (2 nodes): `snapshot_from_lua()`, `admin.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (2 nodes): `snapshot_from_lua()`, `cli.rs`
+- **Thin community `Community 101`** (2 nodes): `snapshot_from_lua()`, `cli.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (2 nodes): `mod.rs`, `inject()`
+- **Thin community `Community 102`** (2 nodes): `mod.rs`, `inject()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (2 nodes): `M.escape()`, `html.lua`
+- **Thin community `Community 103`** (2 nodes): `M.escape()`, `html.lua`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (2 nodes): `slug.lua`, `M.normalize()`
+- **Thin community `Community 104`** (2 nodes): `slug.lua`, `M.normalize()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (2 nodes): `M.new()`, `category.lua`
+- **Thin community `Community 105`** (2 nodes): `M.new()`, `category.lua`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (2 nodes): `post.lua`, `M.new()`
+- **Thin community `Community 106`** (2 nodes): `post.lua`, `M.new()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (2 nodes): `M.new()`, `page.lua`
+- **Thin community `Community 107`** (2 nodes): `M.new()`, `page.lua`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 107`** (2 nodes): `Su Shi (苏轼) - Project Namesake`, `Sushi Platform`
+- **Thin community `Community 108`** (2 nodes): `Su Shi (苏轼) - Project Namesake`, `Sushi Platform`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 108`** (2 nodes): `Database Migration Tables`, `RBAC Data Model (SQL)`
+- **Thin community `Community 109`** (2 nodes): `Database Migration Tables`, `RBAC Data Model (SQL)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 109`** (2 nodes): `Sushi Favicon Su Shi Minimal Ink Design`, `Su Shi Minimal Ink Favicon Implementation Plan`
+- **Thin community `Community 110`** (2 nodes): `Sushi Favicon Su Shi Minimal Ink Design`, `Su Shi Minimal Ink Favicon Implementation Plan`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 110`** (2 nodes): `JWT Authentication (access + refresh tokens)`, `RBAC (Role-Based Access Control)`
+- **Thin community `Community 111`** (2 nodes): `JWT Authentication (access + refresh tokens)`, `RBAC (Role-Based Access Control)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 111`** (2 nodes): `Su Shi Minimal Ink Mark (Poetry Abstract)`, `Favicon SVG (Su Shi Minimal Ink Mark)`
+- **Thin community `Community 112`** (2 nodes): `Su Shi Minimal Ink Mark (Poetry Abstract)`, `Favicon SVG (Su Shi Minimal Ink Mark)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 112`** (1 nodes): `lib.rs`
+- **Thin community `Community 113`** (1 nodes): `lib.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 113`** (1 nodes): `mod.rs`
+- **Thin community `Community 114`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 114`** (1 nodes): `lib.rs`
+- **Thin community `Community 115`** (1 nodes): `lib.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 115`** (1 nodes): `mod.rs`
+- **Thin community `Community 116`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 116`** (1 nodes): `lib.rs`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 117`** (1 nodes): `mod.rs`
+- **Thin community `Community 117`** (1 nodes): `lib.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 118`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -723,25 +726,27 @@ Nodes (0):
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 120`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 121`** (1 nodes): `lib.rs`
+- **Thin community `Community 121`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 122`** (1 nodes): `mod.rs`
+- **Thin community `Community 122`** (1 nodes): `lib.rs`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 123`** (1 nodes): `mod.rs`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `has()` connect `Community 0` to `Community 10`, `Community 2`, `Community 4`, `Community 29`?**
+- **Why does `get()` connect `Community 4` to `Community 0`, `Community 2`, `Community 30`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `has()` connect `Community 0` to `Community 10`, `Community 2`, `Community 4`, `Community 30`?**
   _High betweenness centrality (0.018) - this node is a cross-community bridge._
-- **Why does `get()` connect `Community 0` to `Community 2`, `Community 4`, `Community 29`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
-- **Why does `notify()` connect `Community 1` to `Community 14`?**
+- **Why does `ae()` connect `Community 0` to `Community 1`?**
   _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
   _139 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.03 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.02 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
   _Cohesion score 0.02 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.08 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.1 - nodes in this community are weakly interconnected._
