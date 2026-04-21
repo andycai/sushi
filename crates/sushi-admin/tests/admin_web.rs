@@ -1146,6 +1146,32 @@ async fn admin_cms_workspace_page_renders() {
 }
 
 #[tokio::test]
+async fn admin_cms_workspace_page_includes_plugin_assets() {
+    let app = build_app_with_cms_plugin_loaded(None).await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/cms")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", admin_bearer_token()),
+                )
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("/static/plugins/official/cms/cms.js"));
+    assert!(html.contains("/static/plugins/official/cms/cms.css"));
+}
+
+#[tokio::test]
 async fn plugin_admin_page_returns_forbidden_when_plugin_disabled() {
     let (app, ctx) = build_app_with_plugin_admin_page_and_context("/admin/cms").await;
     ctx.plugins

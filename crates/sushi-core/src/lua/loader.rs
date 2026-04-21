@@ -815,7 +815,22 @@ impl Plugin for LuaPlugin {
                 .await?;
             }
 
+            let static_prefix = {
+                let cfg = ctx.config.get().await;
+                normalize_static_url_prefix(&cfg.web.static_url_prefix)
+            };
+            let plugin_static_root = self.web_static_dir();
+
             for page in web_pages {
+                let assets = resolve_page_assets(
+                    &self.plugin_path_id,
+                    &self.manifest,
+                    &page.bundle_names,
+                    &page.page_js,
+                    &page.page_css,
+                    &plugin_static_root,
+                    &static_prefix,
+                )?;
                 register_admin_page_binding(
                     ctx,
                     &policy_repo,
@@ -824,7 +839,7 @@ impl Plugin for LuaPlugin {
                     &page.path,
                     &page.title,
                     &page.handler_key,
-                    PageResolvedAssets::default(),
+                    assets,
                     page.policy.as_deref(),
                 )
                 .await?;
@@ -1328,30 +1343,14 @@ end)
         assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/posts/table");
         assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/posts/upsert");
         assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/posts/delete");
-        assert_contains_method_path_route(
-            &source,
-            "GET",
-            "/admin/partials/cms/categories/table",
-        );
-        assert_contains_method_path_route(
-            &source,
-            "POST",
-            "/admin/partials/cms/categories/upsert",
-        );
-        assert_contains_method_path_route(
-            &source,
-            "POST",
-            "/admin/partials/cms/categories/delete",
-        );
+        assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/categories/table");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/categories/upsert");
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/categories/delete");
         assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/overview");
         assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/library/*");
         assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/editor/*");
         assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/editor/save");
-        assert_contains_method_path_route(
-            &source,
-            "POST",
-            "/admin/partials/cms/status/transition",
-        );
+        assert_contains_method_path_route(&source, "POST", "/admin/partials/cms/status/transition");
         assert_contains_method_path_route(&source, "GET", "/admin/partials/cms/commands");
         assert!(source.contains("path = \"/admin/cms\""));
         assert!(source.contains("template = \"plugins/official/cms/cms.html\""));
@@ -1700,7 +1699,9 @@ end
             .await
             .unwrap();
         ctx.db
-            .run_migrations(include_str!("../../../../migrations/008_plugin_governance_v1.sql"))
+            .run_migrations(include_str!(
+                "../../../../migrations/008_plugin_governance_v1.sql"
+            ))
             .await
             .unwrap();
 
@@ -1856,6 +1857,94 @@ end
                 .await
                 .as_deref(),
             Some("api.notes.read")
+        );
+    }
+
+    #[tokio::test]
+    async fn loader_resolves_contract_registry_web_page_assets() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("third_party").join("contract_web_assets");
+        std::fs::create_dir_all(dir.join("web/static")).unwrap();
+
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "contract_web_assets"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
+
+[permissions]
+admin = true
+
+[admin.assets.bundles.workspace]
+js = ["notes.js"]
+css = ["notes.css"]
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(dir.join("web/static/notes.js"), "console.log('notes');").unwrap();
+        std::fs::write(
+            dir.join("web/static/notes.css"),
+            ".notes-panel { color: #0f172a; }",
+        )
+        .unwrap();
+
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+sushi.init = function()
+    sushi.capability.register({
+        surface = "web",
+        kind = "page",
+        path = "/admin/notes",
+        title = "Notes",
+        handler = function()
+            return "notes"
+        end,
+        assets = {
+            bundles = { "workspace" }
+        }
+    })
+end
+"#,
+        )
+        .unwrap();
+
+        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
+        let ctx = test_context().await;
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .unwrap();
+
+        plugins[0].init(&ctx).await.expect("plugin initializes");
+
+        let assets = ctx
+            .plugins
+            .admin_page_assets("/admin/notes")
+            .await
+            .expect("missing admin assets for /admin/notes");
+
+        assert_eq!(
+            assets.js,
+            vec!["/static/plugins/third_party/contract_web_assets/notes.js"]
+        );
+        assert_eq!(
+            assets.css,
+            vec!["/static/plugins/third_party/contract_web_assets/notes.css"]
         );
     }
 

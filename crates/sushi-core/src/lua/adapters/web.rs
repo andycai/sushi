@@ -7,6 +7,9 @@ pub struct WebPageEntry {
     pub title: String,
     pub handler_key: String,
     pub policy: Option<String>,
+    pub bundle_names: Vec<String>,
+    pub page_js: Vec<String>,
+    pub page_css: Vec<String>,
 }
 
 static CONTRACT_WEB_HANDLER_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -72,6 +75,7 @@ pub fn snapshot_from_lua(
         let title = parse_optional_string(&entry, "title", index, "web")?
             .unwrap_or_else(|| template.unwrap_or_else(|| path.clone()));
         let policy = parse_optional_string(&entry, "policy", index, "web")?;
+        let (bundle_names, page_js, page_css) = parse_assets(&entry, index)?;
 
         let handler_from_key = parse_optional_string(&entry, "handler_key", index, "web")?
             .filter(|value| !value.is_empty());
@@ -82,10 +86,37 @@ pub fn snapshot_from_lua(
             title,
             handler_key,
             policy,
+            bundle_names,
+            page_js,
+            page_css,
         });
     }
 
     Ok(pages)
+}
+
+fn parse_assets(
+    entry: &mlua::Table,
+    index: usize,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>), PluginError> {
+    let assets = match entry.get::<mlua::Value>("assets").map_err(|e| {
+        PluginError::InitFailed(format!(
+            "contract registry web entry {index} has invalid assets: {e}"
+        ))
+    })? {
+        mlua::Value::Nil => return Ok((Vec::new(), Vec::new(), Vec::new())),
+        mlua::Value::Table(table) => table,
+        _ => {
+            return Err(PluginError::InitFailed(format!(
+                "contract registry web entry {index} field 'assets' must be a table"
+            )))
+        }
+    };
+
+    let bundles = parse_optional_string_array(&assets, "bundles", index)?;
+    let js = parse_optional_string_array(&assets, "js", index)?;
+    let css = parse_optional_string_array(&assets, "css", index)?;
+    Ok((bundles, js, css))
 }
 
 fn parse_optional_string(
@@ -112,6 +143,75 @@ fn parse_optional_string(
         )),
         _ => Err(PluginError::InitFailed(format!(
             "contract registry {surface} entry {index} field '{field}' must be a string"
+        ))),
+    }
+}
+
+fn parse_optional_string_array(
+    entry: &mlua::Table,
+    field: &str,
+    index: usize,
+) -> Result<Vec<String>, PluginError> {
+    match entry.get::<mlua::Value>(field).map_err(|e| {
+        PluginError::InitFailed(format!(
+            "contract registry web entry {index} has invalid assets.{field}: {e}"
+        ))
+    })? {
+        mlua::Value::Nil => Ok(Vec::new()),
+        mlua::Value::Table(values) => {
+            let len = values.raw_len();
+            let mut entries = 0usize;
+            for pair in values.pairs::<mlua::Value, mlua::Value>() {
+                let (key, _) = pair.map_err(|e| {
+                    PluginError::InitFailed(format!(
+                        "contract registry web entry {index} has invalid assets.{field} keys: {e}"
+                    ))
+                })?;
+                entries += 1;
+                match key {
+                    mlua::Value::Integer(array_index)
+                        if array_index >= 1 && (array_index as usize) <= len => {}
+                    _ => {
+                        return Err(PluginError::InitFailed(format!(
+                            "contract registry web entry {index} assets.{field} must be an array of strings"
+                        )))
+                    }
+                }
+            }
+            if entries != len {
+                return Err(PluginError::InitFailed(format!(
+                    "contract registry web entry {index} assets.{field} must be an array of strings"
+                )));
+            }
+
+            let mut out = Vec::with_capacity(len);
+            for array_index in 1..=len {
+                let value = values.get::<mlua::Value>(array_index).map_err(|e| {
+                    PluginError::InitFailed(format!(
+                        "contract registry web entry {index} has invalid assets.{field}[{array_index}] value: {e}"
+                    ))
+                })?;
+                let item = match value {
+                    mlua::Value::String(item) => item
+                        .to_str()
+                        .map_err(|e| {
+                            PluginError::InitFailed(format!(
+                                "contract registry web entry {index} has invalid utf-8 in assets.{field}[{array_index}]: {e}"
+                            ))
+                        })?
+                        .to_string(),
+                    _ => {
+                        return Err(PluginError::InitFailed(format!(
+                            "contract registry web entry {index} assets.{field} entries must be strings"
+                        )))
+                    }
+                };
+                out.push(item);
+            }
+            Ok(out)
+        }
+        _ => Err(PluginError::InitFailed(format!(
+            "contract registry web entry {index} assets.{field} must be an array of strings"
         ))),
     }
 }
