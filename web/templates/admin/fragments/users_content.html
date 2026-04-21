@@ -1,10 +1,10 @@
 <section class="admin-module" data-admin-workspace-module="users" x-data="usersPage()" x-on:users:close-modal.window="closeModal()">
  <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
- <div>
+ <div data-admin-page-header>
  <h1 class="text-3xl font-bold tracking-tight">Identity & Access</h1>
  <p class="text-sm text-base-content/70">Create, monitor, and remove administrator and editor accounts.</p>
  </div>
- <div class="flex flex-wrap items-center gap-2">
+ <div class="flex flex-wrap items-center gap-2" data-admin-action-cluster>
  <div class="w-full sm:w-auto">
  <input
  type="text"
@@ -24,7 +24,7 @@
  User lifecycle actions require the <span class="font-mono text-xs sm:text-sm">users.manage</span> permission.
  </div>
 
- <section class="card border border-base-300 bg-base-100 shadow-sm">
+ <section class="card border border-base-300 bg-base-100 shadow-sm" data-admin-table-card>
  <header class="card-body pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-base-300">
  <h2 class="text-lg font-semibold">User directory</h2>
  <div class="w-full lg:w-auto overflow-x-auto">

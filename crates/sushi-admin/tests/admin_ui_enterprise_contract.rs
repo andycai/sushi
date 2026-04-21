@@ -50,6 +50,14 @@ fn core_admin_fragments_expose_page_header_contract() {
 }
 
 #[test]
+fn users_fragment_has_enterprise_toolbar_and_table_card() {
+    let source = read("web/templates/admin/fragments/users_content.html");
+    assert!(source.contains("data-admin-page-header"));
+    assert!(source.contains("data-admin-action-cluster"));
+    assert!(source.contains("data-admin-table-card"));
+}
+
+#[test]
 fn official_plugin_templates_follow_enterprise_workspace_contract() {
     let cms = read("plugins/official/cms/web/templates/cms.html");
     assert!(cms.contains("data-enterprise-workbench=\"cms\""));
