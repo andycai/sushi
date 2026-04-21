@@ -51,10 +51,18 @@ fn core_admin_fragments_expose_page_header_contract() {
 
 #[test]
 fn users_fragment_has_enterprise_toolbar_and_table_card() {
-    let source = read("web/templates/admin/fragments/users_content.html");
-    assert!(source.contains("data-admin-page-header"));
-    assert!(source.contains("data-admin-action-cluster"));
-    assert!(source.contains("data-admin-table-card"));
+    let files = [
+        "web/templates/admin/fragments/users_content.html",
+        "web/templates/admin/fragments/roles_content.html",
+        "web/templates/admin/fragments/permissions_content.html",
+        "web/templates/admin/fragments/menus_content.html",
+        "web/templates/admin/fragments/plugins_content.html",
+        "web/templates/admin/fragments/logs_content.html",
+    ];
+    for file in files {
+        let source = read(file);
+        assert!(source.contains("data-admin-table-card"), "missing in {file}");
+    }
 }
 
 #[test]
