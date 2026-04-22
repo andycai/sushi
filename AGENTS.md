@@ -187,17 +187,16 @@ This project uses a graphify knowledge graph in `graphify-out/`.
 <claude-mem-context>
 # Memory Context
 
-# [sushi] recent context, 2026-04-22 2:19pm GMT+8
+# [sushi] recent context, 2026-04-22 2:30pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (9,255t read) | 758,146t work | 99% savings
+Stats: 50 obs (9,187t read) | 850,476t work | 99% savings
 
 ### Apr 22, 2026
-406 11:23a 🟣 UI Redesign Implementation Complete - All Tests Passing
-407 " ✅ Implementation Complete - 18 Files Modified
+407 11:23a ✅ Implementation Complete - 18 Files Modified
 408 11:26a ✅ Implementation Committed in 3 Commits
 409 " 🟣 UI Redesign Complete and Verified - Branch Ready for Review
 410 11:32a ✅ UI Redesign Merged to Main and Worktree Cleaned Up
@@ -246,6 +245,7 @@ Stats: 50 obs (9,255t read) | 758,146t work | 99% savings
 454 2:10p 🔴 Added hover background for file browser node label
 455 2:15p 🔴 Enhanced file browser hover states with smooth transitions
 456 2:18p 🔴 Committed file browser UI fixes
+457 2:20p 🟣 Refactored admin partial route authorization to use policy-based access control
 
-Access 758k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 850k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
