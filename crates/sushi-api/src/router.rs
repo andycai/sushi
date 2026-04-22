@@ -5,7 +5,6 @@ use axum::Router;
 use serde_json::Value;
 use std::sync::Arc;
 use sushi_core::auth::middleware::{require_auth, AuthState};
-use sushi_core::auth::model::UserRole;
 use sushi_core::context::SushiContext;
 use sushi_core::logs::LogService;
 use sushi_core::plugin::manager::PluginManager;
@@ -146,13 +145,13 @@ async fn plugin_api_dispatch(
                 .into_response();
         }
 
-        let role = UserRole::from_slug(&claims.role);
-        let role_slug = role.as_str().to_string();
+        let role_slug = claims.role.clone();
+        let policy_surface = policy_surface_for_match_path(&match_path);
 
         if state
             .auth_state
             .authorizer
-            .check_http(&role_slug, "api", &method, &match_path)
+            .check_http(&role_slug, policy_surface, &method, &match_path)
             .await
             .is_err()
         {
@@ -160,15 +159,6 @@ async fn plugin_api_dispatch(
                 axum::http::StatusCode::FORBIDDEN,
                 [(axum::http::header::CONTENT_TYPE, "application/json")],
                 "{\"error\":\"Insufficient permissions for this API route\"}".to_string(),
-            )
-                .into_response();
-        }
-
-        if match_path.starts_with("/admin/partials/") && !role.is_admin() {
-            return (
-                axum::http::StatusCode::FORBIDDEN,
-                [(axum::http::header::CONTENT_TYPE, "application/json")],
-                "{\"error\":\"Admin role required for admin partial routes\"}".to_string(),
             )
                 .into_response();
         }
@@ -264,6 +254,14 @@ async fn plugin_api_dispatch(
             "not found".to_string(),
         )
             .into_response(),
+    }
+}
+
+fn policy_surface_for_match_path(path: &str) -> &'static str {
+    if path == "/admin" || path.starts_with("/admin/") {
+        "admin"
+    } else {
+        "api"
     }
 }
 
@@ -431,6 +429,29 @@ mod tests {
         }
     }
 
+    fn auth_state_with_snapshot(
+        http_bindings: Vec<HttpBinding>,
+        role_grants: Vec<(&str, &str)>,
+    ) -> AuthState {
+        AuthState {
+            jwt_service: Arc::new(JwtService::new(
+                "test-secret-key-at-least-32-chars-long!",
+                3600,
+                604800,
+            )),
+            authorizer: Arc::new(sushi_core::auth::authorizer::Authorizer::new(
+                CompiledPolicySnapshot::new(
+                    http_bindings,
+                    vec![],
+                    role_grants
+                        .into_iter()
+                        .map(|(role, key)| (role.to_string(), key.to_string()))
+                        .collect(),
+                ),
+            )),
+        }
+    }
+
     async fn refresh_api_authorizer(ctx: &SushiContext) {
         let grants_rows = ctx
             .db
@@ -552,6 +573,142 @@ mod tests {
             .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert_eq!(body, r#"{"ok":true}"#);
+    }
+
+    #[test]
+    fn plugin_policy_surface_uses_admin_for_admin_paths() {
+        assert_eq!(
+            policy_surface_for_match_path("/admin/partials/cms/overview"),
+            "admin"
+        );
+        assert_eq!(policy_surface_for_match_path("/admin/cms"), "admin");
+        assert_eq!(policy_surface_for_match_path("/api/cms/pages"), "api");
+    }
+
+    #[tokio::test]
+    async fn plugin_api_dispatch_allows_editor_for_admin_partial_when_policy_granted() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_admin_partial";
+        let handler = lua
+            .create_async_function(|_, ()| async { Ok("<div>ok</div>".to_string()) })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/admin/partials/kv/table",
+                "plugin",
+                handler_key,
+                Some("admin.kv.manage"),
+                false,
+            )
+            .await;
+
+        let auth_state = auth_state_with_snapshot(
+            vec![HttpBinding {
+                surface: "admin".to_string(),
+                method: "GET".to_string(),
+                path_pattern: "/admin/partials/kv/table".to_string(),
+                policy_key: "admin.kv.manage".to_string(),
+            }],
+            vec![("editor", "admin.kv.manage")],
+        );
+        let token = auth_state
+            .jwt_service
+            .create_access_token(2, "editor_user", "editor")
+            .expect("failed to create editor access token");
+
+        let state = PluginApiState {
+            plugins: manager,
+            auth_state,
+            logs: Arc::new(LogService::new()),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/admin/partials/kv/table")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert_eq!(body, "<div>ok</div>");
+    }
+
+    #[tokio::test]
+    async fn plugin_api_dispatch_denies_admin_partial_without_admin_surface_grant() {
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+
+        let handler_key = "h_admin_partial_denied";
+        let handler = lua
+            .create_async_function(|_, ()| async { Ok("<div>denied</div>".to_string()) })
+            .unwrap();
+        handlers.set(handler_key, handler).unwrap();
+
+        let manager = PluginManager::new();
+        manager.register_vm("plugin", lua).await;
+        manager
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/admin/partials/kv/table",
+                "plugin",
+                handler_key,
+                Some("admin.kv.manage"),
+                false,
+            )
+            .await;
+
+        let auth_state = auth_state_with_snapshot(
+            vec![HttpBinding {
+                surface: "admin".to_string(),
+                method: "GET".to_string(),
+                path_pattern: "/admin/partials/kv/table".to_string(),
+                policy_key: "admin.kv.manage".to_string(),
+            }],
+            vec![],
+        );
+        let token = auth_state
+            .jwt_service
+            .create_access_token(3, "viewer_user", "viewer")
+            .expect("failed to create viewer access token");
+
+        let state = PluginApiState {
+            plugins: manager,
+            auth_state,
+            logs: Arc::new(LogService::new()),
+            body_size_limit: 1024,
+            route_map: Vec::new(),
+        };
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/admin/partials/kv/table")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = plugin_api_dispatch(State(state), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("Insufficient permissions"), "body: {body}");
     }
 
     #[tokio::test]
