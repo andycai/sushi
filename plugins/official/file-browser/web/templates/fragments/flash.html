@@ -1,3 +1,9 @@
-<div class="rounded-md border px-3 py-2 text-sm {% if tone == "success" %}border-emerald-200 bg-emerald-50 text-emerald-900{% elif tone == "error" %}border-rose-200 bg-rose-50 text-rose-900{% else %}border-slate-200 bg-slate-50 text-slate-800{% endif %}">
+{% set tone_class = "alert-info" %}
+{% if tone == "success" %}
+{% set tone_class = "alert-success" %}
+{% elif tone == "error" %}
+{% set tone_class = "alert-error" %}
+{% endif %}
+<div class="alert {{ tone_class }} border border-base-300 px-3 py-2 text-sm shadow-sm" role="alert">
   {{ message }}
 </div>

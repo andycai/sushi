@@ -2114,6 +2114,8 @@ async fn standard_login_submit_returns_login_template_error_for_invalid_credenti
     let html = String::from_utf8_lossy(&body);
     assert!(html.contains("Invalid credentials"), "html: {html}");
     assert!(html.contains("id=\"login-form\""), "html: {html}");
+    assert!(html.contains("data-admin-login-shell"), "html: {html}");
+    assert!(html.contains("data-enterprise-trust-panel"), "html: {html}");
 }
 
 #[tokio::test]
@@ -2607,6 +2609,23 @@ fn plugins_rows_template_opens_workspace_in_tab_when_available() {
     assert!(
         html.contains("@click.prevent=\"openWorkspace("),
         "plugins rows should use openWorkspace handler for tab navigation: {}",
+        template_path.display()
+    );
+}
+
+#[test]
+fn login_template_includes_enterprise_shell_markers() {
+    let template_path = templates_root().join("admin").join("login.html");
+    let html = fs::read_to_string(&template_path).expect("failed to read login template");
+
+    assert!(
+        html.contains("data-admin-login-shell"),
+        "login template missing admin login shell marker: {}",
+        template_path.display()
+    );
+    assert!(
+        html.contains("data-enterprise-trust-panel"),
+        "login template missing enterprise trust panel marker: {}",
         template_path.display()
     );
 }

@@ -26,10 +26,10 @@
   <script defer src="{{ static_prefix }}/js/htmx.min.js"></script>
   {% block head %}{% endblock %}
 </head>
-<body x-data="{% block body_x_data %}adminMenu(){% endblock %}" {% block body_attrs %}class="{% block body_class %}{% endblock %}"{% endblock %}>
-  <div class="admin-shell">
+<body data-admin-shell x-data="{% block body_x_data %}adminMenu(){% endblock %}" {% block body_attrs %}class="{% block body_class %}{% endblock %}"{% endblock %}>
+  <div class="admin-shell" data-admin-shell>
     {% block nav %}
-    <aside class="admin-sidebar">
+    <aside class="admin-sidebar" data-admin-nav>
       <div class="admin-brand">
         <span class="admin-brand-logo">
           <img src="{{ static_prefix }}/favicon.svg" alt="Sushi logo">
@@ -40,7 +40,7 @@
         </span>
       </div>
       <nav class="admin-nav">
-        <div class="admin-nav-list">
+        <div class="admin-nav-list" data-admin-nav-section="primary">
           <template x-for="item in topMenuItems()" :key="item.id">
             <div class="nav-item-wrapper" :class="{ 'is-expanded': isExpanded(item.id) }">
               <a
@@ -102,7 +102,7 @@
           </template>
         </div>
 
-        <div class="nav-footer">
+        <div class="nav-footer" data-admin-nav-section="system">
           <button
             id="theme-toggle"
             type="button"
@@ -123,6 +123,7 @@
     <main
       id="admin-content"
       class="admin-main {% block additional_main_classes %}{% endblock %}"
+      data-admin-workspace-stage
       {% block main_attrs %}{% endblock %}
     >
       {% if active_section %}

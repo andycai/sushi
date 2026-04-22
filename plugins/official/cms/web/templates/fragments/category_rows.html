@@ -1,20 +1,20 @@
 {% for item in items %}
- <tr data-cms-row data-resource="categories" data-slug="{{ item.slug }}">
- <td class="font-mono text-xs sm:text-sm">{{ item.slug }}</td>
- <td>{{ item.name }}</td>
- <td>{{ item.description | default(value="—") }}</td>
- <td class="text-right">
- <div class="cms-row-actions">
- <button type="button" class="btn btn-sm btn-outline" data-cms-open-editor data-resource="categories" data-slug="{{ item.slug }}">Edit</button>
- <form hx-post="/admin/partials/cms/categories/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
- <input type="hidden" name="slug" value="{{ item.slug }}">
- <button type="submit" class="btn btn-sm btn-error" data-confirm="Delete this category?">Delete</button>
- </form>
- </div>
- </td>
- </tr>
+<tr data-cms-row data-resource="categories" data-slug="{{ item.slug }}" class="align-middle">
+  <td class="font-mono text-xs sm:text-sm">{{ item.slug }}</td>
+  <td>{{ item.name }}</td>
+  <td>{{ item.description | default(value="-") }}</td>
+  <td class="text-right">
+    <div class="cms-row-actions">
+      <button type="button" class="btn btn-sm btn-outline" data-cms-open-editor data-resource="categories" data-slug="{{ item.slug }}">Edit</button>
+      <form hx-post="/admin/partials/cms/categories/delete" hx-target="#cms-feedback" hx-swap="innerHTML">
+        <input type="hidden" name="slug" value="{{ item.slug }}">
+        <button type="submit" class="btn btn-sm btn-outline btn-error" data-confirm="Delete this category?">Delete</button>
+      </form>
+    </div>
+  </td>
+</tr>
 {% else %}
- <tr>
- <td colspan="4" class="text-center py-6 text-sm text-base-content/60">No categories found.</td>
- </tr>
+<tr>
+  <td colspan="4" class="py-6 text-center text-sm text-base-content/60">No categories found.</td>
+</tr>
 {% endfor %}

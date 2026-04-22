@@ -4,13 +4,18 @@
 {% block content %}
 <section
   class="admin-module cms-workbench"
+  data-enterprise-workbench="cms"
   data-admin-workspace-module="cms"
   data-cms-editor-save-url="/admin/partials/cms/editor/save"
   data-cms-status-transition-url="/admin/partials/cms/status/transition"
   x-data="cmsPage()"
   x-init="init()"
 >
-  <header class="cms-top-nav card border border-base-300 bg-base-100 shadow-sm" data-cms-top-nav>
+  <header
+    class="cms-top-nav card border border-base-300 bg-base-100 shadow-sm"
+    data-cms-top-nav
+    data-admin-page-header
+  >
     <div class="cms-top-nav-left">
       <h1 class="text-3xl font-bold tracking-tight">CMS workspace</h1>
       <p class="text-sm text-base-content/70">Editorial workbench for pages, posts, and categories.</p>
@@ -23,7 +28,7 @@
       <button type="button" class="btn btn-sm btn-ghost" :class="{ 'is-active': isNavActive('categories') }" @click="goLibrary('categories')">Categories</button>
     </nav>
 
-    <div class="cms-top-nav-right">
+    <div class="cms-top-nav-right" data-admin-action-cluster>
       <button type="button" class="btn btn-sm btn-outline" @click="openCommandPalette()" title="Cmd/Ctrl+K">Command</button>
       <button type="button" class="btn btn-sm btn-primary" @click="openEditor('posts', 'new')">New Post</button>
       <button type="button" class="btn btn-sm btn-primary" @click="openEditor('pages', 'new')">New Page</button>

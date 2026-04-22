@@ -2,6 +2,6 @@
 {% if level == "error" %}
  {% set tone = "alert-error" %}
 {% endif %}
-<div class="alert {{ tone }} shadow-sm" data-ui-flash data-level="{{ level }}" data-message="{{ message }}">
+<div class="alert {{ tone }} border border-base-300 shadow-sm" role="alert" data-ui-flash data-level="{{ level }}" data-message="{{ message }}">
  {{ message }}
 </div>

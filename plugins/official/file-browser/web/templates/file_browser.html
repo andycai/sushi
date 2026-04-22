@@ -37,15 +37,22 @@
   }
 })">
   <main class="mx-auto max-w-[1600px] p-4 lg:p-6">
-    <section class="overflow-hidden rounded-xl border border-slate-300 bg-[#f8f8f8] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_36px_rgba(15,23,42,0.08)]">
-      <header class="flex flex-col gap-3 border-b border-slate-300 bg-[#ececec] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+    <section
+      class="overflow-hidden rounded-xl border border-slate-300 bg-[#f8f8f8] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_36px_rgba(15,23,42,0.08)]"
+      data-enterprise-workbench="file-browser"
+      data-admin-workspace-module="file-browser"
+    >
+      <header
+        class="flex flex-col gap-3 border-b border-slate-300 bg-[#ececec] px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
+        data-admin-page-header
+      >
         <div class="min-w-0">
           <h1 class="truncate text-sm font-semibold tracking-wide text-slate-800">Official File Browser</h1>
           <p class="text-xs text-slate-500">VSCode-style explorer + editor workspace</p>
         </div>
 
         {% if has_roots %}
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2" data-admin-action-cluster>
           <button id="theme-toggle" type="button" class="btn btn-ghost btn-xs" aria-pressed="false">
             Theme: light
           </button>
