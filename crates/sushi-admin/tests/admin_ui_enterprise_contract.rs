@@ -68,8 +68,9 @@ fn users_fragment_has_enterprise_toolbar_and_table_card() {
 #[test]
 fn file_browser_template_exposes_workspace_bootstrap_contract() {
     let fb = read("plugins/official/file-browser/web/templates/file_browser.html");
-    assert!(fb.contains("id=\"theme-toggle\""));
     assert!(fb.contains("fileBrowserPage("));
+    assert!(fb.contains("data-theme=\"light\""));
+    assert!(!fb.contains("sushi-theme"));
 }
 
 #[test]
@@ -106,6 +107,13 @@ fn cms_workbench_uses_enterprise_workspace_semantics() {
     assert!(source.contains("data-enterprise-workbench=\"cms\""));
     assert!(source.contains("data-admin-page-header"));
     assert!(source.contains("data-admin-action-cluster"));
+}
+
+#[test]
+fn cms_public_shell_uses_fixed_light_theme() {
+    let source = read("plugins/official/cms/web/templates/public/base_public.html");
+    assert!(source.contains("data-theme=\"light\""));
+    assert!(!source.contains("sushi-theme"));
 }
 
 #[test]

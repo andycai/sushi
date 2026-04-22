@@ -353,8 +353,7 @@
         const chevron = this.findChevron(path);
         if (chevron) {
           chevron.classList.toggle("rotate-90", expanded);
-          chevron.classList.toggle("opacity-50", loading);
-          chevron.classList.toggle("animate-pulse", loading);
+          chevron.classList.toggle("is-loading", loading);
         }
         const toggle = this.findToggle(path);
         if (toggle) {
@@ -382,12 +381,7 @@
       setSearchToggleVisual(active) {
         const toggles = document.querySelectorAll("[data-fb-search-toggle='1']");
         toggles.forEach((toggle) => {
-          toggle.classList.toggle("border-slate-400", active);
-          toggle.classList.toggle("border-slate-300", !active);
-          toggle.classList.toggle("bg-[#d9dde3]", active);
-          toggle.classList.toggle("bg-[#eef1f5]", !active);
-          toggle.classList.toggle("text-slate-700", active);
-          toggle.classList.toggle("text-slate-500", !active);
+          toggle.classList.toggle("is-active-search-toggle", active);
           toggle.setAttribute("aria-pressed", active ? "true" : "false");
         });
       },
@@ -404,7 +398,7 @@
         if (!target) {
           return;
         }
-        target.innerHTML = `<div class="px-3 py-6 text-center text-xs text-slate-500">${escapeHtml(message || "")}</div>`;
+        target.innerHTML = `<div class="px-3 py-6 text-center text-xs text-base-content">${escapeHtml(message || "")}</div>`;
       },
 
       setSearchListVisibility(showSearch) {
@@ -543,27 +537,27 @@
             const safeName = escapeHtml(item.name || fileName(item.path));
             const isDir = item.kind === "dir";
             const action = isDir ? "open-dir" : "open-file";
-            const badgeClass = isDir ? "bg-[#eef1f5] text-slate-600" : "bg-[#eceff4] text-slate-500";
+            const badgeClass = isDir ? "badge badge-primary badge-outline badge-sm" : "badge badge-ghost badge-sm";
             const badgeText = isDir ? "DIR" : "FILE";
             return `
 <li>
   <button
     type="button"
-    class="flex w-full items-center justify-between gap-2 rounded-sm border-l-2 border-transparent px-2 py-1.5 text-left transition hover:bg-[#e5e9f1]"
+    class="fb-search-result-row"
     data-fb-action="${action}"
     data-path="${safePath}"
   >
-    <span class="min-w-0 flex flex-1 items-center gap-2">
-      <span class="rounded px-1 py-0.5 text-[10px] font-semibold tracking-[0.08em] ${badgeClass}">${badgeText}</span>
-      <span class="truncate text-sm text-slate-700">${safeName}</span>
+    <span class="fb-search-result-main">
+      <span class="${badgeClass}">${badgeText}</span>
+      <span class="fb-search-result-name truncate">${safeName}</span>
     </span>
-    <span class="fb-code-font text-[11px] text-slate-500">${safePath}</span>
+    <span class="fb-search-result-path fb-code-font">${safePath}</span>
   </button>
 </li>`;
           })
           .join("");
 
-        target.innerHTML = `<ul class="divide-y divide-slate-200 text-sm">${rows}</ul>`;
+        target.innerHTML = `<ul class="fb-search-result-list">${rows}</ul>`;
         const scanned = result.scanned || 0;
         const suffix = result.truncated ? " (showing first 200)" : "";
         this.setSearchMeta(`Found ${matches.length} match(es), scanned ${scanned} item(s)${suffix}.`);
@@ -1276,9 +1270,7 @@
         nodes.forEach((node) => {
           const path = node.getAttribute("data-path") || "";
           const selected = path === activePath;
-          node.classList.toggle("bg-[#dbe7ff]", selected);
-          node.classList.toggle("border-[#4f7cff]", selected);
-          node.classList.toggle("shadow-[inset_0_0_0_1px_rgba(79,124,255,0.18)]", selected);
+          node.classList.toggle("is-active-node", selected);
           if (selected) {
             activeNode = node;
           }

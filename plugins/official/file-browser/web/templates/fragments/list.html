@@ -1,25 +1,25 @@
-<div class="h-full rounded-box border border-base-300 bg-base-100 shadow-sm" data-fb-list-root="{{ rel_path }}" data-admin-table-card>
+<div class="card border border-base-300 bg-base-100 shadow-sm" data-fb-list-root="{{ rel_path }}" data-admin-table-card>
   {% if list_error %}
-  <div class="border-b border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">{{ list_error }}</div>
+  <div class="alert alert-error rounded-none rounded-t-box border-0 border-b border-base-300 py-2 text-xs">{{ list_error }}</div>
   {% endif %}
 
-  <ul class="divide-y divide-slate-200 text-sm" data-fb-list-entries="1">
+  <ul class="menu w-full gap-0.5 rounded-box p-2 text-sm" data-fb-list-entries="1">
     {% for item in entries %}
     <li>
       {% if item.is_dir %}
       <div class="group">
-        <div class="flex items-center justify-between rounded-sm border-l-2 border-transparent px-2 py-1.5 transition-colors hover:bg-[#e5e9f1]" data-fb-node="1" data-kind="dir" data-path="{{ item.path }}" data-fb-action="toggle-dir">
+        <div class="fb-node-row flex items-center justify-between gap-2 rounded-lg border border-transparent px-1.5 py-1 transition" data-fb-node="1" data-kind="dir" data-path="{{ item.path }}" data-fb-action="toggle-dir">
           <div class="min-w-0 flex flex-1 items-center gap-1.5">
             <button
               type="button"
-              class="grid h-5 w-5 place-items-center rounded text-[10px] text-slate-500 transition hover:bg-slate-200"
+              class="btn btn-ghost btn-xs h-7 w-7 min-h-7 px-0"
               data-fb-action="toggle-dir"
               data-path="{{ item.path }}"
               aria-label="Toggle folder"
               aria-expanded="false"
               aria-busy="false"
             >
-              <span class="grid h-3.5 w-3.5 place-items-center transition-transform duration-150" data-fb-chevron="{{ item.path }}">
+              <span class="fb-chevron grid h-4 w-4 place-items-center transition-transform" data-fb-chevron="{{ item.path }}">
                 <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" aria-hidden="true">
                   <path d="M5.25 3.5L8.75 7L5.25 10.5"/>
                 </svg>
@@ -27,47 +27,47 @@
             </button>
             <button
               type="button"
-              class="min-w-0 flex flex-1 items-center gap-2 text-left text-slate-700"
+              class="fb-node-label min-w-0 flex flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
               data-fb-action="toggle-dir"
               data-path="{{ item.path }}"
             >
-              <span class="grid h-3.5 w-3.5 shrink-0 place-items-center text-slate-600">
+              <span class="grid h-4 w-4 shrink-0 place-items-center text-primary/80">
                 <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
                   <path d="M1.75 4.25h3.75l1.25 1.5h5.5v5.5a1 1 0 0 1-1 1H2.75a1 1 0 0 1-1-1z"/>
                 </svg>
               </span>
-              <span class="truncate text-sm">{{ item.name }}</span>
+              <span class="truncate">{{ item.name }}</span>
             </button>
           </div>
         </div>
         <div
-          class="fb-tree-children ml-4 hidden border-l border-slate-300/80"
+          class="fb-tree-children ml-4 hidden border-l border-base-300/70 pl-2"
           data-fb-children-for="{{ item.path }}"
           data-loaded="0"
         ></div>
       </div>
       {% else %}
-      <div class="group flex items-center justify-between rounded-sm border-l-2 border-transparent px-2 py-1.5 transition-colors hover:bg-[#e5e9f1]" data-fb-node="1" data-kind="file" data-path="{{ item.path }}" data-fb-action="{% if root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}">
+      <div class="group flex items-center justify-between gap-2 rounded-lg border border-transparent px-1.5 py-1 transition fb-node-row" data-fb-node="1" data-kind="file" data-path="{{ item.path }}" data-fb-action="{% if root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}">
         <button
           type="button"
-          class="min-w-0 flex flex-1 items-center gap-2 text-left text-slate-700"
+          class="fb-node-label min-w-0 flex flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
           data-fb-action="{% if root and root.capabilities and root.capabilities.can_view_text %}open-file{% else %}noop{% endif %}"
           data-path="{{ item.path }}"
         >
-          <span class="ml-6 grid h-3.5 w-3.5 shrink-0 place-items-center text-slate-600">
+          <span class="ml-8 grid h-4 w-4 shrink-0 place-items-center text-base-content/60">
             <svg class="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.3" aria-hidden="true">
               <path d="M4 1.75h3.25l2.5 2.5v7.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/>
               <path d="M7.25 1.75v2.5h2.5"/>
             </svg>
           </span>
-          <span class="truncate text-sm">{{ item.name }}</span>
+          <span class="truncate">{{ item.name }}</span>
         </button>
-        <div class="ml-3 flex shrink-0 items-center gap-1">
-          <span class="fb-code-font text-[11px] text-slate-500">{{ item.size }}</span>
+        <div class="ml-3 flex shrink-0 items-center gap-2">
+          <span class="fb-code-font text-[11px] text-base-content/55">{{ item.size }}</span>
           {% if root and root.capabilities and root.capabilities.can_download %}
           <button
             type="button"
-            class="grid h-5 w-5 place-items-center rounded text-slate-600 opacity-0 transition group-hover:bg-slate-200 group-hover:opacity-100 hover:text-slate-900"
+            class="btn btn-ghost btn-xs h-7 min-h-7 px-1 opacity-0 transition group-hover:opacity-100"
             data-fb-action="download"
             data-path="{{ item.path }}"
             aria-label="Download file"
@@ -88,6 +88,6 @@
   </ul>
 
   {% if entries | length == 0 %}
-  <div class="px-3 py-6 text-center text-xs text-slate-500">No entries in this folder</div>
+  <div class="px-3 py-6 text-center text-xs text-base-content/55">No entries in this folder</div>
   {% endif %}
 </div>
