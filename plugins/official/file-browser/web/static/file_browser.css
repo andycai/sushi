@@ -61,11 +61,27 @@
 }
 
 .fb-node-row {
+  display: flex !important;
+  min-height: 0 !important;
+  width: 100%;
+  flex-wrap: nowrap;
   background: transparent;
+  transition: background-color 110ms ease, border-color 110ms ease;
 }
 
 .fb-node-row:hover {
-  background: hsl(var(--b2) / 0.75);
+  border-color: hsl(var(--bc) / 0.2);
+  background: hsl(var(--bc) / 0.12) !important;
+}
+
+.fb-node-row:hover .fb-node-label,
+.fb-node-row:hover .btn[data-fb-action="toggle-dir"] {
+  background: hsl(var(--bc) / 0.12) !important;
+}
+
+.fb-tree-group,
+.fb-tree-group:hover {
+  background: transparent !important;
 }
 
 .fb-node-row.is-active-node {
@@ -76,6 +92,80 @@
 
 .fb-node-label {
   color: hsl(var(--bc) / 0.78);
+  font-size: 0.72rem;
+  line-height: 1rem;
+}
+
+.menu li > .fb-tree-group {
+  display: block;
+}
+
+.fb-tree-list > * {
+  margin: 0;
+  padding: 0;
+}
+
+.fb-tree-list > .fb-tree-group,
+.fb-tree-list > .fb-node-row {
+  min-height: 0 !important;
+}
+
+.menu[data-fb-list-entries="1"] > li {
+  margin: 0;
+  padding: 0;
+}
+
+.menu[data-fb-list-entries="1"] > li > .fb-tree-group,
+.menu[data-fb-list-entries="1"] > li > .fb-node-row {
+  min-height: 0 !important;
+}
+
+.fb-tree-children {
+  display: none;
+  margin-left: 0.75rem;
+  padding-left: 0.45rem;
+}
+
+.fb-tree-children:not(.hidden) {
+  display: block;
+}
+
+.fb-tree-children.hidden {
+  display: none !important;
+}
+
+.fb-node-name {
+  display: block;
+  max-width: 22ch;
+}
+
+.fb-node-size {
+  display: inline-block;
+  min-width: 2.75rem;
+  text-align: right;
+  white-space: nowrap;
+  font-size: 9px;
+  color: hsl(var(--bc) / 0.52);
+}
+
+.fb-node-row [data-fb-action="download"] {
+  opacity: 0;
+}
+
+.fb-node-row:hover [data-fb-action="download"] {
+  opacity: 1;
+}
+
+[data-fb-toolbar="1"] .fb-toolbar-btn {
+  height: 1.9rem;
+  width: 1.9rem;
+  min-height: 1.9rem;
+  padding: 0;
+}
+
+[data-fb-toolbar="1"] .fb-toolbar-btn svg {
+  height: 0.95rem;
+  width: 0.95rem;
 }
 
 .fb-chevron.is-loading {

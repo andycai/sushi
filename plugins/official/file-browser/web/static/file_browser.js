@@ -519,6 +519,83 @@
         return entries;
       },
 
+      normalizeTreeGroupLayout(scope) {
+        const root = scope instanceof Element ? scope : document;
+        const legacyGroups = root.querySelectorAll(
+          ".menu > li > .group, .menu > li > .fb-tree-group, .fb-tree-list > .group, .fb-tree-list > .fb-tree-group"
+        );
+        legacyGroups.forEach((group) => {
+          group.style.display = "block";
+          group.style.width = "100%";
+        });
+      },
+
+      clampEntryNames(scope) {
+        const root = scope instanceof Element ? scope : document;
+        const maxChars = 26;
+        const labels = root.querySelectorAll("[data-fb-entry-name='1']");
+        labels.forEach((label) => {
+          const fullName = label.getAttribute("data-full-name") || label.textContent || "";
+          if (!fullName) {
+            return;
+          }
+          label.setAttribute("title", fullName);
+          const chars = Array.from(fullName);
+          if (chars.length <= maxChars) {
+            label.textContent = fullName;
+            return;
+          }
+          label.textContent = `${chars.slice(0, maxChars).join("")}...`;
+        });
+      },
+
+      extractTreeChildrenMarkup(html) {
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = html || "";
+
+        const shell = document.createElement("div");
+        const listEntries = wrapper.querySelector("[data-fb-list-entries='1']");
+        if (!(listEntries instanceof HTMLElement)) {
+          shell.innerHTML = '<div class="px-2 py-2 text-xs text-base-content/55">Unable to load this folder.</div>';
+          return shell.innerHTML;
+        }
+
+        const error = wrapper.querySelector(".alert.alert-error");
+        if (error instanceof HTMLElement) {
+          const errorCopy = error.cloneNode(true);
+          errorCopy.classList.remove("rounded-none", "rounded-t-box", "border-0");
+          errorCopy.classList.add("mb-2", "rounded-lg", "border");
+          shell.appendChild(errorCopy);
+        }
+
+        const nestedList = document.createElement("div");
+        nestedList.className = "fb-tree-list w-full space-y-0.5 p-0.5 text-xs";
+        nestedList.setAttribute("data-fb-list-entries", "1");
+
+        const rows = Array.from(listEntries.children).filter((node) => node instanceof HTMLElement);
+        rows.forEach((row) => {
+          if (row instanceof HTMLLIElement) {
+            const firstChild = row.firstElementChild;
+            if (firstChild instanceof HTMLElement) {
+              nestedList.appendChild(firstChild.cloneNode(true));
+            }
+            return;
+          }
+          nestedList.appendChild(row.cloneNode(true));
+        });
+
+        shell.appendChild(nestedList);
+
+        if (rows.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "px-2 py-2 text-xs text-base-content/55";
+          empty.textContent = "No entries in this folder";
+          shell.appendChild(empty);
+        }
+
+        return shell.innerHTML;
+      },
+
       renderSearchResults(result, query) {
         const target = this.searchResults();
         if (!target) {
@@ -769,6 +846,8 @@
           return;
         }
         target.innerHTML = result.text;
+        this.normalizeTreeGroupLayout(target);
+        this.clampEntryNames(target);
         await this.restoreExpandedDirs("");
         this.syncActiveNode();
       },
@@ -803,7 +882,9 @@
 
         this.setDirectoryVisualState(path, true, true);
         const result = await this.fetchList(path);
-        container.innerHTML = result.text;
+        container.innerHTML = this.extractTreeChildrenMarkup(result.text);
+        this.normalizeTreeGroupLayout(container);
+        this.clampEntryNames(container);
         container.setAttribute("data-loaded", result.ok ? "1" : "0");
         this.setDirectoryVisualState(path, true, false);
 
