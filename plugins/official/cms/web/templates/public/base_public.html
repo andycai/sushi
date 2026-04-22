@@ -1,6 +1,6 @@
 {% set static_prefix = static_url_prefix | default(value="/static") %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -75,9 +75,9 @@
             if (!heading.id) {
               const seed = text
                 .toLowerCase()
-                .replace(/[^a-z0-9\\s-]/g, '')
+                .replace(/[^a-z0-9\s-]/g, '')
                 .trim()
-                .replace(/\\s+/g, '-');
+                .replace(/\s+/g, '-');
               heading.id = `section-${seed || 'item'}-${index + 1}`;
             }
             next.push({
@@ -94,115 +94,52 @@
   <script defer src="{{ static_prefix }}/js/alpine.min.js"></script>
   <script defer src="{{ static_prefix }}/js/htmx.min.js"></script>
   <link rel="stylesheet" href="{{ static_prefix }}/css/style.css">
-  <style type="text/tailwindcss">
-    @layer utilities {
-      .cms-surface {
-        @apply rounded-[26px] border border-white/40 bg-white/82 shadow-[0_20px_55px_-28px_rgba(13,30,58,0.5)] backdrop-blur-md;
-      }
-      .cms-prose {
-        @apply text-slate-700 leading-8;
-      }
-      .cms-prose > *:first-child {
-        margin-top: 0;
-      }
-      .cms-prose h1, .cms-prose h2, .cms-prose h3 {
-        @apply mt-9 mb-4 text-slate-900 font-semibold tracking-tight;
-      }
-      .cms-prose h2 {
-        @apply text-3xl;
-      }
-      .cms-prose h3 {
-        @apply text-2xl;
-      }
-      .cms-prose p, .cms-prose ul, .cms-prose ol, .cms-prose blockquote {
-        @apply my-5;
-      }
-      .cms-prose a {
-        @apply text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800;
-      }
-      .cms-prose blockquote {
-        @apply border-l-4 border-blue-200 pl-4 text-slate-600;
-      }
-      .cms-prose code {
-        @apply rounded bg-slate-100 px-1.5 py-0.5 text-sm text-slate-900;
-      }
-      .cms-prose pre {
-        @apply overflow-x-auto rounded-xl bg-slate-900 p-4 text-slate-100;
-      }
-      .cms-clamp-2 {
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        overflow: hidden;
-      }
-      .cms-clamp-3 {
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 3;
-        overflow: hidden;
-      }
-    }
-    .htmx-indicator {
-      display: none;
-    }
-    .htmx-request .htmx-indicator,
-    .htmx-request.htmx-indicator {
-      display: inline-flex;
-    }
-  </style>
+  <link rel="stylesheet" href="{{ static_prefix }}/plugins/official/cms/cms_public.css">
   {% block head %}{% endblock %}
 </head>
-<body x-data="cmsPublicShell()" class="min-h-screen bg-[radial-gradient(circle_at_15%_9%,#dbeafe_0,transparent_36%),radial-gradient(circle_at_88%_16%,#ccfbf1_0,transparent_38%),linear-gradient(180deg,#f8fbff_0,#eef3f8_58%,#e9eff6_100%)] text-slate-900">
-  <div class="pointer-events-none fixed left-[-84px] top-16 h-72 w-72 rounded-full bg-gradient-to-br from-blue-200/80 to-indigo-200/50 blur-2xl"></div>
-  <div class="pointer-events-none fixed right-[-64px] top-56 h-64 w-64 rounded-full bg-gradient-to-br from-emerald-200/75 to-cyan-200/50 blur-2xl"></div>
-  <div class="pointer-events-none fixed inset-x-0 top-0 h-28 bg-gradient-to-b from-white/30 to-transparent"></div>
+<body x-data="cmsPublicShell()" class="cms-public-body min-h-screen text-base-content">
+  <div class="cms-public-aurora"></div>
 
-  <header class="relative z-10">
-    <div class="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
-      <a href="/app/cms" class="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/75 px-4 py-2 text-sm font-semibold tracking-wide text-slate-800 shadow-[0_8px_20px_-16px_rgba(15,23,42,0.65)] transition hover:border-slate-400 hover:bg-white">
-        <span class="inline-block h-2.5 w-2.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500"></span>
-        Sushi CMS
-      </a>
+  <header class="sticky top-0 z-30 px-4 pt-4 sm:px-6">
+    <div class="cms-public-shell mx-auto max-w-6xl">
+      <div class="navbar rounded-box border border-base-300/70 bg-base-100/95 px-3 shadow-xl backdrop-blur" data-cms-public-nav>
+        <div class="navbar-start">
+          <a href="/app/cms" class="btn btn-ghost gap-2 rounded-full px-3 text-base font-semibold">
+            <span class="cms-brand-dot"></span>
+            Sushi CMS
+          </a>
+        </div>
 
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded-full border border-slate-300/70 bg-white/70 px-3 py-1.5 text-sm font-medium text-slate-700 sm:hidden"
-        @click="navOpen = !navOpen"
-      >
-        Menu
-      </button>
+        <div class="navbar-center hidden lg:flex">
+          <ul class="menu menu-horizontal gap-1 rounded-full border border-base-300/70 bg-base-200/55 px-2 py-1">
+            <li><a href="/app/cms" :class="isNavActive('/app/cms') ? 'active' : ''">Home</a></li>
+            <li><a href="/app/pages" :class="isNavActive('/app/pages') ? 'active' : ''">Pages</a></li>
+            <li><a href="/app/posts" :class="isNavActive('/app/posts') ? 'active' : ''">Posts</a></li>
+          </ul>
+        </div>
 
-      <nav class="hidden items-center gap-2 sm:inline-flex">
-        <a
-          href="/app/cms"
-          :class="isNavActive('/app/cms') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/75 hover:text-slate-900'"
-          class="rounded-full px-4 py-2 text-sm font-medium transition"
-        >Home</a>
-        <a
-          href="/app/pages"
-          :class="isNavActive('/app/pages') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/75 hover:text-slate-900'"
-          class="rounded-full px-4 py-2 text-sm font-medium transition"
-        >Pages</a>
-        <a
-          href="/app/posts"
-          :class="isNavActive('/app/posts') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/75 hover:text-slate-900'"
-          class="rounded-full px-4 py-2 text-sm font-medium transition"
-        >Posts</a>
-      </nav>
-    </div>
+        <div class="navbar-end gap-2">
+          <a href="/app/posts" class="btn btn-sm btn-outline hidden sm:inline-flex">Explore posts</a>
+          <button type="button" class="btn btn-sm btn-ghost lg:hidden" @click="navOpen = !navOpen" :aria-expanded="navOpen ? 'true' : 'false'">
+            Menu
+          </button>
+        </div>
+      </div>
 
-    <div class="mx-auto w-full max-w-6xl px-4 sm:hidden sm:px-6" x-show="navOpen" x-transition.opacity.duration.200ms>
-      <nav class="cms-surface mb-4 grid gap-2 p-3">
-        <a href="/app/cms" :class="isNavActive('/app/cms') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'" class="rounded-xl px-3 py-2 text-sm font-medium">Home</a>
-        <a href="/app/pages" :class="isNavActive('/app/pages') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'" class="rounded-xl px-3 py-2 text-sm font-medium">Pages</a>
-        <a href="/app/posts" :class="isNavActive('/app/posts') ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'" class="rounded-xl px-3 py-2 text-sm font-medium">Posts</a>
-      </nav>
+      <div class="mt-2 lg:hidden" x-show="navOpen" x-transition.opacity.duration.180ms>
+        <nav class="menu rounded-box border border-base-300 bg-base-100 p-2 shadow-lg">
+          <li><a href="/app/cms" :class="isNavActive('/app/cms') ? 'active' : ''">Home</a></li>
+          <li><a href="/app/pages" :class="isNavActive('/app/pages') ? 'active' : ''">Pages</a></li>
+          <li><a href="/app/posts" :class="isNavActive('/app/posts') ? 'active' : ''">Posts</a></li>
+        </nav>
+      </div>
     </div>
   </header>
 
-  <main class="relative z-10 mx-auto w-full max-w-6xl px-4 pb-10 sm:px-6">
+  <main class="cms-public-shell mx-auto w-full max-w-6xl px-4 pb-12 pt-6 sm:px-6">
     {% block content %}{% endblock %}
   </main>
+
   {% block scripts %}{% endblock %}
 </body>
 </html>

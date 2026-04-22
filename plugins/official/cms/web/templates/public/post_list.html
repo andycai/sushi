@@ -5,21 +5,13 @@
   <section class="cms-surface p-6 sm:p-8" x-init="setCategory('{{ selected_category }}')">
     <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p class="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700">
-          Library
-        </p>
-        <h1 class="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl" style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;">Published Posts</h1>
-        <p class="mt-2 text-sm text-slate-600">
-          {{ total }} results{% if category %} · filtered by {{ category }}{% endif %}
-        </p>
+        <p class="cms-label">Post Library</p>
+        <h1 class="cms-heading-display mt-3 text-5xl text-base-content">Published posts</h1>
+        <p class="mt-2 text-sm text-base-content/65">{{ total }} results{% if category %} · filtered by {{ category }}{% endif %}</p>
       </div>
       <div class="flex gap-2">
-        <a href="/app/pages" class="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
-          View Pages
-        </a>
-        <a href="/app/cms" class="inline-flex rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
-          Back to CMS Home
-        </a>
+        <a href="/app/pages" class="btn btn-outline btn-sm">View pages</a>
+        <a href="/app/cms" class="btn btn-ghost btn-sm">Back home</a>
       </div>
     </header>
 
@@ -27,8 +19,8 @@
       <button
         type="button"
         @click="setCategory('')"
-        :class="activeCategory === '' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'"
-        class="rounded-full border px-3 py-1.5 text-xs font-medium transition"
+        :class="activeCategory === '' ? 'btn-primary' : 'btn-outline'"
+        class="btn btn-sm rounded-full"
         hx-get="/app/partials/cms/posts?show_category=1"
         hx-target="#cms-post-list-feed"
         hx-swap="innerHTML"
@@ -37,27 +29,27 @@
         All
       </button>
       {% for item in categories %}
-        <button
-          type="button"
-          @click="setCategory('{{ item.slug }}')"
-          :class="activeCategory === '{{ item.slug }}' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'"
-          class="rounded-full border px-3 py-1.5 text-xs font-medium transition"
-          hx-get="/app/partials/cms/posts?show_category=1&category={{ item.slug }}"
-          hx-target="#cms-post-list-feed"
-          hx-swap="innerHTML"
-          hx-indicator="#cms-post-list-loading"
-        >
-          {{ item.name }}
-        </button>
+      <button
+        type="button"
+        @click="setCategory('{{ item.slug }}')"
+        :class="activeCategory === '{{ item.slug }}' ? 'btn-primary' : 'btn-outline'"
+        class="btn btn-sm rounded-full"
+        hx-get="/app/partials/cms/posts?show_category=1&category={{ item.slug }}"
+        hx-target="#cms-post-list-feed"
+        hx-swap="innerHTML"
+        hx-indicator="#cms-post-list-loading"
+      >
+        {{ item.name }}
+      </button>
       {% endfor %}
 
-      <span id="cms-post-list-loading" class="htmx-indicator ml-auto inline-flex items-center gap-2 text-xs text-slate-500">
-        <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>
+      <span id="cms-post-list-loading" class="htmx-indicator ml-auto inline-flex items-center gap-2 text-xs text-base-content/60">
+        <span class="loading loading-spinner loading-xs"></span>
         Filtering...
       </span>
     </div>
 
-    <div id="cms-post-list-feed" class="mt-5 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
+    <div id="cms-post-list-feed" class="cms-feed-grid mt-5">
       {% set show_category = true %}
       {% set compact = false %}
       {% set empty_message = "No posts found." %}

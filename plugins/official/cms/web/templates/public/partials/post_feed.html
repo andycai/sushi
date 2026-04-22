@@ -1,39 +1,33 @@
 {% set compact_mode = compact | default(value=false) %}
 {% set show_category_tag = show_category | default(value=false) %}
 {% for item in items %}
-  <article class="cms-surface p-4 transition hover:translate-y-[-2px] hover:shadow-[0_24px_50px_-30px_rgba(17,24,39,0.6)] sm:p-5">
+  <article class="cms-panel-soft p-4 transition hover:-translate-y-0.5 hover:shadow-lg sm:p-5">
     <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
       <a
         href="/app/posts/{{ item.slug }}"
-        class="{% if compact_mode %}cms-clamp-2 text-base leading-6{% else %}text-xl{% endif %} font-semibold tracking-tight text-slate-900 transition hover:text-blue-700"
-        {% if not compact_mode %}style="font-family: 'Iowan Old Style', 'Palatino Linotype', serif;"{% endif %}
+        class="{% if compact_mode %}cms-clamp-2 text-base leading-6{% else %}text-2xl{% endif %} {% if not compact_mode %}cms-heading-display{% endif %} font-semibold tracking-tight text-base-content transition hover:text-primary"
       >
         {{ item.title }}
       </a>
       {% if not compact_mode %}
-        <span class="max-w-full break-all rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-500 sm:shrink-0">
-          {{ item.slug }}
-        </span>
+      <span class="badge badge-ghost font-mono">{{ item.slug }}</span>
       {% endif %}
     </div>
 
     {% if show_category_tag and item.category_name %}
       <div class="mt-2">
-        <a
-          href="/app/categories/{{ item.category_slug }}"
-          class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
-        >
+        <a href="/app/categories/{{ item.category_slug }}" class="badge badge-outline">
           {{ item.category_name }}
         </a>
       </div>
     {% endif %}
 
     {% if item.excerpt and not compact_mode %}
-      <p class="mt-3 text-sm leading-6 text-slate-600">{{ item.excerpt }}</p>
+      <p class="mt-3 text-sm leading-6 text-base-content/70">{{ item.excerpt }}</p>
     {% endif %}
   </article>
 {% else %}
-  <p class="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-6 text-sm text-slate-500">
+  <p class="rounded-2xl border border-dashed border-base-300 bg-base-100/70 p-6 text-sm text-base-content/60">
     {{ empty_message | default(value="No posts found.") }}
   </p>
 {% endfor %}
