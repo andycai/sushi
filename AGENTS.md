@@ -187,65 +187,65 @@ This project uses a graphify knowledge graph in `graphify-out/`.
 <claude-mem-context>
 # Memory Context
 
-# [sushi] recent context, 2026-04-21 11:10pm GMT+8
+# [sushi] recent context, 2026-04-22 2:19pm GMT+8
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (14,503t read) | 751,692t work | 98% savings
+Stats: 50 obs (9,255t read) | 758,146t work | 99% savings
 
-### Apr 21, 2026
-211 8:50p ✅ CSS build pipeline migrated to pnpm + Tailwind v4 npm plugin
-212 " 🟣 daisyUI CSS compilation working — 253KB output with theme system
-213 8:51p ✅ First commit for daisyUI frontend rewrite project
-214 " 🟣 Theme toggle with localStorage persistence added to base template
-215 8:53p 🟣 Login page rewritten with daisyUI component classes
-216 8:54p 🟣 Dashboard content fragment converted to daisyUI components
-217 9:22p 🔵 UI component class system inventory
-218 9:24p 🔵 Hybrid UI class systems found in templates
-219 " 🔄 Flash templates fixed to use DaisyUI alert classes
-220 9:27p ✅ CSS architecture refactored to use Tailwind v4 @apply components
-221 9:28p 🔴 kv_store_plugin_no_longer_embeds_html test needs update for DaisyUI flash
-222 " 🔴 kv_store_plugin_no_longer_embeds_html test assertion updated for DaisyUI flash
-223 9:29p 🟣 Full workspace test suite passes after DaisyUI rewrite
-224 9:30p 🔄 shadow-sm-body invalid class replaced with DaisyUI card-body
-225 " 🔴 CMS editor textarea classes deduplicated
-226 9:32p 🔄 Admin and plugin templates fully migrated to DaisyUI — committed
-227 9:33p 🟣 File Browser plugin template gets theme toggle and DaisyUI CSS
-228 9:40p 🔵 Claude-Mem observer session initialized
-229 9:41p 🔵 DaisyUI rewrite analyzing existing ui-* component patterns
-230 " ✅ DaisyUI rewrite: bulk replacement of ui-* classes with Tailwind/DaisyUI equivalents
-231 9:42p ✅ DaisyUI rewrite: replaced remaining ui-* CSS classes in JavaScript files
-232 " 🔵 DaisyUI rewrite: CSS component library still exists in input.css alongside migrated templates
-233 9:43p 🟣 DaisyUI rewrite: complete migration of ui-* component classes from templates and JS
-234 " 🟣 DaisyUI rewrite: all tests pass after component class migration
-235 " 🔵 DaisyUI rewrite: 51 files modified across admin, CMS, and KV-store plugins
-236 9:44p 🔄 DaisyUI rewrite committed to feature branch
-237 9:45p 🔵 DaisyUI rewrite feature branch progress: 10 commits completed
-238 9:49p 🔄 DaisyUI rewrite completed for sushi-daisyui-rewrite feature branch
-239 " ✅ DaisyUI rewrite: added admin shell CSS component definitions
-240 9:50p 🔴 DaisyUI rewrite: fixed Tailwind v4 CSS compilation error - removed invalid 'group' @apply
-241 " 🔴 DaisyUI rewrite: fixed second Tailwind v4 CSS compilation error - replaced DaisyUI component classes
-242 9:56p 🔴 Admin login endpoint returns 401 Unauthorized
-243 9:57p 🔵 Admin user created via seed, exists in SQLite database
-244 10:15p 🔴 HTMX login error response no longer returns 401 status code
-245 10:18p 🔴 HTMX login error 200 status fix committed to feat/daisyui-frontend-rewrite
-246 10:19p 🔵 Graphify post-commit hook causes cascading unstaged changes
-247 " 🔵 Login page uses HTMX swap pattern with dedicated error div target
-248 10:25p 🔴 Admin partial routes now registered with correct "admin" policy surface
-249 10:26p 🔴 KV store plugin updated to use admin.kv.manage policy for all routes
-250 10:27p 🔴 Added test verifying admin partial routes get correct policy surface
-251 10:31p 🔴 Admin surface policy routing fix committed to feat/daisyui-frontend-rewrite
-252 10:37p 🔄 Fixed admin pagination controls to use daisyUI join-horizontal pattern
-253 10:55p 🔴 Local dev server homepage returning 404
-254 10:56p 🔵 Root path / missing from admin router configuration
-255 " 🔴 Added root path routes for homepage redirect
-256 " 🔴 Root path redirect fix verified by tests
-257 11:01p ✅ Added alpine.js, tailwindcss, htmx, daisyUI to AGENTS.md tech restrictions
-258 11:02p ⚖️ Arch decision: restrict alpine.js, tailwindcss, htmx, daisyUI in project guidelines
-259 " ✅ AGENTS.md frontend stack documented with full constraints for HTMX/Alpine/Tailwindv4/daisyUI
-260 11:06p ✅ AGENTS.md deleted from project root
+### Apr 22, 2026
+406 11:23a 🟣 UI Redesign Implementation Complete - All Tests Passing
+407 " ✅ Implementation Complete - 18 Files Modified
+408 11:26a ✅ Implementation Committed in 3 Commits
+409 " 🟣 UI Redesign Complete and Verified - Branch Ready for Review
+410 11:32a ✅ UI Redesign Merged to Main and Worktree Cleaned Up
+411 11:41a 🔴 File Browser UI Bug Reports
+412 11:43a 🔵 File Browser UI Architecture
+413 " 🔴 Fixed Editor Panel Flexbox Layout
+414 11:44a 🔴 Fixed Directory Tree Layout on Expand
+415 " 🔴 File Browser UI Bugs Fixed and Verified
+416 11:45a ✅ File Browser Bug Fixes Ready
+417 " ✅ Full Test Suite Passes
+418 11:47a 🔴 Full Workspace Test Suite Passes
+419 11:52a 🔴 File browser UI bugs identified and being fixed
+420 " 🔵 Sushi web server runs on 127.0.0.1:3008
+421 " 🔵 Sushi project structure discovered
+422 11:53a 🔵 File browser UI is running and accessible
+423 " 🔵 File browser shows runtime error on file open
+424 12:01p 🔴 Directory tree rendering bug
+425 12:02p 🔵 File browser JS uses extractTreeChildrenMarkup
+426 12:03p 🔵 File browser roots behave differently
+427 12:04p 🔴 Fixed directory tree rendering in file browser
+428 12:21p ✅ Directory tree UI compactness improvements
+429 " 🔵 File browser plugin current structure
+430 12:22p ✅ Toolbar buttons converted to SVG icons
+431 " ✅ Patch applied to file_browser.html
+432 12:23p ✅ Directory tree made more compact
+433 " 🟣 File/folder name character limit implemented
+434 12:24p 🔵 Tests pass after compact UI changes
+435 " 🔵 UI verification screenshot captured
+436 " 🔵 UI verification screenshot reviewed
+437 12:25p ✅ Development server restarted for testing
+438 " 🔵 File browser plugin successfully loaded and UI verified
+439 1:34p 🔴 Fix wallet creation screen UI issue
+440 " 🔴 Fixed file browser list view layout
+441 1:35p 🔴 Enhanced file browser CSS layout rules
+442 " 🔴 Fixed CSS attribute selector syntax
+443 " ✅ File browser plugin tests passed
+444 1:41p 🔴 File browser plugin layout fixes verified
+445 " 🔄 File browser compact layout refinements
+446 1:42p 🔵 File browser server running on localhost:3008
+448 1:49p 🔄 File browser HTML structure migrated from ul/li to div
+449 " 🔄 Removed legacy group class from new div structure
+450 1:50p 🔴 CSS hover-based download button visibility
+451 2:08p 🔴 UI fixes for row spacing and hover state
+452 " 🔴 Fixed row spacing and hover states in file browser CSS
+453 2:09p 🔴 File browser CSS fixes verified with visual testing
+454 2:10p 🔴 Added hover background for file browser node label
+455 2:15p 🔴 Enhanced file browser hover states with smooth transitions
+456 2:18p 🔴 Committed file browser UI fixes
 
-Access 752k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 758k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
