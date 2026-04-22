@@ -1,7 +1,7 @@
 # Graph Report - .  (2026-04-22)
 
 ## Corpus Check
-- 137 files · ~185,602 words
+- 137 files · ~185,594 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -736,12 +736,10 @@ Nodes (0):
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `get()` connect `Community 0` to `Community 2`, `Community 4`, `Community 29`?**
-  _High betweenness centrality (0.018) - this node is a cross-community bridge._
-- **Why does `has()` connect `Community 0` to `Community 10`, `Community 2`, `Community 4`, `Community 29`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Why does `ae()` connect `Community 0` to `Community 1`?**
-  _High betweenness centrality (0.015) - this node is a cross-community bridge._
+- **Why does `createDataTable()` connect `Community 0` to `Community 1`?**
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
+- **Why does `notify()` connect `Community 1` to `Community 14`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
   _139 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
@@ -750,3 +748,5 @@ _Questions this graph is uniquely positioned to answer:_
   _Cohesion score 0.02 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
   _Cohesion score 0.1 - nodes in this community are weakly interconnected._
+- **Should `Community 3` be split into smaller, more focused modules?**
+  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
