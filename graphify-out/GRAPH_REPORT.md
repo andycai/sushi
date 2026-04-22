@@ -1,7 +1,7 @@
 # Graph Report - .  (2026-04-22)
 
 ## Corpus Check
-- 137 files · ~185,600 words
+- 137 files · ~185,604 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -736,12 +736,12 @@ Nodes (0):
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `get()` connect `Community 0` to `Community 2`, `Community 4`, `Community 29`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
 - **Why does `createDataTable()` connect `Community 0` to `Community 1`?**
   _High betweenness centrality (0.018) - this node is a cross-community bridge._
+- **Why does `get()` connect `Community 0` to `Community 2`, `Community 4`, `Community 29`?**
+  _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **Why does `has()` connect `Community 0` to `Community 10`, `Community 2`, `Community 4`, `Community 29`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **What connects `ServeArgs`, `ConfigArgs`, `ConfigCommand` to the rest of the system?**
   _139 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
