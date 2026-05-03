@@ -3,7 +3,7 @@ local M = {}
 local function register_public_route(definition)
     definition.surface = "api"
     definition.public = true
-    sushi.capability.register(definition)
+    app.capability.register(definition)
 end
 
 function M.register(app)

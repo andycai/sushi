@@ -2,18 +2,18 @@ local M = {}
 
 local function register_api_route(definition)
     definition.surface = "api"
-    sushi.capability.register(definition)
+    app.capability.register(definition)
 end
 
 local function register_web_page(definition)
     definition.surface = "web"
     definition.kind = "page"
-    sushi.capability.register(definition)
+    app.capability.register(definition)
 end
 
 local function register_cli_command(definition)
     definition.surface = "cli"
-    sushi.capability.register(definition)
+    app.capability.register(definition)
 end
 
 function M.register(deps)
@@ -191,7 +191,7 @@ function M.register(deps)
         policy = "admin.cms.read",
         assets = { bundles = { "workspace" } },
         handler = function()
-            return sushi.web.render("plugins/official/cms/cms.html")
+            return app.web.render("plugins/official/cms/cms.html")
         end,
     })
 

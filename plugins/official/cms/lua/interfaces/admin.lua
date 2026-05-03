@@ -36,7 +36,7 @@ function M.new(deps)
     local markdown = deps.markdown
 
     local function flash(level, message)
-        return sushi.web.render("plugins/official/cms/fragments/flash.html", {
+        return app.web.render("plugins/official/cms/fragments/flash.html", {
             level = tostring(level or "success"),
             message = tostring(message or ""),
         })
@@ -122,7 +122,7 @@ function M.new(deps)
             return flash("error", tostring(msg or kind or "failed to load library"))
         end
         local params = parse_query_params(path)
-        return sushi.web.render("plugins/official/cms/fragments/library_panel.html", {
+        return app.web.render("plugins/official/cms/fragments/library_panel.html", {
             scope = scope,
             items = rows,
             query = params.q or "",
@@ -242,7 +242,7 @@ function M.new(deps)
             end
             categories = rows
         end
-        return sushi.web.render("plugins/official/cms/fragments/editor_panel.html", {
+        return app.web.render("plugins/official/cms/fragments/editor_panel.html", {
             resource = resource,
             item = item,
             categories = categories,
@@ -297,7 +297,7 @@ function M.new(deps)
         if not item then
             return flash("error", tostring(msg or kind or "page not found"))
         end
-        return sushi.web.render("plugins/official/cms/public/page_detail.html", {
+        return app.web.render("plugins/official/cms/public/page_detail.html", {
             title = item.title,
             slug = item.slug,
             content_html = markdown.to_html(item.markdown_body),
@@ -311,7 +311,7 @@ function M.new(deps)
         if not item then
             return flash("error", tostring(msg or kind or "post not found"))
         end
-        return sushi.web.render("plugins/official/cms/public/post_detail.html", {
+        return app.web.render("plugins/official/cms/public/post_detail.html", {
             title = item.title,
             slug = item.slug,
             category_name = item.category_name or "",
@@ -324,18 +324,18 @@ function M.new(deps)
 
     local function render_overview_panel(data)
         -- cms_overview_template_fallback_marker
-        local ok, html = pcall(sushi.web.render, "plugins/official/cms/fragments/overview_panel.html", data)
+        local ok, html = pcall(app.web.render, "plugins/official/cms/fragments/overview_panel.html", data)
         if ok and html then
             return html
         end
-        return sushi.web.render("plugins/official/cms/fragments/rows.html", {
+        return app.web.render("plugins/official/cms/fragments/rows.html", {
             label = "Overview panel template is not available yet.",
         })
     end
 
     function admin.pages_table_partial()
         local rows, _, _ = page.list()
-        return sushi.web.render("plugins/official/cms/fragments/page_rows.html", {
+        return app.web.render("plugins/official/cms/fragments/page_rows.html", {
             items = rows or {},
         })
     end
@@ -366,7 +366,7 @@ function M.new(deps)
 
     function admin.posts_table_partial()
         local rows, _, _ = post.list({ only_published = false })
-        return sushi.web.render("plugins/official/cms/fragments/post_rows.html", {
+        return app.web.render("plugins/official/cms/fragments/post_rows.html", {
             items = rows or {},
         })
     end
@@ -399,7 +399,7 @@ function M.new(deps)
 
     function admin.categories_table_partial()
         local rows, _, _ = category.list()
-        return sushi.web.render("plugins/official/cms/fragments/category_rows.html", {
+        return app.web.render("plugins/official/cms/fragments/category_rows.html", {
             items = rows or {},
         })
     end
@@ -530,7 +530,7 @@ function M.new(deps)
     end
 
     function admin.commands_partial()
-        return sushi.web.render("plugins/official/cms/fragments/rows.html", {
+        return app.web.render("plugins/official/cms/fragments/rows.html", {
             label = "Use `sushi cms page list` or `sushi cms post list` to inspect content from CLI.",
         })
     end

@@ -15,7 +15,7 @@ local admin_factory = require("interfaces.admin")
 local cli_factory = require("interfaces.cli")
 local bootstrap = require("bootstrap.register")
 
-function sushi.init()
+function app.init()
     local deps = {
         db = db,
         slug = slug,
@@ -51,5 +51,5 @@ function sushi.init()
         cli = cli,
     })
 
-    sushi.log.info("cms plugin: registered API routes, admin page, and CLI commands")
+    app.log.info("cms plugin: registered API routes, admin page, and CLI commands")
 end

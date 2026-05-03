@@ -2,7 +2,7 @@ local M = {}
 
 local function register_api_route(definition)
     definition.surface = "api"
-    sushi.capability.register(definition)
+    app.capability.register(definition)
 end
 
 function M.register(deps)
@@ -36,16 +36,16 @@ function M.register(deps)
         policy = "admin.kv.manage",
     })
 
-    sushi.web.page("/admin/kv", "plugins/official/kv-store/kv.html", {
+    app.web.page("/admin/kv", "plugins/official/kv-store/kv.html", {
         title = "KV Store",
         policy = "admin.kv.manage",
         assets = { bundles = { "workspace" } },
     })
 
-    sushi.cli.command("kv-list", "List all KV entries", deps.cli.kv_list, { policy = "cli.kv.list" })
-    sushi.cli.command("kv-get", "Get a KV entry by key", deps.cli.kv_get, { policy = "cli.kv.get" })
-    sushi.cli.command("kv-set", "Set a KV entry (key + value)", deps.cli.kv_set, { policy = "cli.kv.set" })
-    sushi.cli.command("kv-del", "Delete a KV entry by key", deps.cli.kv_del, { policy = "cli.kv.delete" })
+    app.cli.command("kv-list", "List all KV entries", deps.cli.kv_list, { policy = "cli.kv.list" })
+    app.cli.command("kv-get", "Get a KV entry by key", deps.cli.kv_get, { policy = "cli.kv.get" })
+    app.cli.command("kv-set", "Set a KV entry (key + value)", deps.cli.kv_set, { policy = "cli.kv.set" })
+    app.cli.command("kv-del", "Delete a KV entry by key", deps.cli.kv_del, { policy = "cli.kv.delete" })
 end
 
 return M

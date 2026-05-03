@@ -53,7 +53,7 @@ local function ensure_rel_path(value)
 end
 
 local function render_flash(tone, message)
-    return sushi.web.render("plugins/official/file-browser/fragments/flash.html", {
+    return app.web.render("plugins/official/file-browser/fragments/flash.html", {
         tone = tostring(tone or "info"),
         message = tostring(message or ""),
     })
@@ -124,7 +124,7 @@ function M.new(deps)
         local list = list_context(browser, resolved_root_id, rel_path)
         local root = list.root
 
-        return sushi.web.render("plugins/official/file-browser/file_browser.html", {
+        return app.web.render("plugins/official/file-browser/file_browser.html", {
             route_prefix = browser.route_prefix(),
             asset_version = tostring(os.time()),
             roots = roots,
@@ -145,7 +145,7 @@ function M.new(deps)
 
         local list = list_context(browser, root_id, rel_path)
 
-        return sushi.web.render("plugins/official/file-browser/fragments/list.html", {
+        return app.web.render("plugins/official/file-browser/fragments/list.html", {
             root = list.root,
             root_id = list.root_id,
             rel_path = list.rel_path,
@@ -175,7 +175,7 @@ function M.new(deps)
             end
         end
 
-        return sushi.web.render("plugins/official/file-browser/fragments/editor.html", {
+        return app.web.render("plugins/official/file-browser/fragments/editor.html", {
             root = root,
             root_id = resolved_root_id,
             rel_path = rel_path,
@@ -306,12 +306,12 @@ function M.new(deps)
 
         local payload, kind, message = browser.read_download(root_id, rel_path)
         if not payload then
-            return sushi.web.json(status_for_error(kind), {
+            return app.web.json(status_for_error(kind), {
                 error = friendly_error(kind, message),
             })
         end
 
-        return sushi.web.download(payload.file_name, "application/octet-stream", payload.content)
+        return app.web.download(payload.file_name, "application/octet-stream", payload.content)
     end
 
     return web

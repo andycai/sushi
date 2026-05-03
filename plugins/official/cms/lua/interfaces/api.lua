@@ -1,7 +1,7 @@
 local M = {}
 
 local function json_ok(status, data)
-    return sushi.web.json(status, data)
+    return app.web.json(status, data)
 end
 
 local function json_error(kind, message)
@@ -13,7 +13,7 @@ local function json_error(kind, message)
     elseif kind == "conflict_has_posts" or kind == "conflict" then
         status = 409
     end
-    return sushi.web.json(status, { error = tostring(message or kind) })
+    return app.web.json(status, { error = tostring(message or kind) })
 end
 
 local function strip_query(path)
@@ -115,7 +115,7 @@ local function decode_body(body)
         return {}
     end
     local ok, decoded = pcall(function()
-        return sushi.json.decode(body)
+        return app.json.decode(body)
     end)
     if not ok or type(decoded) ~= "table" then
         return nil, "invalid_input", "invalid json body"
@@ -286,7 +286,7 @@ function M.new(deps)
             return json_error(kind, msg)
         end
         local published_pages = published_pages_only(rows)
-        return sushi.web.render("plugins/official/cms/public/page_list.html", {
+        return app.web.render("plugins/official/cms/public/page_list.html", {
             items = published_pages,
             total = #published_pages,
         })
@@ -302,7 +302,7 @@ function M.new(deps)
         if not item then
             return json_error(kind, msg)
         end
-        return sushi.web.render("plugins/official/cms/public/page_detail.html", {
+        return app.web.render("plugins/official/cms/public/page_detail.html", {
             title = item.title,
             slug = item.slug,
             content_html = markdown.to_html(item.markdown_body),
@@ -327,7 +327,7 @@ function M.new(deps)
         local featured_post = post_rows[1]
         local featured_page = published_pages[1]
 
-        return sushi.web.render("plugins/official/cms/public/home.html", {
+        return app.web.render("plugins/official/cms/public/home.html", {
             featured_post = featured_post,
             featured_page = featured_page,
             recent_posts = take_limit(post_rows, 6),
@@ -354,7 +354,7 @@ function M.new(deps)
         if not category_rows then
             return json_error(category_kind, category_msg)
         end
-        return sushi.web.render("plugins/official/cms/public/post_list.html", {
+        return app.web.render("plugins/official/cms/public/post_list.html", {
             items = rows,
             category = category_slug or "",
             categories = category_rows,
@@ -378,7 +378,7 @@ function M.new(deps)
         if limit then
             rows = take_limit(rows, limit)
         end
-        return sushi.web.render("plugins/official/cms/public/partials/post_feed.html", {
+        return app.web.render("plugins/official/cms/public/partials/post_feed.html", {
             items = rows,
             compact = tostring(params.compact or "") == "1",
             show_category = tostring(params.show_category or "") == "1",
@@ -396,7 +396,7 @@ function M.new(deps)
         if not item then
             return json_error(kind, msg)
         end
-        return sushi.web.render("plugins/official/cms/public/post_detail.html", {
+        return app.web.render("plugins/official/cms/public/post_detail.html", {
             title = item.title,
             slug = item.slug,
             category_name = item.category_name or "",
@@ -420,7 +420,7 @@ function M.new(deps)
         if not rows then
             return json_error(list_kind, list_msg)
         end
-        return sushi.web.render("plugins/official/cms/public/category_detail.html", {
+        return app.web.render("plugins/official/cms/public/category_detail.html", {
             category = item,
             items = rows,
             total = #rows,

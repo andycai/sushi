@@ -523,7 +523,7 @@ pub async fn inject_sushi_api(
             lua.create_function(|lua, (status, data): (u16, mlua::Value)| {
                 let json_data: serde_json::Value = lua.from_value(data)?;
                 let envelope = serde_json::json!({
-                    "__sushi_web_json": true,
+                    "__app_web_json": true,
                     "status": status,
                     "body": json_data,
                 });
@@ -542,9 +542,9 @@ pub async fn inject_sushi_api(
                         let _ = write!(&mut body_hex, "{byte:02x}");
                     }
                     let envelope = serde_json::json!({
-                        "__sushi_file_download": true,
+                        "__app_web_download": true,
                         "file_name": file_name,
-                        "mime": mime,
+                        "content_type": mime,
                         "body_hex": body_hex,
                     });
                     serde_json::to_string(&envelope)
@@ -708,7 +708,14 @@ pub async fn inject_sushi_api(
         sushi.set("auth", auth_table)?;
     }
 
-    lua.globals().set("sushi", sushi)?;
+    lua.globals().set("sushi", sushi.clone())?;
+
+    // app.* — shared namespace for cross-project plugin compatibility
+    lua.globals().set("app", sushi.clone())?;
+
+    // suxun.* — alias so suxun plugins work unchanged during migration
+    lua.globals().set("suxun", sushi)?;
+
     Ok(())
 }
 

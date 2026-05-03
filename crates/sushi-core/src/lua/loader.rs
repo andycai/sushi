@@ -787,13 +787,13 @@ impl Plugin for LuaPlugin {
             .exec()
             .map_err(|e| PluginError::InitFailed(format!("{}: {e}", self.manifest.plugin.name)))?;
 
-        // Call sushi.init() if defined
-        let sushi: mlua::Table = lua
+        // Call app.init() if defined (sushi.init() kept for backward compat via alias)
+        let app: mlua::Table = lua
             .globals()
-            .get("sushi")
-            .map_err(|e| PluginError::LuaError(format!("no sushi global: {e}")))?;
+            .get("app")
+            .map_err(|e| PluginError::LuaError(format!("no app global: {e}")))?;
 
-        if let Ok(init_fn) = sushi.get::<mlua::Function>("init") {
+        if let Ok(init_fn) = app.get::<mlua::Function>("init") {
             init_fn.call::<()>(()).map_err(|e| {
                 PluginError::InitFailed(format!("{}.init(): {e}", self.manifest.plugin.name))
             })?;
@@ -806,7 +806,7 @@ impl Plugin for LuaPlugin {
             storage
         });
 
-        if let Ok(raw_registry) = sushi.get::<mlua::Table>("__contract_registry") {
+        if let Ok(raw_registry) = app.get::<mlua::Table>("__contract_registry") {
             // Parse all known surfaces for schema validation; API and web currently
             // register runtime bindings from the contract snapshot path.
             let _ = admin_adapter::snapshot_from_lua(raw_registry.clone())?;
@@ -877,7 +877,7 @@ impl Plugin for LuaPlugin {
         }
 
         // Compatibility path for legacy bindings still using __pending_routes.
-        if let Ok(pending) = sushi.get::<mlua::Table>("__pending_routes") {
+        if let Ok(pending) = app.get::<mlua::Table>("__pending_routes") {
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
@@ -903,7 +903,7 @@ impl Plugin for LuaPlugin {
         }
 
         // Read pending commands, register with PluginManager
-        if let Ok(pending) = sushi.get::<mlua::Table>("__pending_commands") {
+        if let Ok(pending) = app.get::<mlua::Table>("__pending_commands") {
             let len = pending.raw_len();
             for i in 1..=len {
                 if let Ok(entry) = pending.get::<mlua::Table>(i) {
@@ -955,7 +955,7 @@ impl Plugin for LuaPlugin {
         }
 
         // Read pending pages, register with PluginManager
-        if let Ok(pending) = sushi.get::<mlua::Table>("__pending_pages") {
+        if let Ok(pending) = app.get::<mlua::Table>("__pending_pages") {
             let static_prefix = {
                 let cfg = ctx.config.get().await;
                 normalize_static_url_prefix(&cfg.web.static_url_prefix)
@@ -997,7 +997,7 @@ impl Plugin for LuaPlugin {
         // Store the Lua VM in the PluginManager so handlers can be called later
         // We clone the lua ref (it's behind Option) — but we actually need to take ownership
         // Since Plugin trait uses &self, we use a workaround: register the VM separately
-        drop(sushi);
+        drop(app);
 
         tracing::info!(
             "plugin loaded: {} v{}",

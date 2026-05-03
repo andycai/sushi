@@ -49,7 +49,7 @@ end
 function M.new()
     local browser = {}
 
-    local roots = sushi.fs.roots() or {}
+    local roots = app.fs.roots() or {}
     local root_by_id = {}
     for _, root in ipairs(roots) do
         if root and root.id then
@@ -95,7 +95,7 @@ function M.new()
     end
 
     function browser.route_prefix()
-        return tostring(sushi.fs.route_prefix or "/app/files")
+        return tostring(app.fs.route_prefix or "/app/files")
     end
 
     function browser.resolve_root_id(root_id)
@@ -108,11 +108,11 @@ function M.new()
     end
 
     function browser.list(root_id, rel_path)
-        return call_fs(root_id, rel_path or "", "can_list", sushi.fs.list)
+        return call_fs(root_id, rel_path or "", "can_list", app.fs.list)
     end
 
     function browser.read_text(root_id, rel_path)
-        return call_fs(root_id, rel_path or "", "can_view_text", sushi.fs.read_text)
+        return call_fs(root_id, rel_path or "", "can_view_text", app.fs.read_text)
     end
 
     function browser.write_text(root_id, rel_path, content)
@@ -122,7 +122,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_edit_text")
         end
 
-        local ok, result = pcall(sushi.fs.write_text, resolved_root, rel_path or "", content or "")
+        local ok, result = pcall(app.fs.write_text, resolved_root, rel_path or "", content or "")
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message
@@ -137,7 +137,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_create_text")
         end
 
-        local ok, result = pcall(sushi.fs.create_text, resolved_root, rel_path or "", initial_content)
+        local ok, result = pcall(app.fs.create_text, resolved_root, rel_path or "", initial_content)
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message
@@ -152,7 +152,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_create_dir")
         end
 
-        local ok, result = pcall(sushi.fs.mkdir, resolved_root, rel_path or "")
+        local ok, result = pcall(app.fs.mkdir, resolved_root, rel_path or "")
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message
@@ -167,7 +167,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_rename")
         end
 
-        local ok, result = pcall(sushi.fs.rename, resolved_root, from_rel_path or "", to_rel_path or "")
+        local ok, result = pcall(app.fs.rename, resolved_root, from_rel_path or "", to_rel_path or "")
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message
@@ -182,7 +182,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_delete")
         end
 
-        local ok, result = pcall(sushi.fs.delete, resolved_root, rel_path or "")
+        local ok, result = pcall(app.fs.delete, resolved_root, rel_path or "")
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message
@@ -197,7 +197,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_upload")
         end
 
-        local ok, result = pcall(sushi.fs.write_upload, resolved_root, rel_path or "", content or "")
+        local ok, result = pcall(app.fs.write_upload, resolved_root, rel_path or "", content or "")
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message
@@ -212,7 +212,7 @@ function M.new()
             return nil, "permission_denied", "Capability denied: " .. operation_name("can_download")
         end
 
-        local ok, result = pcall(sushi.fs.read_download, resolved_root, rel_path or "")
+        local ok, result = pcall(app.fs.read_download, resolved_root, rel_path or "")
         if not ok then
             local code, message = parse_fs_error(result)
             return nil, code, message

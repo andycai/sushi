@@ -23,6 +23,16 @@ pub fn create_sandboxed_vm() -> Result<Lua, mlua::Error> {
     globals.set("dofile", mlua::Value::Nil)?;
     globals.set("loadfile", mlua::Value::Nil)?;
 
+    // await(x) — identity function, no-op for async compatibility
+    // Plugins can write `local result = await(app.db.query(...))` and it
+    // works identically in both Sushi (async) and Suxun (sync).
+    globals.set(
+        "await",
+        lua.create_function(|_, args: mlua::MultiValue| {
+            Ok(args)
+        })?,
+    )?;
+
     Ok(lua)
 }
 

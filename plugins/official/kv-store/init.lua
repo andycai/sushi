@@ -14,7 +14,7 @@ local cli_factory = require("interfaces.cli")
 
 local bootstrap = require("bootstrap.register")
 
-function sushi.init()
+function app.init()
     local store = store_factory.new({ db = db })
 
     local api = api_factory.new({
@@ -38,5 +38,5 @@ function sushi.init()
         cli = cli,
     })
 
-    sushi.log.info("kv-store plugin: registered API routes, admin page, and CLI commands")
+    app.log.info("kv-store plugin: registered API routes, admin page, and CLI commands")
 end

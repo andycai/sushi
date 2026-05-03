@@ -1,7 +1,7 @@
 local M = {}
 
 function M.parse(raw)
-    local ok, decoded = pcall(sushi.json.decode, raw)
+    local ok, decoded = pcall(app.json.decode, raw)
     if ok then
         return decoded
     end
@@ -9,7 +9,7 @@ function M.parse(raw)
 end
 
 function M.encode(value)
-    return sushi.json.encode(value)
+    return app.json.encode(value)
 end
 
 return M

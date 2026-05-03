@@ -852,12 +852,12 @@ impl PluginManager {
     }
 
     fn get_handler_fn(&self, lua: &mlua::Lua, handler_key: &str) -> Result<mlua::Function, String> {
-        let sushi: mlua::Table = lua
+        let app: mlua::Table = lua
             .globals()
-            .get("sushi")
-            .map_err(|e| format!("no sushi global: {e}"))?;
+            .get("app")
+            .map_err(|e| format!("no app global: {e}"))?;
 
-        let handlers: mlua::Table = sushi
+        let handlers: mlua::Table = app
             .get("__handlers")
             .map_err(|e| format!("no __handlers table: {e}"))?;
 

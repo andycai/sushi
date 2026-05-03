@@ -280,19 +280,19 @@ fn plugin_disabled_message(err: &str) -> String {
 #[derive(serde::Deserialize)]
 struct DownloadEnvelope {
     #[serde(default)]
-    __sushi_file_download: bool,
+    __app_web_download: bool,
     file_name: String,
-    mime: String,
+    content_type: String,
     body_hex: String,
 }
 
 fn parse_download_envelope(body: &str) -> Option<(String, String, Vec<u8>)> {
     let parsed: DownloadEnvelope = serde_json::from_str(body).ok()?;
-    if !parsed.__sushi_file_download {
+    if !parsed.__app_web_download {
         return None;
     }
     let decoded = decode_hex_bytes(&parsed.body_hex)?;
-    Some((parsed.file_name, parsed.mime, decoded))
+    Some((parsed.file_name, parsed.content_type, decoded))
 }
 
 fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
@@ -347,7 +347,7 @@ fn infer_response_content_type(body: &str) -> &'static str {
 fn parse_status_envelope(body: &str) -> Option<(axum::http::StatusCode, String)> {
     let parsed: Value = serde_json::from_str(body).ok()?;
     let obj = parsed.as_object()?;
-    let sentinel = obj.get("__sushi_web_json")?.as_bool()?;
+    let sentinel = obj.get("__app_web_json")?.as_bool()?;
     if !sentinel {
         return None;
     }

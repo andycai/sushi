@@ -17,20 +17,20 @@ function M.new(deps)
     local function kv_rows_partial(error_message)
         local rows, _, msg = store.list()
         if not rows then
-            return sushi.web.render("plugins/official/kv-store/partials/rows.html", {
+            return app.web.render("plugins/official/kv-store/partials/rows.html", {
                 items = {},
                 error_message = error_message or tostring(msg),
             })
         end
 
-        return sushi.web.render("plugins/official/kv-store/partials/rows.html", {
+        return app.web.render("plugins/official/kv-store/partials/rows.html", {
             items = rows,
             error_message = error_message,
         })
     end
 
     local function kv_flash(level, message)
-        return sushi.web.render("plugins/official/kv-store/partials/flash.html", {
+        return app.web.render("plugins/official/kv-store/partials/flash.html", {
             level = tostring(level or "success"),
             message = tostring(message or ""),
         })
