@@ -3,6 +3,7 @@ use std::path::Path;
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
+use sushi_core::runtime::{CapabilityRegistry, PluginInstanceId, TemplateRootSpec};
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::web::template_error::TemplateError;
 use sushi_core::web::template_service::TemplateService;
@@ -161,4 +162,36 @@ fn render_plugin_template_from_tiered_plugin_template_root() {
         .unwrap();
 
     assert_eq!(html, "<html>Plugin Workspace</html>");
+}
+
+#[test]
+fn dynamic_plugin_template_root_disappears_after_owner_removal() {
+    let runtime = Runtime::new().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("base.html"), "<html>{{ value }}</html>").unwrap();
+    let plugin_templates = tempfile::tempdir().unwrap();
+    std::fs::write(plugin_templates.path().join("page.html"), "Plugin {{ value }}").unwrap();
+
+    let registry = CapabilityRegistry::new();
+    let owner = PluginInstanceId::new("notes.default").unwrap();
+    let mut staged = registry.stage(owner.clone());
+    staged.register_template_root(TemplateRootSpec::new(
+        "official/notes",
+        plugin_templates.path().to_path_buf(),
+    ));
+    runtime.block_on(registry.commit(staged)).unwrap();
+
+    let service = TemplateService::new_with_registry(root.path(), registry.clone()).unwrap();
+    let name = "plugins/official/notes/page.html";
+    assert_eq!(
+        service
+            .render(name, serde_json::json!({"value": "visible"}))
+            .unwrap(),
+        "Plugin visible"
+    );
+
+    runtime.block_on(registry.remove_owner(&owner));
+    assert!(service
+        .render(name, serde_json::json!({"value": "hidden"}))
+        .is_err());
 }
