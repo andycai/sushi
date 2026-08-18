@@ -45,3 +45,5 @@ Thumbs.db
 .agents/
 .claude/
 .pi/
+.codegraph/
+.mcp.json
