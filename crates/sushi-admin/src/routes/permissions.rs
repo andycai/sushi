@@ -1,18 +1,139 @@
 use axum::extract::{Form, Path, State};
-use axum::http::{header::HeaderName, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use serde::Deserialize;
 use std::sync::Arc;
 use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::context::SushiContext;
+use sushi_core::runtime::{
+    AdminPageSpec, HttpHandler, HttpResponse, HttpRouteSpec, MenuContributionSpec, StagedRegistrar,
+};
 use sushi_core::storage::Storage;
 
 pub async fn permissions_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    crate::render::render_template(&ctx, "admin/permissions.html").await
+    sushi_api::router::plugin_http_response(permissions_page_response(&ctx).await)
 }
 
 pub async fn permissions_table_partial(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    render_permissions_rows(&ctx).await
+    sushi_api::router::plugin_http_response(permissions_table_response(&ctx).await)
+}
+
+pub fn register_builtin_capabilities(staged: &mut StagedRegistrar, ctx: SushiContext) {
+    staged.register_menu(
+        MenuContributionSpec::new("rbac-admin.permissions", "Permissions", 40)
+            .with_icon(Some("key".to_string()))
+            .with_parent(Some("host-admin.system".to_string()))
+            .with_route(Some("/admin/permissions".to_string()))
+            .with_policy(Some("admin.permissions.view".to_string())),
+    );
+    let page_ctx = ctx.clone();
+    staged.register_admin(
+        AdminPageSpec::new(
+            "/admin/permissions",
+            "Permissions",
+            "rbac-admin",
+            "rust::permissions-page",
+        )
+        .with_policy(Some("admin.permissions.view".to_string()))
+        .with_rust_handler(HttpHandler::new(move |_| {
+            let ctx = page_ctx.clone();
+            async move { Ok(permissions_page_response(&ctx).await) }
+        })),
+    );
+    let table_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "GET",
+            "/admin/partials/permissions/table",
+            "rbac-admin",
+            "rust::permissions-table",
+        )
+        .with_policy(Some("admin.permissions.view".to_string()))
+        .with_rust_handler(HttpHandler::new(move |_| {
+            let ctx = table_ctx.clone();
+            async move { Ok(permissions_table_response(&ctx).await) }
+        })),
+    );
+    let create_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "POST",
+            "/admin/partials/permissions/create",
+            "rbac-admin",
+            "rust::permissions-create",
+        )
+        .with_policy(Some("admin.permissions.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = create_ctx.clone();
+            async move {
+                let form = match super::transport::decode_form(&request) {
+                    Ok(form) => form,
+                    Err(response) => return Ok(response),
+                };
+                Ok(permissions_create_response(&ctx, form).await)
+            }
+        })),
+    );
+    let update_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "POST",
+            "/admin/partials/permissions/{id}/update",
+            "rbac-admin",
+            "rust::permissions-update",
+        )
+        .with_policy(Some("admin.permissions.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = update_ctx.clone();
+            async move {
+                let id = match super::transport::path_i64(
+                    &request.path,
+                    "/admin/partials/permissions/",
+                    "/update",
+                ) {
+                    Ok(id) => id,
+                    Err(response) => return Ok(response),
+                };
+                let form = match super::transport::decode_form(&request) {
+                    Ok(form) => form,
+                    Err(response) => return Ok(response),
+                };
+                Ok(permissions_update_response(&ctx, id, form).await)
+            }
+        })),
+    );
+    staged.register_http(
+        HttpRouteSpec::new(
+            "DELETE",
+            "/admin/partials/permissions/{id}",
+            "rbac-admin",
+            "rust::permissions-delete",
+        )
+        .with_policy(Some("admin.permissions.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = ctx.clone();
+            async move {
+                let id = match super::transport::path_i64(
+                    &request.path,
+                    "/admin/partials/permissions/",
+                    "",
+                ) {
+                    Ok(id) => id,
+                    Err(response) => return Ok(response),
+                };
+                Ok(permissions_delete_response(&ctx, id).await)
+            }
+        })),
+    );
+}
+
+async fn permissions_page_response(ctx: &SushiContext) -> HttpResponse {
+    crate::render::render_template_http_response(
+        ctx,
+        "admin/permissions.html",
+        serde_json::json!({}),
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +148,16 @@ pub async fn permissions_create_partial(
     State(ctx): State<SushiContext>,
     Form(form): Form<CreatePermissionForm>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(permissions_create_response(&ctx, form).await)
+}
+
+async fn permissions_create_response(
+    ctx: &SushiContext,
+    form: CreatePermissionForm,
+) -> HttpResponse {
     if let Err(message) = validate_create_permission_form(&form) {
-        return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &message).await;
+        return super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &message)
+            .await;
     }
 
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
@@ -42,8 +171,8 @@ pub async fn permissions_create_partial(
         .await
     {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Permission created.",
@@ -51,7 +180,9 @@ pub async fn permissions_create_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -67,8 +198,17 @@ pub async fn permissions_update_partial(
     Path(id): Path<i64>,
     Form(form): Form<UpdatePermissionForm>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(permissions_update_response(&ctx, id, form).await)
+}
+
+async fn permissions_update_response(
+    ctx: &SushiContext,
+    id: i64,
+    form: UpdatePermissionForm,
+) -> HttpResponse {
     if let Err(message) = validate_update_permission_form(&form) {
-        return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &message).await;
+        return super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &message)
+            .await;
     }
 
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
@@ -82,8 +222,8 @@ pub async fn permissions_update_partial(
         .await
     {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Permission updated.",
@@ -91,7 +231,9 @@ pub async fn permissions_update_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -99,11 +241,15 @@ pub async fn permissions_delete_partial(
     State(ctx): State<SushiContext>,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(permissions_delete_response(&ctx, id).await)
+}
+
+async fn permissions_delete_response(ctx: &SushiContext, id: i64) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     match repo.delete_permission(id).await {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Permission deleted.",
@@ -111,7 +257,9 @@ pub async fn permissions_delete_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -185,16 +333,22 @@ fn validate_permission_description(input: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-async fn render_permissions_rows(ctx: &SushiContext) -> Response {
+async fn permissions_table_response(ctx: &SushiContext) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     let permissions = match repo.list_permissions().await {
         Ok(permissions) => permissions,
         Err(err) => {
-            return flash_response(ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error",
+                &err,
+            )
+            .await;
         }
     };
 
-    crate::render::render_template_with_context(
+    crate::render::render_template_http_response(
         ctx,
         "admin/partials/permissions_rows.html",
         serde_json::json!({
@@ -202,39 +356,4 @@ async fn render_permissions_rows(ctx: &SushiContext) -> Response {
         }),
     )
     .await
-}
-
-async fn flash_response(
-    ctx: &SushiContext,
-    status: StatusCode,
-    level: &str,
-    message: &str,
-) -> Response {
-    let mut response = crate::render::render_template_with_context(
-        ctx,
-        "admin/partials/flash.html",
-        serde_json::json!({
-            "level": level,
-            "message": message,
-        }),
-    )
-    .await;
-    *response.status_mut() = status;
-    response
-}
-
-async fn flash_response_with_trigger(
-    ctx: &SushiContext,
-    status: StatusCode,
-    level: &str,
-    message: &str,
-    trigger: &str,
-) -> Response {
-    let mut response = flash_response(ctx, status, level, message).await;
-    if let Ok(value) = HeaderValue::from_str(trigger) {
-        response
-            .headers_mut()
-            .insert(HeaderName::from_static("hx-trigger"), value);
-    }
-    response
 }

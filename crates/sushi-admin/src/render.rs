@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::Response;
 use sushi_core::context::SushiContext;
+use sushi_core::runtime::HttpResponse;
 
 pub async fn render_template(ctx: &SushiContext, name: &str) -> Response {
     render_template_with_context(ctx, name, serde_json::json!({})).await
@@ -11,6 +12,14 @@ pub async fn render_template_with_context(
     name: &str,
     context: serde_json::Value,
 ) -> Response {
+    sushi_api::router::plugin_http_response(render_template_http_response(ctx, name, context).await)
+}
+
+pub async fn render_template_http_response(
+    ctx: &SushiContext,
+    name: &str,
+    context: serde_json::Value,
+) -> HttpResponse {
     let static_url_prefix = {
         let cfg = ctx.config.get().await;
         normalize_static_url_prefix(&cfg.web.static_url_prefix)
@@ -19,10 +28,15 @@ pub async fn render_template_with_context(
     let template_context = merge_static_prefix(context, &static_url_prefix);
 
     match ctx.templates.render(name, template_context) {
-        Ok(html) => Html(html).into_response(),
+        Ok(html) => HttpResponse::new(StatusCode::OK.as_u16(), html)
+            .with_header("content-type", "text/html; charset=utf-8"),
         Err(err) => {
             tracing::error!("template render error for {name}: {err}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "template render error").into_response()
+            HttpResponse::new(
+                StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                "template render error",
+            )
+            .with_header("content-type", "text/plain; charset=utf-8")
         }
     }
 }

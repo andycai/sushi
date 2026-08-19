@@ -13,6 +13,7 @@ use sushi_core::auth::model::UserRole;
 use sushi_core::auth::password;
 use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::auth::repository::UserRepository;
+use sushi_core::runtime::{HttpHandler, HttpRequest, HttpResponse, HttpRouteSpec, StagedRegistrar};
 use sushi_core::storage::Storage;
 
 #[derive(Clone)]
@@ -43,7 +44,14 @@ async fn list_users(
     State(state): State<UsersRouteState>,
     Query(pagination): Query<PaginationParams>,
 ) -> impl IntoResponse {
-    let repo = UserRepository::new(Arc::clone(&state.storage));
+    crate::router::plugin_http_response(list_users_response(&state.storage, pagination).await)
+}
+
+async fn list_users_response(
+    storage: &Arc<dyn Storage>,
+    pagination: PaginationParams,
+) -> HttpResponse {
+    let repo = UserRepository::new(Arc::clone(storage));
 
     // Validate pagination parameters
     let limit = pagination.limit.min(100).max(1); // Cap at 100
@@ -63,21 +71,16 @@ async fn list_users(
                     })
                 })
                 .collect();
-            (
+            json_http_response(
                 StatusCode::OK,
-                Json(json!({
+                json!({
                     "users": response,
                     "limit": limit,
                     "offset": offset,
-                })),
+                }),
             )
-                .into_response()
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": e })),
-        )
-            .into_response(),
+        Err(e) => json_http_response(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": e })),
     }
 }
 
@@ -131,13 +134,17 @@ async fn create_user(
     State(state): State<UsersRouteState>,
     Json(req): Json<CreateUserRequest>,
 ) -> impl IntoResponse {
+    crate::router::plugin_http_response(create_user_response(&state.storage, req).await)
+}
+
+async fn create_user_response(storage: &Arc<dyn Storage>, req: CreateUserRequest) -> HttpResponse {
     // Validate input
     if let Err(e) = req.validate() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response();
+        return json_http_response(StatusCode::BAD_REQUEST, json!({ "error": e }));
     }
 
-    let repo = UserRepository::new(Arc::clone(&state.storage));
-    let role_repo = RbacRepository::new(Arc::clone(&state.storage));
+    let repo = UserRepository::new(Arc::clone(storage));
+    let role_repo = RbacRepository::new(Arc::clone(storage));
 
     let role_slug = req
         .role
@@ -149,18 +156,13 @@ async fn create_user(
     match role_repo.find_role_by_slug(&role_slug).await {
         Ok(Some(_)) => {}
         Ok(None) => {
-            return (
+            return json_http_response(
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Selected role does not exist" })),
-            )
-                .into_response();
+                json!({ "error": "Selected role does not exist" }),
+            );
         }
         Err(err) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": err })),
-            )
-                .into_response();
+            return json_http_response(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": err }));
         }
     }
     let role = UserRole::from_slug(&role_slug);
@@ -168,7 +170,7 @@ async fn create_user(
     let password_hash = match password::hash_password(&req.password) {
         Ok(h) => h,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response();
+            return json_http_response(StatusCode::BAD_REQUEST, json!({ "error": e }));
         }
     };
 
@@ -176,17 +178,16 @@ async fn create_user(
         .create_user(&req.username, &req.email, &password_hash, role)
         .await
     {
-        Ok(user) => (
+        Ok(user) => json_http_response(
             StatusCode::CREATED,
-            Json(json!({
+            json!({
                 "id": user.id,
                 "username": user.username,
                 "email": user.email,
                 "role": user.role.to_string(),
-            })),
-        )
-            .into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+            }),
+        ),
+        Err(e) => json_http_response(StatusCode::BAD_REQUEST, json!({ "error": e })),
     }
 }
 
@@ -194,9 +195,121 @@ async fn delete_user(
     State(state): State<UsersRouteState>,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
-    let repo = UserRepository::new(Arc::clone(&state.storage));
+    crate::router::plugin_http_response(delete_user_response(&state.storage, id).await)
+}
+
+async fn delete_user_response(storage: &Arc<dyn Storage>, id: i64) -> HttpResponse {
+    let repo = UserRepository::new(Arc::clone(storage));
     match repo.delete_user(id).await {
-        Ok(()) => (StatusCode::NO_CONTENT, Json(json!(null))).into_response(),
-        Err(e) => (StatusCode::NOT_FOUND, Json(json!({ "error": e }))).into_response(),
+        Ok(()) => json_http_response(StatusCode::NO_CONTENT, json!(null)),
+        Err(e) => json_http_response(StatusCode::NOT_FOUND, json!({ "error": e })),
     }
+}
+
+pub fn register_builtin_routes(
+    staged: &mut StagedRegistrar,
+    plugin_name: &'static str,
+    storage: Arc<dyn Storage>,
+) {
+    let list_storage = Arc::clone(&storage);
+    staged.register_http(
+        HttpRouteSpec::new("GET", "/api/users", plugin_name, "rust::users-list")
+            .with_policy(Some("api.users.read".to_string()))
+            .with_rust_handler(HttpHandler::new(move |request| {
+                let storage = Arc::clone(&list_storage);
+                async move {
+                    let pagination = match parse_pagination(&request) {
+                        Ok(pagination) => pagination,
+                        Err(error) => return Ok(bad_request_response(error)),
+                    };
+                    Ok(list_users_response(&storage, pagination).await)
+                }
+            })),
+    );
+
+    let create_storage = Arc::clone(&storage);
+    staged.register_http(
+        HttpRouteSpec::new("POST", "/api/users", plugin_name, "rust::users-create")
+            .with_policy(Some("api.users.manage".to_string()))
+            .with_rust_handler(HttpHandler::new(move |request| {
+                let storage = Arc::clone(&create_storage);
+                async move {
+                    let body = request.body.unwrap_or_default();
+                    let payload = match serde_json::from_slice::<CreateUserRequest>(&body) {
+                        Ok(payload) => payload,
+                        Err(error) => {
+                            return Ok(bad_request_response(format!(
+                                "invalid users request body: {error}"
+                            )))
+                        }
+                    };
+                    Ok(create_user_response(&storage, payload).await)
+                }
+            })),
+    );
+
+    staged.register_http(
+        HttpRouteSpec::new("DELETE", "/api/users/*", plugin_name, "rust::users-delete")
+            .with_policy(Some("api.users.manage".to_string()))
+            .with_rust_handler(HttpHandler::new(move |request| {
+                let storage = Arc::clone(&storage);
+                async move {
+                    let id = match request
+                        .path
+                        .strip_prefix("/api/users/")
+                        .and_then(|value| value.parse::<i64>().ok())
+                    {
+                        Some(id) => id,
+                        None => {
+                            return Ok(bad_request_response(format!(
+                                "invalid user id in path: {}",
+                                request.path
+                            )))
+                        }
+                    };
+                    Ok(delete_user_response(&storage, id).await)
+                }
+            })),
+    );
+}
+
+fn parse_pagination(request: &HttpRequest) -> Result<PaginationParams, String> {
+    let query = request
+        .dispatch_path
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or_default();
+    let mut pagination = PaginationParams {
+        limit: default_limit(),
+        offset: 0,
+    };
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        match key {
+            "limit" => {
+                pagination.limit = value
+                    .parse()
+                    .map_err(|error| format!("invalid limit query value: {error}"))?;
+            }
+            "offset" => {
+                pagination.offset = value
+                    .parse()
+                    .map_err(|error| format!("invalid offset query value: {error}"))?;
+            }
+            _ => {}
+        }
+    }
+    Ok(pagination)
+}
+
+fn json_http_response(status: StatusCode, payload: Value) -> HttpResponse {
+    HttpResponse::new(
+        status.as_u16(),
+        serde_json::to_vec(&payload).expect("JSON value serialization cannot fail"),
+    )
+    .with_header("content-type", "application/json")
+}
+
+fn bad_request_response(error: impl Into<String>) -> HttpResponse {
+    json_http_response(StatusCode::BAD_REQUEST, json!({ "error": error.into() }))
 }

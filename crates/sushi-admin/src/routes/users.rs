@@ -1,7 +1,7 @@
 use axum::extract::State;
 use axum::extract::{Form, Path};
-use axum::http::{header::HeaderName, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use serde::Deserialize;
 use std::sync::Arc;
 use sushi_core::auth::model::UserRole;
@@ -9,24 +9,104 @@ use sushi_core::auth::password;
 use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::auth::repository::UserRepository;
 use sushi_core::context::SushiContext;
+use sushi_core::runtime::{
+    AdminPageSpec, HttpHandler, HttpResponse, HttpRouteSpec, MenuContributionSpec, StagedRegistrar,
+};
 use sushi_core::storage::Storage;
 
 pub async fn users_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(users_page_response(&ctx).await)
+}
+
+pub async fn users_table_partial(State(ctx): State<SushiContext>) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(users_table_response(&ctx).await)
+}
+
+pub fn register_builtin_capabilities(staged: &mut StagedRegistrar, ctx: SushiContext) {
+    staged.register_menu(
+        MenuContributionSpec::new("rbac-admin.users", "Users", 20)
+            .with_icon(Some("users".to_string()))
+            .with_parent(Some("host-admin.system".to_string()))
+            .with_route(Some("/admin/users".to_string()))
+            .with_policy(Some("admin.users.view".to_string())),
+    );
+    let page_ctx = ctx.clone();
+    staged.register_admin(
+        AdminPageSpec::new("/admin/users", "Users", "rbac-admin", "rust::users-page")
+            .with_policy(Some("admin.users.view".to_string()))
+            .with_rust_handler(HttpHandler::new(move |_| {
+                let ctx = page_ctx.clone();
+                async move { Ok(users_page_response(&ctx).await) }
+            })),
+    );
+    let table_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "GET",
+            "/admin/partials/users/table",
+            "rbac-admin",
+            "rust::users-table",
+        )
+        .with_policy(Some("admin.users.view".to_string()))
+        .with_rust_handler(HttpHandler::new(move |_| {
+            let ctx = table_ctx.clone();
+            async move { Ok(users_table_response(&ctx).await) }
+        })),
+    );
+    let create_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "POST",
+            "/admin/partials/users/create",
+            "rbac-admin",
+            "rust::users-create",
+        )
+        .with_policy(Some("admin.users.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = create_ctx.clone();
+            async move {
+                let form = match super::transport::decode_form(&request) {
+                    Ok(form) => form,
+                    Err(response) => return Ok(response),
+                };
+                Ok(users_create_response(&ctx, form).await)
+            }
+        })),
+    );
+    staged.register_http(
+        HttpRouteSpec::new(
+            "DELETE",
+            "/admin/partials/users/{id}",
+            "rbac-admin",
+            "rust::users-delete",
+        )
+        .with_policy(Some("admin.users.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = ctx.clone();
+            async move {
+                let id =
+                    match super::transport::path_i64(&request.path, "/admin/partials/users/", "") {
+                        Ok(id) => id,
+                        Err(response) => return Ok(response),
+                    };
+                Ok(users_delete_response(&ctx, id).await)
+            }
+        })),
+    );
+}
+
+async fn users_page_response(ctx: &SushiContext) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     let roles = repo.list_roles().await.unwrap_or_default();
 
-    crate::render::render_template_with_context(
-        &ctx,
+    crate::render::render_template_http_response(
+        ctx,
         "admin/users.html",
         serde_json::json!({
             "roles": roles,
         }),
     )
     .await
-}
-
-pub async fn users_table_partial(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    render_users_rows(&ctx).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,8 +121,13 @@ pub async fn users_create_partial(
     State(ctx): State<SushiContext>,
     Form(form): Form<CreateUserForm>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(users_create_response(&ctx, form).await)
+}
+
+async fn users_create_response(ctx: &SushiContext, form: CreateUserForm) -> HttpResponse {
     if let Err(message) = validate_create_user_form(&form) {
-        return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &message).await;
+        return super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &message)
+            .await;
     }
 
     let role_slug = form
@@ -59,8 +144,8 @@ pub async fn users_create_partial(
     match role_repo.find_role_by_slug(&role_slug).await {
         Ok(Some(_)) => {}
         Ok(None) => {
-            return flash_response(
-                &ctx,
+            return super::transport::flash_response(
+                ctx,
                 StatusCode::BAD_REQUEST,
                 "error",
                 "Selected role does not exist",
@@ -68,14 +153,23 @@ pub async fn users_create_partial(
             .await;
         }
         Err(err) => {
-            return flash_response(&ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error",
+                &err,
+            )
+            .await;
         }
     };
 
     let role = UserRole::from_slug(&role_slug);
     let password_hash = match password::hash_password(&form.password) {
         Ok(hash) => hash,
-        Err(err) => return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            return super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err)
+                .await
+        }
     };
 
     match repo
@@ -83,8 +177,8 @@ pub async fn users_create_partial(
         .await
     {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "User created.",
@@ -92,7 +186,9 @@ pub async fn users_create_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -100,11 +196,15 @@ pub async fn users_delete_partial(
     State(ctx): State<SushiContext>,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(users_delete_response(&ctx, id).await)
+}
+
+async fn users_delete_response(ctx: &SushiContext, id: i64) -> HttpResponse {
     let repo = UserRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     match repo.delete_user(id).await {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "User deleted.",
@@ -112,7 +212,9 @@ pub async fn users_delete_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::NOT_FOUND, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::NOT_FOUND, "error", &err).await
+        }
     }
 }
 
@@ -139,7 +241,7 @@ fn validate_create_user_form(form: &CreateUserForm) -> Result<(), String> {
     Ok(())
 }
 
-async fn render_users_rows(ctx: &SushiContext) -> Response {
+async fn users_table_response(ctx: &SushiContext) -> HttpResponse {
     let repo = UserRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     let users = match repo.list_users_paginated(100, 0).await {
         Ok(users) => users
@@ -154,11 +256,17 @@ async fn render_users_rows(ctx: &SushiContext) -> Response {
             })
             .collect::<Vec<_>>(),
         Err(err) => {
-            return flash_response(ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error",
+                &err,
+            )
+            .await;
         }
     };
 
-    crate::render::render_template_with_context(
+    crate::render::render_template_http_response(
         ctx,
         "admin/partials/users_rows.html",
         serde_json::json!({
@@ -166,39 +274,4 @@ async fn render_users_rows(ctx: &SushiContext) -> Response {
         }),
     )
     .await
-}
-
-async fn flash_response(
-    ctx: &SushiContext,
-    status: StatusCode,
-    level: &str,
-    message: &str,
-) -> Response {
-    let mut response = crate::render::render_template_with_context(
-        ctx,
-        "admin/partials/flash.html",
-        serde_json::json!({
-            "level": level,
-            "message": message,
-        }),
-    )
-    .await;
-    *response.status_mut() = status;
-    response
-}
-
-async fn flash_response_with_trigger(
-    ctx: &SushiContext,
-    status: StatusCode,
-    level: &str,
-    message: &str,
-    trigger: &str,
-) -> Response {
-    let mut response = flash_response(ctx, status, level, message).await;
-    if let Ok(value) = HeaderValue::from_str(trigger) {
-        response
-            .headers_mut()
-            .insert(HeaderName::from_static("hx-trigger"), value);
-    }
-    response
 }

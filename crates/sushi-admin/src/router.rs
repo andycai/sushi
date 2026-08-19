@@ -1,20 +1,20 @@
-use crate::routes::{
-    config, dashboard, login, logs, menu, permissions, plugins, roles, users, workspace,
-};
 use axum::{
+    body::Body,
+    extract::Path,
     extract::Request,
     extract::State,
+    http::{header, StatusCode},
     middleware::Next,
     response::IntoResponse,
-    routing::{delete, get, get_service, patch, post},
+    routing::{any, get, get_service},
     Router,
 };
-use std::collections::HashSet;
 use std::sync::Arc;
 use sushi_core::auth::authorizer::Authorizer;
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::PageResolvedAssets;
+use sushi_core::runtime::{HttpRequest, HttpSurface};
 use tower_http::services::{ServeDir, ServeFile};
 
 /// Admin auth middleware state
@@ -39,31 +39,15 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             cfg.web.static_url_prefix.clone(),
         )
     };
-    let plugin_pages = ctx.plugins.list_admin_pages().await;
-    let plugin_static_roots = ctx.plugins.list_plugin_static_roots().await;
-
     let static_url_prefix = crate::render::normalize_static_url_prefix(&static_url_prefix);
 
-    let mut static_router = Router::new();
-    for (plugin_name, plugin_static_root) in plugin_static_roots {
-        if !is_valid_plugin_mount_id(&plugin_name) {
-            tracing::warn!("skip invalid plugin static mount name: {plugin_name}");
-            continue;
-        }
-        if !plugin_static_root.is_dir() {
-            tracing::warn!(
-                "skip missing plugin static root for {}: {}",
-                plugin_name,
-                plugin_static_root.display()
-            );
-            continue;
-        }
-        let mount_path = format!("{static_url_prefix}/plugins/{plugin_name}");
-        static_router = static_router.nest_service(&mount_path, ServeDir::new(plugin_static_root));
-    }
-    let static_router: Router<SushiContext> = static_router
+    let static_router: Router<SushiContext> = Router::new()
+        .route(
+            &format!("{static_url_prefix}/plugins/{{*path}}"),
+            get(plugin_static_asset),
+        )
         .nest_service(&static_url_prefix, ServeDir::new(&static_dir))
-        .with_state(());
+        .with_state(ctx.clone());
 
     // Favicon routes - serve at root level for browser compatibility
     // These must be added before auth middleware is applied
@@ -85,185 +69,17 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             "/index.html",
             get(axum::response::Redirect::temporary("/admin/")),
         )
-        .route(
-            "/admin-login",
-            get(login::login_page).post(login::login_submit),
-        )
+        .route("/admin-login", any(admin_login_dispatch))
         .route(
             "/admin",
             get(axum::response::Redirect::temporary("/admin/")),
-        )
-        .route("/admin/", get(dashboard::dashboard_page))
-        .route(
-            "/admin/workspace/{*module}",
-            get(workspace::workspace_partial),
-        )
-        .route(
-            "/admin/api/workspace/assets",
-            get(workspace::workspace_assets_api),
-        )
-        .route("/admin/plugins", get(plugins::plugins_page))
-        .route(
-            "/admin/plugins/{plugin}",
-            get(plugins::plugin_workspace_page),
-        )
-        .route("/admin/users", get(users::users_page))
-        .route("/admin/roles", get(roles::roles_page))
-        .route("/admin/permissions", get(permissions::permissions_page))
-        .route("/admin/config", get(config::config_page))
-        .route("/admin/api/config", get(config::config_api))
-        .route("/admin/logs", get(logs::logs_page))
-        .route("/admin/api/logs", get(logs::logs_api))
-        .route("/admin/menus", get(menu::menus_page))
-        .merge(menu::routes())
-        .route(
-            "/admin/partials/users/table",
-            get(users::users_table_partial),
-        )
-        .route(
-            "/admin/partials/users/create",
-            post(users::users_create_partial),
-        )
-        .route(
-            "/admin/partials/users/{id}",
-            delete(users::users_delete_partial),
-        )
-        .route(
-            "/admin/partials/roles/table",
-            get(roles::roles_table_partial),
-        )
-        .route(
-            "/admin/partials/roles/create",
-            post(roles::roles_create_partial),
-        )
-        .route(
-            "/admin/partials/roles/{id}/update",
-            post(roles::roles_update_partial),
-        )
-        .route(
-            "/admin/partials/roles/{id}/permissions/form",
-            get(roles::role_permissions_form_partial),
-        )
-        .route(
-            "/admin/partials/roles/{id}/permissions",
-            post(roles::role_permissions_update_partial),
-        )
-        .route(
-            "/admin/partials/roles/{id}",
-            delete(roles::roles_delete_partial),
-        )
-        .route(
-            "/admin/partials/permissions/table",
-            get(permissions::permissions_table_partial),
-        )
-        .route(
-            "/admin/partials/permissions/create",
-            post(permissions::permissions_create_partial),
-        )
-        .route(
-            "/admin/partials/permissions/{id}/update",
-            post(permissions::permissions_update_partial),
-        )
-        .route(
-            "/admin/partials/permissions/{id}",
-            delete(permissions::permissions_delete_partial),
-        )
-        .route(
-            "/admin/partials/plugins/table",
-            get(plugins::plugins_table_partial),
-        )
-        .route("/admin/api/plugins", get(list_plugins_api))
-        .route(
-            "/admin/api/plugins/{plugin}/pages",
-            get(plugins::plugin_pages_api),
-        )
-        .route(
-            "/admin/api/plugins/{plugin}/state",
-            patch(plugins::plugin_state_api),
         );
 
-    let reserved_paths: HashSet<&str> = HashSet::from([
-        "/admin-login",
-        "/admin",
-        "/admin/",
-        "/admin/workspace/{*module}",
-        "/admin/api/workspace/assets",
-        "/admin/plugins",
-        "/admin/plugins/{plugin}",
-        "/admin/system",
-        "/admin/users",
-        "/admin/roles",
-        "/admin/permissions",
-        "/admin/config",
-        "/admin/api/config",
-        "/admin/logs",
-        "/admin/api/logs",
-        "/admin/menus",
-        "/admin/api/menu",
-        "/admin/partials/users/table",
-        "/admin/partials/users/create",
-        "/admin/partials/users/{id}",
-        "/admin/partials/roles/table",
-        "/admin/partials/roles/create",
-        "/admin/partials/roles/{id}/update",
-        "/admin/partials/roles/{id}/permissions/form",
-        "/admin/partials/roles/{id}/permissions",
-        "/admin/partials/roles/{id}",
-        "/admin/partials/permissions/table",
-        "/admin/partials/permissions/create",
-        "/admin/partials/permissions/{id}/update",
-        "/admin/partials/permissions/{id}",
-        "/admin/partials/plugins/table",
-        "/admin/api/plugins/{plugin}/pages",
-        "/admin/api/plugins/{plugin}/state",
-        "/admin/partials/menus/table",
-        "/admin/partials/menus/create",
-        "/admin/partials/menus/{id}/update",
-        "/admin/partials/menus/{id}",
-        "/admin/api/plugins",
-    ]);
-
-    // Add dynamic admin pages from Lua plugins
-    for page_path in plugin_pages {
-        if reserved_paths.contains(page_path.as_str())
-            || page_path.starts_with("/admin/workspace/")
-            || is_plugin_workspace_root_path(page_path.as_str())
-        {
-            tracing::warn!("skip plugin admin page due to route collision: {page_path}");
-            continue;
-        }
-
-        let path = page_path.clone();
-        let pm = ctx.plugins.clone();
-        let logs = ctx.logs.clone();
-        router = router.route(
-            &page_path,
-            get(move || async move {
-                match pm.call_admin_handler(&path).await {
-                    Some(Ok(html)) => {
-                        let assets = pm.admin_page_assets(&path).await.unwrap_or_default();
-                        let html_with_assets = append_assets_to_html_response(&html, &assets);
-                        axum::response::Html(html_with_assets).into_response()
-                    }
-                    Some(Err(e)) => {
-                        if is_plugin_disabled_error(&e) {
-                            let message = plugin_disabled_message(&e);
-                            let warn_message =
-                                format!("plugin disabled on admin page {path}: {message}");
-                            tracing::warn!("{warn_message}");
-                            logs.warn(&warn_message).await;
-                            return (axum::http::StatusCode::FORBIDDEN, message).into_response();
-                        }
-                        let message = format!("plugin runtime error on admin page {path}: {e}");
-                        tracing::error!("{message}");
-                        logs.error(&message).await;
-                        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e).into_response()
-                    }
-                    None => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
-                }
-            }),
-        );
-    }
+    // Dynamic plugin pages use a stable catch-all beneath /admin. Static Host routes
+    // remain more specific and keep precedence without requiring Router rebuilds.
+    router = router.route("/admin/{*plugin_page}", any(plugin_admin_fallback));
+    router = router.route("/admin/", any(plugin_admin_fallback));
+    router = router.method_not_allowed_fallback(plugin_admin_method_fallback);
 
     let auth_state = AdminAuthState {
         jwt: Arc::clone(&ctx.jwt),
@@ -277,6 +93,176 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             admin_auth_middleware,
         ))
         .with_state(ctx.clone())
+}
+
+async fn admin_login_dispatch(
+    State(ctx): State<SushiContext>,
+    req: Request,
+) -> axum::response::Response {
+    let method = req.method().to_string();
+    let path = req.uri().path().to_string();
+    let dispatch_path = req
+        .uri()
+        .path_and_query()
+        .map(|value| value.as_str().to_string())
+        .unwrap_or_else(|| path.clone());
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    let Some(registration) = snapshot.match_http_on(HttpSurface::Api, &method, &path) else {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    };
+    let registration = registration.value.clone();
+    if !registration.is_public {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let headers = req
+        .headers()
+        .iter()
+        .map(|(name, value)| (name.as_str().to_string(), value.as_bytes().to_vec()))
+        .collect();
+    let body = if method == "GET" {
+        None
+    } else {
+        let body_size_limit = {
+            let config = ctx.config.get().await;
+            config.server.body_size_limit
+        };
+        match axum::body::to_bytes(req.into_body(), body_size_limit).await {
+            Ok(body) => Some(body.to_vec()),
+            Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+        }
+    };
+    let request = HttpRequest::new(&method, &path, &dispatch_path, body).with_headers(headers);
+    match ctx
+        .plugins
+        .dispatch_http_request_registration(&registration, request)
+        .await
+    {
+        Ok(response) => sushi_api::router::plugin_http_response(response),
+        Err(error) => sushi_api::router::plugin_http_error_response(error),
+    }
+}
+
+async fn plugin_admin_method_fallback(
+    State(ctx): State<SushiContext>,
+    req: Request,
+) -> axum::response::Response {
+    let method = req.method().to_string();
+    let path = req.uri().path().to_string();
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    if snapshot
+        .match_http_on(HttpSurface::Admin, &method, &path)
+        .is_none()
+    {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+
+    plugin_admin_fallback(State(ctx), req).await.into_response()
+}
+
+async fn plugin_admin_fallback(State(ctx): State<SushiContext>, req: Request) -> impl IntoResponse {
+    let method = req.method().to_string();
+    let path = req.uri().path().to_string();
+    let dispatch_path = req
+        .uri()
+        .path_and_query()
+        .map(|value| value.as_str().to_string())
+        .unwrap_or_else(|| path.clone());
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    if method == "GET" {
+        if let Some(registration) = snapshot.admin_page(&path) {
+            let registration = registration.value.clone();
+            let assets = PageResolvedAssets {
+                js: registration.js.clone(),
+                css: registration.css.clone(),
+            };
+            let headers = req
+                .headers()
+                .iter()
+                .map(|(name, value)| (name.as_str().to_string(), value.as_bytes().to_vec()))
+                .collect();
+            let request =
+                HttpRequest::new(&method, &path, &dispatch_path, None).with_headers(headers);
+
+            return match ctx
+                .plugins
+                .dispatch_admin_request_registration(&registration, request)
+                .await
+            {
+                Ok(mut response) => {
+                    if let Ok(html) = String::from_utf8(response.body.clone()) {
+                        response.body = append_assets_to_html_response(&html, &assets).into_bytes();
+                    }
+                    sushi_api::router::plugin_http_response(response)
+                }
+                Err(error) if is_plugin_disabled_error(&error) => {
+                    let message = plugin_disabled_message(&error);
+                    let warn_message = format!("plugin disabled on admin page {path}: {message}");
+                    tracing::warn!("{warn_message}");
+                    ctx.logs.warn(&warn_message).await;
+                    (StatusCode::FORBIDDEN, message).into_response()
+                }
+                Err(error) => {
+                    let message = format!("plugin runtime error on admin page {path}: {error}");
+                    tracing::error!("{message}");
+                    ctx.logs.error(&message).await;
+                    (StatusCode::INTERNAL_SERVER_ERROR, error).into_response()
+                }
+            };
+        }
+    }
+
+    let Some(registration) = snapshot.match_http_on(HttpSurface::Admin, &method, &path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let registration = registration.value.clone();
+    let headers = req
+        .headers()
+        .iter()
+        .map(|(name, value)| (name.as_str().to_string(), value.as_bytes().to_vec()))
+        .collect();
+    let body = if method == "GET" {
+        None
+    } else {
+        let body_size_limit = {
+            let config = ctx.config.get().await;
+            config.server.body_size_limit
+        };
+        match axum::body::to_bytes(req.into_body(), body_size_limit).await {
+            Ok(body) => Some(body.to_vec()),
+            Err(_) => {
+                let limit_kb = body_size_limit / 1024;
+                return (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    [(header::CONTENT_TYPE, "text/plain")],
+                    format!("request body too large (limit: {limit_kb}KB)"),
+                )
+                    .into_response();
+            }
+        }
+    };
+
+    let request = HttpRequest::new(&method, &path, &dispatch_path, body).with_headers(headers);
+    match ctx
+        .plugins
+        .dispatch_http_request_registration(&registration, request)
+        .await
+    {
+        Ok(response) => sushi_api::router::plugin_http_response(response),
+        Err(error) if is_plugin_disabled_error(&error) => {
+            let message = plugin_disabled_message(&error);
+            let warn_message =
+                format!("plugin disabled on admin HTTP route {method} {path}: {message}");
+            tracing::warn!("{warn_message}");
+            ctx.logs.warn(&warn_message).await;
+            sushi_api::router::plugin_http_error_response(error)
+        }
+        Err(error) => {
+            let message = format!("plugin runtime error on {method} {path}: {error}");
+            tracing::error!("{message}");
+            ctx.logs.error(&message).await;
+            sushi_api::router::plugin_http_error_response(error)
+        }
+    }
 }
 
 fn is_valid_plugin_mount_id(plugin_mount_id: &str) -> bool {
@@ -317,9 +303,55 @@ fn plugin_disabled_message(err: &str) -> String {
         .to_string()
 }
 
-async fn list_plugins_api(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    let plugins = ctx.plugins.list_plugins().await;
-    axum::Json(plugins)
+async fn plugin_static_asset(
+    State(ctx): State<SushiContext>,
+    Path(path): Path<String>,
+) -> impl IntoResponse {
+    let mut segments = path.splitn(3, '/');
+    let tier = segments.next().unwrap_or_default();
+    let plugin_name = segments.next().unwrap_or_default();
+    let asset_path = segments.next().unwrap_or_default();
+    let plugin_id = format!("{tier}/{plugin_name}");
+    if !is_valid_plugin_mount_id(&plugin_id) || asset_path.is_empty() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    let root = match snapshot
+        .static_roots()
+        .iter()
+        .find(|registration| registration.value.plugin_id == plugin_id)
+        .map(|registration| registration.value.root.clone())
+    {
+        Some(root) => root,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let mut file_path = root;
+    for component in std::path::Path::new(asset_path).components() {
+        match component {
+            std::path::Component::Normal(segment) => file_path.push(segment),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+            | std::path::Component::RootDir
+            | std::path::Component::Prefix(_) => return StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+
+    let body = match tokio::fs::read(&file_path).await {
+        Ok(body) => body,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(path = %file_path.display(), error = %error, "failed to read plugin static asset");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let content_type = mime_guess::from_path(&file_path)
+        .first_or_octet_stream()
+        .to_string();
+    ([(header::CONTENT_TYPE, content_type)], Body::from(body)).into_response()
 }
 
 async fn admin_auth_middleware(
@@ -405,14 +437,6 @@ async fn admin_auth_middleware(
         }
         Err(_) => axum::response::Redirect::temporary("/admin-login").into_response(),
     }
-}
-
-fn is_plugin_workspace_root_path(path: &str) -> bool {
-    let segments = path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect::<Vec<_>>();
-    segments.len() == 3 && segments[0] == "admin" && segments[1] == "plugins"
 }
 
 fn append_assets_to_html_response(html: &str, assets: &PageResolvedAssets) -> String {

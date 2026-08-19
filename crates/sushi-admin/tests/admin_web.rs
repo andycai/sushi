@@ -15,8 +15,10 @@ use sushi_core::context::SushiContext;
 use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::manager::PageResolvedAssets;
-use sushi_core::plugin::{
-    DatabasePermission, Permissions, Plugin, PluginManifest, PluginMeta, PluginPoliciesConfig,
+use sushi_core::plugin::Plugin;
+use sushi_core::runtime::{
+    MenuContributionSpec, PluginInstanceId, ResolvedRuntimeEntry, RuntimePluginSource,
+    StaticRootSpec,
 };
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
@@ -681,12 +683,118 @@ async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Route
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     refresh_admin_authorizer(&ctx).await;
+    sushi_admin::builtin::activate_admin_shell(&ctx, &admin_shell_runtime_entry())
+        .await
+        .expect("Admin Shell builtin activation succeeds");
+    sushi_admin::builtin::activate_host_admin(&ctx, &host_admin_runtime_entry())
+        .await
+        .expect("Host Admin builtin activation succeeds");
+    sushi_admin::builtin::activate_governance(&ctx, &governance_runtime_entry())
+        .await
+        .expect("Governance builtin activation succeeds");
+    sushi_admin::builtin::activate_rbac_admin(&ctx, &rbac_admin_runtime_entry())
+        .await
+        .expect("RBAC Admin builtin activation succeeds");
+    sushi_admin::builtin::activate_menu_admin(&ctx, &menu_admin_runtime_entry())
+        .await
+        .expect("Menu Admin builtin activation succeeds");
     (build_admin_router(&ctx).await, ctx)
 }
 
 async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
     let (app, _ctx) = build_app_with_context(static_url_prefix).await;
     app
+}
+
+fn host_admin_runtime_entry() -> ResolvedRuntimeEntry {
+    ResolvedRuntimeEntry {
+        id: PluginInstanceId::new("host.admin").expect("host Admin entry ID is valid"),
+        source: RuntimePluginSource::Builtin {
+            key: "host-admin".to_string(),
+            reference: "builtin:host-admin".to_string(),
+        },
+        enabled: true,
+        required: true,
+        config: serde_json::json!({}),
+        grants: serde_json::json!({}),
+        origin: "test".to_string(),
+    }
+}
+
+fn admin_shell_runtime_entry() -> ResolvedRuntimeEntry {
+    ResolvedRuntimeEntry {
+        id: PluginInstanceId::new("admin.shell").expect("Admin Shell entry ID is valid"),
+        source: RuntimePluginSource::Builtin {
+            key: "admin-shell".to_string(),
+            reference: "builtin:admin-shell".to_string(),
+        },
+        enabled: true,
+        required: true,
+        config: serde_json::json!({}),
+        grants: serde_json::json!({}),
+        origin: "test".to_string(),
+    }
+}
+
+fn rbac_admin_runtime_entry() -> ResolvedRuntimeEntry {
+    ResolvedRuntimeEntry {
+        id: PluginInstanceId::new("rbac.admin").expect("RBAC Admin entry ID is valid"),
+        source: RuntimePluginSource::Builtin {
+            key: "rbac-admin".to_string(),
+            reference: "builtin:rbac-admin".to_string(),
+        },
+        enabled: true,
+        required: true,
+        config: serde_json::json!({}),
+        grants: serde_json::json!({}),
+        origin: "test".to_string(),
+    }
+}
+
+fn governance_runtime_entry() -> ResolvedRuntimeEntry {
+    ResolvedRuntimeEntry {
+        id: PluginInstanceId::new("governance.admin").expect("Governance entry ID is valid"),
+        source: RuntimePluginSource::Builtin {
+            key: "governance".to_string(),
+            reference: "builtin:governance".to_string(),
+        },
+        enabled: true,
+        required: true,
+        config: serde_json::json!({}),
+        grants: serde_json::json!({}),
+        origin: "test".to_string(),
+    }
+}
+
+fn menu_admin_runtime_entry() -> ResolvedRuntimeEntry {
+    ResolvedRuntimeEntry {
+        id: PluginInstanceId::new("menu.admin").expect("Menu Admin entry ID is valid"),
+        source: RuntimePluginSource::Builtin {
+            key: "menu-admin".to_string(),
+            reference: "builtin:menu-admin".to_string(),
+        },
+        enabled: true,
+        required: true,
+        config: serde_json::json!({}),
+        grants: serde_json::json!({}),
+        origin: "test".to_string(),
+    }
+}
+
+async fn build_app_with_host_admin() -> (axum::Router, SushiContext) {
+    let (_, ctx) = build_app_with_context(None).await;
+    sushi_admin::builtin::activate_host_admin(&ctx, &host_admin_runtime_entry())
+        .await
+        .expect("host Admin builtin activation succeeds");
+    (build_admin_router(&ctx).await, ctx)
+}
+
+async fn build_app_with_rbac_admin() -> (axum::Router, SushiContext) {
+    let (_, ctx) = build_app_with_context(None).await;
+    sushi_admin::builtin::activate_host_admin(&ctx, &host_admin_runtime_entry())
+        .await
+        .expect("host Admin builtin activation succeeds");
+    (build_admin_router(&ctx).await, ctx)
 }
 
 async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> axum::Router {
@@ -744,30 +852,11 @@ async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> ax
         .collect::<Vec<_>>();
     assert_eq!(plugins.len(), 1, "expected exactly one cms plugin");
 
-    let cms_template_roots = plugins
-        .iter()
-        .filter_map(|plugin| {
-            let root = plugin.web_templates_dir();
-            if root.is_dir() {
-                Some((plugin.path_id().to_string(), root))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let templates = TemplateService::new_with_plugin_roots(&templates_dir, cms_template_roots)
-        .expect("failed to init template service");
+    let templates = TemplateService::new(&templates_dir).expect("failed to init template service");
     let ctx = SushiContext::new(config, storage, jwt, templates);
-
-    for plugin in &plugins {
-        let static_root = plugin.web_static_dir();
-        if static_root.is_dir() {
-            ctx.plugins
-                .register_plugin_static_root(plugin.path_id(), static_root)
-                .await;
-        }
-    }
+    sushi_admin::builtin::activate_admin_shell(&ctx, &admin_shell_runtime_entry())
+        .await
+        .expect("Admin Shell builtin activation succeeds");
 
     for plugin in plugins.drain(..) {
         let plugin_name = plugin.name().to_string();
@@ -892,6 +981,9 @@ async fn build_app_with_plugin_page_assets(
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     refresh_admin_authorizer(&ctx).await;
+    sushi_admin::builtin::activate_admin_shell(&ctx, &admin_shell_runtime_entry())
+        .await
+        .expect("Admin Shell builtin activation succeeds");
     ctx.plugins
         .register_admin_handler_with_assets(
             page_path,
@@ -957,6 +1049,9 @@ async fn build_app_with_plugin_admin_page_and_context(
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     refresh_admin_authorizer(&ctx).await;
+    sushi_admin::builtin::activate_admin_shell(&ctx, &admin_shell_runtime_entry())
+        .await
+        .expect("Admin Shell builtin activation succeeds");
 
     let lua = create_sandboxed_vm().expect("failed to create sandboxed vm");
     let sushi = lua.create_table().expect("failed to create sushi table");
@@ -1037,6 +1132,15 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     refresh_admin_authorizer(&ctx).await;
+    sushi_admin::builtin::activate_host_admin(&ctx, &host_admin_runtime_entry())
+        .await
+        .expect("Host Admin builtin activation succeeds");
+    sushi_admin::builtin::activate_rbac_admin(&ctx, &rbac_admin_runtime_entry())
+        .await
+        .expect("RBAC Admin builtin activation succeeds");
+    sushi_admin::builtin::activate_menu_admin(&ctx, &menu_admin_runtime_entry())
+        .await
+        .expect("Menu Admin builtin activation succeeds");
     build_admin_router(&ctx).await
 }
 
@@ -1143,6 +1247,200 @@ async fn admin_cms_workspace_page_renders() {
         .expect("failed to read body");
     let html = String::from_utf8_lossy(&body);
     assert!(html.contains("CMS workspace"));
+}
+
+#[tokio::test]
+async fn admin_router_discovers_and_removes_pages_after_router_build() {
+    let (app, ctx) = build_app_with_context(None).await;
+    let lua = create_sandboxed_vm().expect("failed to create sandboxed vm");
+    let sushi = lua.create_table().expect("failed to create sushi table");
+    let handlers = lua.create_table().expect("failed to create handlers table");
+    sushi
+        .set("__handlers", handlers.clone())
+        .expect("failed to set handlers table");
+    lua.globals()
+        .set("sushi", sushi)
+        .expect("failed to set sushi global");
+    let handler = lua
+        .create_async_function(|_, ()| async { Ok("<section>Dynamic admin</section>".to_string()) })
+        .expect("failed to create handler");
+    handlers
+        .set("handler::dynamic_admin", handler)
+        .expect("failed to register handler");
+    ctx.plugins.register_vm("dynamic-admin", lua).await;
+    ctx.plugins
+        .register_admin_handler_with_assets(
+            "/admin/dynamic",
+            "dynamic-admin",
+            "Dynamic Admin",
+            "handler::dynamic_admin",
+            PageResolvedAssets::default(),
+        )
+        .await;
+
+    let request = || {
+        Request::builder()
+            .uri("/admin/dynamic")
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", admin_bearer_token()),
+            )
+            .body(Body::empty())
+            .expect("failed to build request")
+    };
+    let response = app
+        .clone()
+        .oneshot(request())
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    ctx.plugins
+        .remove_owner_capabilities(&PluginInstanceId::legacy("dynamic-admin"))
+        .await;
+    let response = app.oneshot(request()).await.expect("request failed");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_router_discovers_and_removes_http_routes_after_router_build() {
+    let (app, ctx) = build_app_with_context(None).await;
+    let lua = create_sandboxed_vm().expect("failed to create sandboxed vm");
+    let sushi = lua.create_table().expect("failed to create sushi table");
+    let handlers = lua.create_table().expect("failed to create handlers table");
+    sushi
+        .set("__handlers", handlers)
+        .expect("failed to set handlers table");
+    lua.globals()
+        .set("sushi", sushi)
+        .expect("failed to set sushi global");
+    lua.load(
+        r#"
+        sushi.__handlers["handler::dynamic_partial"] = function(args)
+            local body = args[2] or ""
+            return string.format(
+                '{"__sushi_web_json":true,"status":202,"body":{"dispatch_path":"%s","body_size":%d}}',
+                args.dispatch_path or "",
+                string.len(body)
+            )
+        end
+        "#,
+    )
+    .exec()
+    .expect("failed to register dynamic partial handler");
+    ctx.plugins.register_vm("dynamic-partial", lua).await;
+    ctx.plugins
+        .register_api_handler(
+            "POST",
+            "/admin/partials/dynamic",
+            "dynamic-partial",
+            "handler::dynamic_partial",
+        )
+        .await;
+
+    let unauthenticated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/admin/partials/dynamic?mode=full")
+                .body(Body::from(vec![0xff, 0x00, b'a']))
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(unauthenticated.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        unauthenticated.headers().get(header::LOCATION),
+        Some(&header::HeaderValue::from_static("/admin-login"))
+    );
+
+    let request = || {
+        Request::builder()
+            .method("POST")
+            .uri("/admin/partials/dynamic?mode=full")
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", admin_bearer_token()),
+            )
+            .body(Body::from(vec![0xff, 0x00, b'a']))
+            .expect("failed to build request")
+    };
+    let response = app
+        .clone()
+        .oneshot(request())
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE),
+        Some(&header::HeaderValue::from_static("application/json"))
+    );
+    let body = to_bytes(response.into_body(), 1024)
+        .await
+        .expect("failed to read response body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid response json");
+    assert_eq!(
+        payload.get("dispatch_path").and_then(Value::as_str),
+        Some("/admin/partials/dynamic?mode=full")
+    );
+    assert_eq!(payload.get("body_size").and_then(Value::as_u64), Some(3));
+
+    ctx.plugins
+        .remove_owner_capabilities(&PluginInstanceId::legacy("dynamic-partial"))
+        .await;
+    let response = app.oneshot(request()).await.expect("request failed");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn host_admin_routes_take_precedence_over_dynamic_http_routes() {
+    let (app, ctx) = build_app_with_host_admin().await;
+    let lua = create_sandboxed_vm().expect("failed to create sandboxed vm");
+    let sushi = lua.create_table().expect("failed to create sushi table");
+    let handlers = lua.create_table().expect("failed to create handlers table");
+    sushi
+        .set("__handlers", handlers.clone())
+        .expect("failed to set handlers table");
+    lua.globals()
+        .set("sushi", sushi)
+        .expect("failed to set sushi global");
+    handlers
+        .set(
+            "handler::shadow",
+            lua.create_async_function(|_, ()| async { Ok("plugin-shadow".to_string()) })
+                .expect("failed to create shadow handler"),
+        )
+        .expect("failed to register shadow handler");
+    ctx.plugins.register_vm("dynamic-shadow", lua).await;
+    ctx.plugins
+        .register_api_handler(
+            "GET",
+            "/admin/api/plugins",
+            "dynamic-shadow",
+            "handler::shadow",
+        )
+        .await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/plugins")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", admin_bearer_token()),
+                )
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 16 * 1024)
+        .await
+        .expect("failed to read response body");
+    assert_ne!(body.as_ref(), b"plugin-shadow");
+    serde_json::from_slice::<Value>(&body).expect("host route should return json");
 }
 
 #[tokio::test]
@@ -1408,26 +1706,63 @@ fn bearer_token_for_role(role: &str) -> String {
         .expect("failed to create token")
 }
 
-async fn register_test_plugin(ctx: &SushiContext, plugin_name: &str) {
-    let manifest = PluginManifest {
-        plugin: PluginMeta {
-            name: plugin_name.to_string(),
-            version: "1.0.0".to_string(),
-            description: "Toggle test plugin".to_string(),
-            entry: "init.lua".to_string(),
-        },
-        permissions: Permissions {
-            routes: true,
-            commands: true,
-            admin: true,
-            database: DatabasePermission::None,
-        },
-        policies: PluginPoliciesConfig::default(),
-        admin: None,
-        file_browser: None,
-    };
+async fn register_test_plugin(ctx: &SushiContext, plugin_name: &str) -> PathBuf {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time before unix epoch")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "sushi-admin-toggle-plugin-{}-{unique}",
+        std::process::id()
+    ));
+    let plugin_dir = root.join("third_party").join(plugin_name);
+    fs::create_dir_all(&plugin_dir).expect("failed to create toggle plugin directory");
+    fs::write(
+        plugin_dir.join("plugin.toml"),
+        format!(
+            r#"
+[plugin]
+name = "{plugin_name}"
+version = "1.0.0"
+kind = "third_party"
+entry = "init.lua"
 
-    ctx.plugins.register_plugin_manifest(&manifest).await;
+[permissions]
+routes = true
+"#
+        ),
+    )
+    .expect("failed to write toggle plugin manifest");
+    fs::write(
+        plugin_dir.join("init.lua"),
+        format!(
+            r#"
+sushi.api.route("GET", "/api/{plugin_name}", function()
+    return "active"
+end)
+"#
+        ),
+    )
+    .expect("failed to write toggle plugin source");
+
+    let plugin = LuaPlugin::scan_dir(&root)
+        .await
+        .expect("failed to scan toggle plugin")
+        .remove(0);
+    ctx.plugins
+        .register_plugin_manifest_with_permissions_and_identity(
+            plugin.manifest(),
+            plugin.effective_permissions(),
+            plugin.path_id(),
+            plugin.kind(),
+        )
+        .await;
+    ctx.runtime_host.register_lua_source(&plugin, false).await;
+    ctx.runtime_host
+        .activate(ctx, plugin_name)
+        .await
+        .expect("failed to activate toggle plugin");
+    root
 }
 
 fn extract_attr_value(source: &str, attr: &str) -> Option<String> {
@@ -1522,6 +1857,61 @@ async fn plugin_static_assets_are_served_from_plugin_directories() {
     assert!(content.contains("__pluginStaticLoaded"));
 
     fs::remove_dir_all(&plugin_static_dir).expect("failed to clean plugin static tempdir");
+}
+
+#[tokio::test]
+async fn plugin_static_assets_follow_runtime_owner_lifecycle() {
+    let plugin_static_dir = std::env::temp_dir().join(format!(
+        "sushi-admin-plugin-static-dynamic-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&plugin_static_dir).expect("failed to create plugin static tempdir");
+    fs::write(
+        plugin_static_dir.join("dynamic.js"),
+        "window.__dynamicPluginStaticLoaded = true;",
+    )
+    .expect("failed to write plugin static asset");
+
+    let (app, ctx) = build_app_with_context(None).await;
+    let asset_uri = "/static/plugins/official/dynamic/dynamic.js";
+    let request = || {
+        Request::builder()
+            .uri(asset_uri)
+            .body(Body::empty())
+            .expect("failed to build request")
+    };
+
+    let response = app
+        .clone()
+        .oneshot(request())
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let owner = PluginInstanceId::new("dynamic.default").unwrap();
+    let registry = ctx.plugins.capability_registry();
+    let mut staged = registry.stage(owner.clone());
+    staged.register_static_root(StaticRootSpec::new(
+        "official/dynamic",
+        plugin_static_dir.clone(),
+    ));
+    registry.commit(staged).await.unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(request())
+        .await
+        .expect("request failed");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    registry.remove_owner(&owner).await;
+    let response = app.oneshot(request()).await.expect("request failed");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    fs::remove_dir_all(plugin_static_dir).expect("failed to clean plugin static tempdir");
 }
 
 #[tokio::test]
@@ -1649,7 +2039,7 @@ async fn admin_prefix_is_rejected_for_static() {
 
 #[tokio::test]
 async fn plugins_api_returns_list_payload() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let response = app
@@ -1673,7 +2063,7 @@ async fn plugins_api_returns_list_payload() {
 
 #[tokio::test]
 async fn plugin_pages_api_rejects_unknown_plugin() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let response = app
@@ -1692,7 +2082,7 @@ async fn plugin_pages_api_rejects_unknown_plugin() {
 
 #[tokio::test]
 async fn plugin_pages_api_returns_workspace_payload_for_discovered_plugin() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let plugins_response = app
@@ -1749,6 +2139,235 @@ async fn plugin_pages_api_returns_workspace_payload_for_discovered_plugin() {
         payload.get("pages").and_then(Value::as_array).is_some(),
         "expected pages array payload, got {payload}"
     );
+}
+
+#[tokio::test]
+async fn plugin_inspection_builtin_matches_static_read_only_responses() {
+    let (app, ctx) = build_app_with_host_admin().await;
+    let static_router = axum::Router::new()
+        .route(
+            "/admin/plugins",
+            axum::routing::get(sushi_admin::routes::plugins::plugins_page),
+        )
+        .route(
+            "/admin/plugins/{plugin}",
+            axum::routing::get(sushi_admin::routes::plugins::plugin_workspace_page),
+        )
+        .route(
+            "/admin/partials/plugins/table",
+            axum::routing::get(sushi_admin::routes::plugins::plugins_table_partial),
+        )
+        .route(
+            "/admin/api/plugins",
+            axum::routing::get(sushi_admin::routes::plugins::plugins_api),
+        )
+        .route(
+            "/admin/api/plugins/{plugin}/pages",
+            axum::routing::get(sushi_admin::routes::plugins::plugin_pages_api),
+        )
+        .with_state(ctx);
+    let token = admin_bearer_token();
+
+    for path in [
+        "/admin/plugins",
+        "/admin/plugins/host-admin",
+        "/admin/partials/plugins/table",
+        "/admin/api/plugins",
+        "/admin/api/plugins/host-admin/pages",
+        "/admin/plugins/does-not-exist",
+        "/admin/api/plugins/does-not-exist/pages",
+    ] {
+        let static_response = static_router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("failed to build static request"),
+            )
+            .await
+            .expect("static request failed");
+        let builtin_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("failed to build builtin request"),
+            )
+            .await
+            .expect("builtin request failed");
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read static body");
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read builtin body");
+        assert_eq!(builtin_body, static_body, "path: {path}");
+    }
+}
+
+#[tokio::test]
+async fn rbac_admin_registers_owner_scoped_read_capabilities() {
+    let (_, ctx) = build_app_with_rbac_admin().await;
+    let snapshot = ctx.plugins.capability_snapshot().await;
+
+    for path in ["/admin/users", "/admin/roles", "/admin/permissions"] {
+        let registration = snapshot
+            .admin_page(path)
+            .unwrap_or_else(|| panic!("Admin page {path} should be registered"));
+        assert_eq!(registration.owner.as_str(), "rbac.admin");
+    }
+
+    for (method, path, policy) in [
+        ("GET", "/admin/partials/users/table", "admin.users.view"),
+        ("POST", "/admin/partials/users/create", "admin.users.manage"),
+        ("DELETE", "/admin/partials/users/{id}", "admin.users.manage"),
+        ("GET", "/admin/partials/roles/table", "admin.roles.view"),
+        ("POST", "/admin/partials/roles/create", "admin.roles.manage"),
+        (
+            "POST",
+            "/admin/partials/roles/{id}/update",
+            "admin.roles.manage",
+        ),
+        (
+            "GET",
+            "/admin/partials/roles/{id}/permissions/form",
+            "admin.roles.view",
+        ),
+        (
+            "POST",
+            "/admin/partials/roles/{id}/permissions",
+            "admin.roles.manage",
+        ),
+        ("DELETE", "/admin/partials/roles/{id}", "admin.roles.manage"),
+        (
+            "GET",
+            "/admin/partials/permissions/table",
+            "admin.permissions.view",
+        ),
+        (
+            "POST",
+            "/admin/partials/permissions/create",
+            "admin.permissions.manage",
+        ),
+        (
+            "POST",
+            "/admin/partials/permissions/{id}/update",
+            "admin.permissions.manage",
+        ),
+        (
+            "DELETE",
+            "/admin/partials/permissions/{id}",
+            "admin.permissions.manage",
+        ),
+    ] {
+        let registration = snapshot
+            .match_http_on(sushi_core::runtime::HttpSurface::Admin, method, path)
+            .unwrap_or_else(|| panic!("Admin route {path} should be registered"));
+        assert_eq!(registration.owner.as_str(), "rbac.admin");
+        assert_eq!(registration.value.policy_key.as_deref(), Some(policy));
+    }
+
+    for id in [
+        "rbac-admin.users",
+        "rbac-admin.roles",
+        "rbac-admin.permissions",
+    ] {
+        let registration = snapshot
+            .menu_contributions()
+            .iter()
+            .find(|registration| registration.value.id == id)
+            .unwrap_or_else(|| panic!("menu contribution {id} should be registered"));
+        assert_eq!(registration.owner.as_str(), "rbac.admin");
+        assert_eq!(
+            registration.value.parent_id.as_deref(),
+            Some("host-admin.system")
+        );
+    }
+}
+
+#[tokio::test]
+async fn rbac_admin_builtin_matches_static_read_only_responses() {
+    let (app, ctx) = build_app_with_rbac_admin().await;
+    let static_router = axum::Router::new()
+        .route(
+            "/admin/users",
+            axum::routing::get(sushi_admin::routes::users::users_page),
+        )
+        .route(
+            "/admin/roles",
+            axum::routing::get(sushi_admin::routes::roles::roles_page),
+        )
+        .route(
+            "/admin/permissions",
+            axum::routing::get(sushi_admin::routes::permissions::permissions_page),
+        )
+        .route(
+            "/admin/partials/users/table",
+            axum::routing::get(sushi_admin::routes::users::users_table_partial),
+        )
+        .route(
+            "/admin/partials/roles/table",
+            axum::routing::get(sushi_admin::routes::roles::roles_table_partial),
+        )
+        .route(
+            "/admin/partials/permissions/table",
+            axum::routing::get(sushi_admin::routes::permissions::permissions_table_partial),
+        )
+        .with_state(ctx);
+    let token = admin_bearer_token();
+
+    for path in [
+        "/admin/users",
+        "/admin/roles",
+        "/admin/permissions",
+        "/admin/partials/users/table",
+        "/admin/partials/roles/table",
+        "/admin/partials/permissions/table",
+    ] {
+        let static_response = static_router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("failed to build static request"),
+            )
+            .await
+            .expect("static request failed");
+        let builtin_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("failed to build builtin request"),
+            )
+            .await
+            .expect("builtin request failed");
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read static body");
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read builtin body");
+        assert_eq!(builtin_body, static_body, "path: {path}");
+    }
 }
 
 #[tokio::test]
@@ -1826,6 +2445,66 @@ async fn menu_api_returns_menu_items() {
     assert!(
         system_plugins_entry.is_some(),
         "Plugins management entry should exist under System menu"
+    );
+}
+
+#[tokio::test]
+async fn menu_api_projects_runtime_contribution_hierarchy() {
+    let (app, ctx) = build_app_with_context(None).await;
+    let mut staged = ctx
+        .plugins
+        .stage_builtin_activation(PluginInstanceId::new("notes.default").unwrap());
+    staged.register_menu(
+        MenuContributionSpec::new("notes.root", "Notes", 80)
+            .with_icon(Some("notebook".to_string())),
+    );
+    staged.register_menu(
+        MenuContributionSpec::new("notes.items", "Note Items", 81)
+            .with_parent(Some("notes.root".to_string()))
+            .with_route(Some("/admin/notes".to_string())),
+    );
+    ctx.plugins
+        .prepare_owner_activation(staged)
+        .await
+        .unwrap()
+        .publish()
+        .await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/api/menu")
+                .header("authorization", format!("Bearer {}", admin_bearer_token()))
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read body");
+    let payload: Value = serde_json::from_slice(&body).expect("invalid json payload");
+    let menu = payload
+        .get("menu")
+        .and_then(Value::as_array)
+        .expect("menu array missing");
+    let parent = menu
+        .iter()
+        .find(|item| item.get("label").and_then(Value::as_str) == Some("Notes"))
+        .expect("runtime parent contribution should be projected");
+    let parent_id = parent
+        .get("id")
+        .and_then(Value::as_i64)
+        .expect("runtime parent id should exist");
+    let child = menu
+        .iter()
+        .find(|item| item.get("route").and_then(Value::as_str) == Some("/admin/notes"))
+        .expect("runtime child contribution should be projected");
+    assert_eq!(
+        child.get("parent_id").and_then(Value::as_i64),
+        Some(parent_id)
     );
 }
 
@@ -2008,7 +2687,7 @@ async fn menu_api_crud_operations() {
 
 #[tokio::test]
 async fn config_api_returns_sanitized_config_payload() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let response = app
@@ -2039,8 +2718,61 @@ async fn config_api_returns_sanitized_config_payload() {
 }
 
 #[tokio::test]
+async fn config_builtin_matches_static_page_and_api_responses() {
+    let (app, ctx) = build_app_with_host_admin().await;
+    let static_router = axum::Router::new()
+        .route(
+            "/admin/config",
+            axum::routing::get(sushi_admin::routes::config::config_page),
+        )
+        .route(
+            "/admin/api/config",
+            axum::routing::get(sushi_admin::routes::config::config_api),
+        )
+        .with_state(ctx);
+    let token = admin_bearer_token();
+
+    for path in ["/admin/config", "/admin/api/config"] {
+        let static_response = static_router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("failed to build static request"),
+            )
+            .await
+            .expect("static request failed");
+        let builtin_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("failed to build builtin request"),
+            )
+            .await
+            .expect("builtin request failed");
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read static body");
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read builtin body");
+        assert_eq!(builtin_body, static_body, "path: {path}");
+    }
+}
+
+#[tokio::test]
 async fn logs_api_returns_logs_array_payload() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let response = app
@@ -2063,6 +2795,326 @@ async fn logs_api_returns_logs_array_payload() {
     assert!(
         logs.is_some(),
         "expected payload.logs array, got: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn logs_builtin_matches_static_page_and_api_responses() {
+    let (app, ctx) = build_app_with_host_admin().await;
+    ctx.logs.info("shadow-log-entry").await;
+    let static_router = axum::Router::new()
+        .route(
+            "/admin/logs",
+            axum::routing::get(sushi_admin::routes::logs::logs_page),
+        )
+        .route(
+            "/admin/api/logs",
+            axum::routing::get(sushi_admin::routes::logs::logs_api),
+        )
+        .with_state(ctx);
+    let token = admin_bearer_token();
+
+    for path in ["/admin/logs", "/admin/api/logs"] {
+        let static_response = static_router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("failed to build static request"),
+            )
+            .await
+            .expect("static request failed");
+        let builtin_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("failed to build builtin request"),
+            )
+            .await
+            .expect("builtin request failed");
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read static body");
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .expect("failed to read builtin body");
+        assert_eq!(builtin_body, static_body, "path: {path}");
+    }
+}
+
+#[tokio::test]
+async fn host_admin_registers_owner_scoped_menu_contributions() {
+    let (_, ctx) = build_app_with_host_admin().await;
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    let contributions = snapshot
+        .menu_contributions()
+        .iter()
+        .filter(|registration| registration.owner.as_str() == "host.admin")
+        .collect::<Vec<_>>();
+
+    assert_eq!(contributions.len(), 4);
+
+    let system = contributions
+        .iter()
+        .find(|registration| registration.value.id == "host-admin.system")
+        .expect("system menu contribution is registered");
+    assert_eq!(system.value.parent_id, None);
+    assert_eq!(system.value.route, None);
+
+    for (id, route, policy) in [
+        ("host-admin.plugins", "/admin/plugins", "admin.plugins.view"),
+        ("host-admin.config", "/admin/config", "admin.config.view"),
+        ("host-admin.logs", "/admin/logs", "admin.logs.view"),
+    ] {
+        let contribution = contributions
+            .iter()
+            .find(|registration| registration.value.id == id)
+            .unwrap_or_else(|| panic!("menu contribution is registered: {id}"));
+        assert_eq!(contribution.value.route.as_deref(), Some(route));
+        assert_eq!(contribution.value.policy_key.as_deref(), Some(policy));
+        assert_eq!(
+            contribution.value.parent_id.as_deref(),
+            Some("host-admin.system")
+        );
+    }
+}
+
+#[tokio::test]
+async fn admin_shell_registers_dashboard_capabilities() {
+    let (_, ctx) = build_app_with_context(None).await;
+    let snapshot = ctx.plugins.capability_snapshot().await;
+
+    let page = snapshot
+        .admin_page("/admin/")
+        .expect("Admin Shell dashboard page should be registered");
+    assert_eq!(page.owner.as_str(), "admin.shell");
+    assert_eq!(page.value.plugin_name, "admin-shell");
+    assert_eq!(
+        page.value.policy_key.as_deref(),
+        Some("admin.dashboard.view")
+    );
+
+    let contribution = snapshot
+        .menu_contributions()
+        .iter()
+        .find(|registration| registration.value.id == "host-admin.dashboard")
+        .expect("Dashboard menu contribution should be registered");
+    assert_eq!(contribution.owner.as_str(), "admin.shell");
+    assert_eq!(contribution.value.route.as_deref(), Some("/admin/"));
+    assert_eq!(contribution.value.parent_id, None);
+
+    let workspace = snapshot
+        .match_http_on(
+            sushi_core::runtime::HttpSurface::Admin,
+            "GET",
+            "/admin/workspace/{*module}",
+        )
+        .expect("Admin Shell workspace route should be registered");
+    assert_eq!(workspace.owner.as_str(), "admin.shell");
+    assert_eq!(workspace.value.plugin_name, "admin-shell");
+
+    let assets = snapshot
+        .match_http_on(
+            sushi_core::runtime::HttpSurface::Admin,
+            "GET",
+            "/admin/api/workspace/assets",
+        )
+        .expect("Admin Shell workspace assets route should be registered");
+    assert_eq!(assets.owner.as_str(), "admin.shell");
+    assert_eq!(assets.value.plugin_name, "admin-shell");
+    assert_eq!(
+        assets.value.policy_key.as_deref(),
+        Some("admin.plugins.view")
+    );
+
+    for method in ["GET", "POST"] {
+        let login = snapshot
+            .match_http_on(
+                sushi_core::runtime::HttpSurface::Api,
+                method,
+                "/admin-login",
+            )
+            .expect("Admin Shell login route should be registered");
+        assert_eq!(login.owner.as_str(), "admin.shell");
+        assert!(login.value.is_public);
+    }
+}
+
+#[tokio::test]
+async fn required_admin_shell_builtin_rejects_runtime_toggle() {
+    let (_, ctx) = build_app_with_context(None).await;
+
+    let error = ctx
+        .set_plugin_enabled("admin-shell", false, Some("test"), Some("required guard"))
+        .await
+        .expect_err("required Admin Shell builtin must reject ordinary runtime toggles");
+
+    assert_eq!(
+        error,
+        "required_plugin_toggle_forbidden: plugin 'admin-shell' must be changed through profile and restart"
+    );
+    assert!(ctx
+        .plugins
+        .capability_snapshot()
+        .await
+        .admin_page("/admin/")
+        .is_some());
+}
+
+#[tokio::test]
+async fn required_host_admin_builtin_rejects_runtime_toggle() {
+    let (_, ctx) = build_app_with_host_admin().await;
+
+    let error = ctx
+        .set_plugin_enabled("host-admin", false, Some("test"), Some("required guard"))
+        .await
+        .expect_err("required builtin must reject ordinary runtime toggles");
+
+    assert_eq!(
+        error,
+        "required_plugin_toggle_forbidden: plugin 'host-admin' must be changed through profile and restart"
+    );
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    assert!(snapshot.admin_page("/admin/logs").is_some());
+    assert!(snapshot
+        .match_http_on(
+            sushi_core::runtime::HttpSurface::Admin,
+            "GET",
+            "/admin/api/logs"
+        )
+        .is_some());
+}
+
+#[tokio::test]
+async fn governance_builtin_owns_plugin_state_capability() {
+    let (_, ctx) = build_app_with_context(None).await;
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    let registration = snapshot
+        .match_http_on(
+            sushi_core::runtime::HttpSurface::Admin,
+            "PATCH",
+            "/admin/api/plugins/{plugin}/state",
+        )
+        .expect("governance plugin state route should be registered");
+
+    assert_eq!(registration.owner.as_str(), "governance.admin");
+    assert_eq!(registration.value.plugin_name, "governance");
+    assert_eq!(
+        registration.value.policy_key.as_deref(),
+        Some("admin.plugins.manage")
+    );
+}
+
+#[tokio::test]
+async fn required_governance_builtin_rejects_runtime_toggle() {
+    let (_, ctx) = build_app_with_context(None).await;
+
+    let error = ctx
+        .set_plugin_enabled("governance", false, Some("test"), Some("required guard"))
+        .await
+        .expect_err("required governance builtin must reject ordinary runtime toggles");
+
+    assert_eq!(
+        error,
+        "required_plugin_toggle_forbidden: plugin 'governance' must be changed through profile and restart"
+    );
+    assert!(ctx
+        .plugins
+        .capability_snapshot()
+        .await
+        .match_http_on(
+            sushi_core::runtime::HttpSurface::Admin,
+            "PATCH",
+            "/admin/api/plugins/{plugin}/state",
+        )
+        .is_some());
+}
+
+#[tokio::test]
+async fn required_rbac_admin_builtin_rejects_runtime_toggle() {
+    let (_, ctx) = build_app_with_rbac_admin().await;
+
+    let error = ctx
+        .set_plugin_enabled("rbac-admin", false, Some("test"), Some("required guard"))
+        .await
+        .expect_err("required RBAC builtin must reject ordinary runtime toggles");
+
+    assert_eq!(
+        error,
+        "required_plugin_toggle_forbidden: plugin 'rbac-admin' must be changed through profile and restart"
+    );
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    assert!(snapshot.admin_page("/admin/users").is_some());
+    assert!(snapshot
+        .match_http_on(
+            sushi_core::runtime::HttpSurface::Admin,
+            "POST",
+            "/admin/partials/roles/create"
+        )
+        .is_some());
+}
+
+#[tokio::test]
+async fn menu_admin_registers_owner_scoped_capabilities() {
+    let (_, ctx) = build_app_with_context(None).await;
+    let snapshot = ctx.plugins.capability_snapshot().await;
+
+    for (method, path, policy) in [
+        ("GET", "/admin/api/menu", "admin.menus.view"),
+        ("POST", "/admin/api/menu", "admin.menus.manage"),
+        ("PUT", "/admin/api/menu/{id}", "admin.menus.manage"),
+        ("DELETE", "/admin/api/menu/{id}", "admin.menus.manage"),
+        ("GET", "/admin/partials/menus/table", "admin.menus.view"),
+        ("POST", "/admin/partials/menus/create", "admin.menus.manage"),
+        (
+            "POST",
+            "/admin/partials/menus/{id}/update",
+            "admin.menus.manage",
+        ),
+        ("DELETE", "/admin/partials/menus/{id}", "admin.menus.manage"),
+    ] {
+        let registration = snapshot
+            .match_http_on(sushi_core::runtime::HttpSurface::Admin, method, path)
+            .unwrap_or_else(|| panic!("menu route {method} {path} should be registered"));
+        assert_eq!(registration.owner.as_str(), "menu.admin");
+        assert_eq!(registration.value.policy_key.as_deref(), Some(policy));
+    }
+
+    let page = snapshot
+        .admin_page("/admin/menus")
+        .expect("menu admin page should be registered");
+    assert_eq!(page.owner.as_str(), "menu.admin");
+
+    let contribution = snapshot
+        .menu_contributions()
+        .iter()
+        .find(|registration| registration.value.id == "menu-admin.menus")
+        .expect("menu admin contribution should be registered");
+    assert_eq!(contribution.owner.as_str(), "menu.admin");
+}
+
+#[tokio::test]
+async fn required_menu_admin_builtin_rejects_runtime_toggle() {
+    let (_, ctx) = build_app_with_context(None).await;
+
+    let error = ctx
+        .set_plugin_enabled("menu-admin", false, Some("test"), Some("required guard"))
+        .await
+        .expect_err("required menu builtin must reject ordinary runtime toggles");
+
+    assert_eq!(
+        error,
+        "required_plugin_toggle_forbidden: plugin 'menu-admin' must be changed through profile and restart"
     );
 }
 
@@ -2142,7 +3194,7 @@ async fn users_partial_requires_auth() {
 
 #[tokio::test]
 async fn users_and_plugins_partials_return_html_for_authenticated_admin() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let users_response = app
@@ -2275,6 +3327,51 @@ async fn roles_and_permissions_partials_return_html_for_authenticated_admin() {
         permissions_html.contains("No permissions found") || permissions_html.contains("<tr"),
         "permissions_html: {permissions_html}"
     );
+}
+
+#[tokio::test]
+async fn dashboard_builtin_matches_static_page_response() {
+    let (app, ctx) = build_app_with_host_admin().await;
+    let static_router = axum::Router::new()
+        .route(
+            "/admin/",
+            axum::routing::get(sushi_admin::routes::dashboard::dashboard_page),
+        )
+        .with_state(ctx);
+    let token = admin_bearer_token();
+
+    let static_response = static_router
+        .oneshot(
+            Request::builder()
+                .uri("/admin/")
+                .body(Body::empty())
+                .expect("failed to build static request"),
+        )
+        .await
+        .expect("static request failed");
+    let builtin_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/admin/")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("failed to build builtin request"),
+        )
+        .await
+        .expect("builtin request failed");
+
+    assert_eq!(builtin_response.status(), static_response.status());
+    assert_eq!(
+        builtin_response.headers().get(header::CONTENT_TYPE),
+        static_response.headers().get(header::CONTENT_TYPE)
+    );
+    let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read static body");
+    let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+        .await
+        .expect("failed to read builtin body");
+    assert_eq!(builtin_body, static_body);
 }
 
 #[tokio::test]
@@ -2499,7 +3596,7 @@ async fn workspace_plugin_nested_path_without_registered_page_returns_not_found(
 
 #[tokio::test]
 async fn plugin_workspace_page_rejects_unknown_plugin() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let response = app
@@ -2518,7 +3615,7 @@ async fn plugin_workspace_page_rejects_unknown_plugin() {
 
 #[tokio::test]
 async fn plugin_workspace_page_includes_quick_navigation_sections() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = admin_bearer_token();
 
     let plugins_response = app
@@ -2670,7 +3767,7 @@ async fn viewer_cannot_access_plugin_workspace_without_plugins_view_permission()
 
 #[tokio::test]
 async fn viewer_cannot_access_plugin_pages_api_without_plugins_view_permission() {
-    let app = build_app(None).await;
+    let (app, _) = build_app_with_host_admin().await;
     let token = bearer_token_for_role("viewer");
 
     let response = app
@@ -2690,7 +3787,7 @@ async fn viewer_cannot_access_plugin_pages_api_without_plugins_view_permission()
 #[tokio::test]
 async fn admin_can_toggle_plugin_enabled_state() {
     let (app, ctx) = build_app_with_context(None).await;
-    register_test_plugin(&ctx, "toggle-target").await;
+    let plugin_root = register_test_plugin(&ctx, "toggle-target").await;
     let token = admin_bearer_token();
 
     let disable_response = app
@@ -2727,6 +3824,12 @@ async fn admin_can_toggle_plugin_enabled_state() {
         .find(|plugin| plugin.name == "toggle-target")
         .map(|plugin| plugin.enabled);
     assert_eq!(disabled_state, Some(false));
+    assert!(!ctx.plugins.has_vm("toggle-target").await);
+    assert!(ctx
+        .plugins
+        .call_api_handler("GET", "/api/toggle-target", None)
+        .await
+        .is_none());
 
     let enable_response = app
         .oneshot(
@@ -2761,6 +3864,16 @@ async fn admin_can_toggle_plugin_enabled_state() {
         .find(|plugin| plugin.name == "toggle-target")
         .map(|plugin| plugin.enabled);
     assert_eq!(enabled_state, Some(true));
+    assert!(ctx.plugins.has_vm("toggle-target").await);
+    assert_eq!(
+        ctx.plugins
+            .call_api_handler("GET", "/api/toggle-target", None)
+            .await
+            .unwrap()
+            .unwrap(),
+        "active"
+    );
+    fs::remove_dir_all(plugin_root).expect("failed to clean toggle plugin root");
 }
 
 #[tokio::test]
@@ -2795,7 +3908,7 @@ async fn admin_toggle_plugin_state_returns_not_found_for_unknown_plugin() {
 #[tokio::test]
 async fn admin_toggle_plugin_state_returns_internal_error_when_state_write_fails() {
     let (app, ctx) = build_app_with_context(None).await;
-    register_test_plugin(&ctx, "toggle-target").await;
+    let plugin_root = register_test_plugin(&ctx, "toggle-target").await;
     let token = admin_bearer_token();
 
     ctx.db
@@ -2827,12 +3940,22 @@ async fn admin_toggle_plugin_state_returns_internal_error_when_state_write_fails
         payload.get("error").and_then(Value::as_str),
         Some("failed to update plugin state")
     );
+    let state = ctx
+        .plugins
+        .list_plugins()
+        .await
+        .into_iter()
+        .find(|plugin| plugin.name == "toggle-target")
+        .unwrap();
+    assert!(state.enabled, "failed audit write must roll back intent");
+    assert!(state.loaded, "failed audit write must keep runtime active");
+    fs::remove_dir_all(plugin_root).expect("failed to clean toggle plugin root");
 }
 
 #[tokio::test]
 async fn viewer_cannot_toggle_plugin_enabled_state() {
     let (app, ctx) = build_app_with_context(None).await;
-    register_test_plugin(&ctx, "toggle-target").await;
+    let plugin_root = register_test_plugin(&ctx, "toggle-target").await;
     let token = bearer_token_for_role("viewer");
 
     let response = app
@@ -2859,6 +3982,7 @@ async fn viewer_cannot_toggle_plugin_enabled_state() {
         .find(|plugin| plugin.name == "toggle-target")
         .map(|plugin| plugin.enabled);
     assert_eq!(current_state, Some(true));
+    fs::remove_dir_all(plugin_root).expect("failed to clean toggle plugin root");
 }
 
 #[tokio::test]

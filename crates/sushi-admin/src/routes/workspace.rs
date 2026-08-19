@@ -7,6 +7,7 @@ use axum::{
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
+use sushi_core::runtime::{HttpHandler, HttpRequest, HttpResponse, HttpRouteSpec, StagedRegistrar};
 use sushi_core::{auth::rbac::RbacRepository, context::SushiContext, storage::Storage};
 
 use crate::router::AdminAuthContext;
@@ -84,6 +85,133 @@ fn extract_workspace_module_fragment(html: &str) -> Option<String> {
 pub struct WorkspaceAssetsResponse {
     pub js: Vec<String>,
     pub css: Vec<String>,
+}
+
+pub fn register_builtin_capabilities(staged: &mut StagedRegistrar, ctx: SushiContext) {
+    let assets_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "GET",
+            "/admin/workspace/{*module}",
+            "admin-shell",
+            "rust::workspace-partial",
+        )
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = ctx.clone();
+            async move { workspace_http_response(&ctx, request).await }
+        })),
+    );
+    staged.register_http(
+        HttpRouteSpec::new(
+            "GET",
+            "/admin/api/workspace/assets",
+            "admin-shell",
+            "rust::workspace-assets",
+        )
+        .with_policy(Some("admin.plugins.view".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = assets_ctx.clone();
+            async move { workspace_assets_http_response(&ctx, request).await }
+        })),
+    );
+}
+
+pub async fn workspace_http_response(
+    ctx: &SushiContext,
+    request: HttpRequest,
+) -> Result<HttpResponse, String> {
+    let Some(module) = request.path.strip_prefix("/admin/workspace/") else {
+        return Ok(HttpResponse::new(
+            StatusCode::NOT_FOUND.as_u16(),
+            "workspace module not found",
+        ));
+    };
+    let response = workspace_partial(Path(module.to_string()), State(ctx.clone())).await;
+    Ok(crate::routes::transport::from_axum_response(response).await)
+}
+
+async fn workspace_assets_http_response(
+    ctx: &SushiContext,
+    request: HttpRequest,
+) -> Result<HttpResponse, String> {
+    let query = request
+        .dispatch_path
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or_default();
+    let query = serde_urlencoded::from_str::<HashMap<String, String>>(query)
+        .map_err(|error| format!("invalid workspace assets query: {error}"))?;
+    let Some(path) = query
+        .get("path")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(HttpResponse::new(
+            StatusCode::BAD_REQUEST.as_u16(),
+            serde_json::to_vec(&serde_json::json!({
+                "error": "missing path query parameter",
+            }))
+            .expect("workspace assets error JSON serialization cannot fail"),
+        )
+        .with_header("content-type", "application/json"));
+    };
+    let role = request_role(ctx, &request)?;
+    if role != "admin"
+        && ctx
+            .authorizer
+            .check_http(&role, "admin", "GET", path)
+            .await
+            .is_err()
+    {
+        return Ok(HttpResponse::new(
+            StatusCode::FORBIDDEN.as_u16(),
+            serde_json::to_vec(&serde_json::json!({ "error": "forbidden" }))
+                .expect("workspace assets forbidden JSON serialization cannot fail"),
+        )
+        .with_header("content-type", "application/json"));
+    }
+    let assets = ctx
+        .plugins
+        .admin_page_assets(path)
+        .await
+        .unwrap_or_default();
+    let body = serde_json::to_vec(&WorkspaceAssetsResponse {
+        js: assets.js,
+        css: assets.css,
+    })
+    .map_err(|error| format!("failed to serialize workspace assets: {error}"))?;
+    Ok(HttpResponse::new(StatusCode::OK.as_u16(), body)
+        .with_header("content-type", "application/json"))
+}
+
+fn request_role(ctx: &SushiContext, request: &HttpRequest) -> Result<String, String> {
+    let bearer = request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .and_then(|(_, value)| std::str::from_utf8(value).ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let cookie = request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("cookie"))
+        .and_then(|(_, value)| std::str::from_utf8(value).ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                cookie
+                    .trim()
+                    .strip_prefix("sushi_token=")
+                    .filter(|token| !token.is_empty())
+            })
+        });
+    let token = bearer
+        .or(cookie)
+        .ok_or_else(|| "missing Admin authentication context".to_string())?;
+    let claims = ctx.jwt.verify_token(token)?;
+    if claims.token_type != "access" {
+        return Err("invalid Admin authentication token type".to_string());
+    }
+    Ok(claims.role)
 }
 
 pub async fn workspace_assets_api(

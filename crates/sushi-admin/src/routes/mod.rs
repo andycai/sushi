@@ -6,5 +6,6 @@ pub mod menu;
 pub mod permissions;
 pub mod plugins;
 pub mod roles;
+pub(crate) mod transport;
 pub mod users;
 pub mod workspace;

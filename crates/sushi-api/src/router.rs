@@ -1,46 +1,15 @@
-use crate::routes::auth;
-use crate::routes::users;
 use axum::response::IntoResponse;
 use axum::Router;
-use serde_json::Value;
 use std::sync::Arc;
-use sushi_core::auth::middleware::{require_auth, AuthState};
+use sushi_core::auth::middleware::AuthState;
 use sushi_core::context::SushiContext;
 use sushi_core::logs::LogService;
 use sushi_core::plugin::manager::PluginManager;
+use sushi_core::runtime::{HttpRequest, HttpResponse, HttpSurface};
 
-pub fn build_api_router(ctx: &SushiContext) -> Router {
-    let auth_route_state = auth::AuthRouteState {
-        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
-        jwt: std::sync::Arc::clone(&ctx.jwt),
-    };
-    let users_route_state = users::UsersRouteState {
-        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
-    };
-
+/// Build the stable Host API router. Product API capabilities dispatch through the snapshot fallback.
+pub fn build_app(_ctx: &SushiContext) -> Router {
     Router::new()
-        .nest("/api/auth", auth::auth_routes(auth_route_state))
-        .nest("/api/users", users::users_routes(users_route_state))
-}
-
-pub fn build_app(ctx: &SushiContext) -> Router {
-    let auth_state = ctx.auth_state();
-
-    let auth_route_state = auth::AuthRouteState {
-        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
-        jwt: std::sync::Arc::clone(&ctx.jwt),
-    };
-    let users_route_state = users::UsersRouteState {
-        storage: ctx.db.clone() as Arc<dyn sushi_core::storage::Storage>,
-    };
-
-    Router::new()
-        .nest("/api/auth", auth::auth_routes(auth_route_state))
-        .nest("/api/users", users::users_routes(users_route_state))
-        .layer(axum::middleware::from_fn_with_state(
-            auth_state,
-            require_auth,
-        ))
 }
 
 /// Plugin API route handler state.
@@ -50,37 +19,11 @@ pub struct PluginApiState {
     pub auth_state: AuthState,
     pub logs: Arc<LogService>,
     pub body_size_limit: usize,
-    pub route_map: Vec<(String, String)>, // (method, path) pairs
 }
 
-/// Build a router that dispatches plugin API routes.
-/// Each plugin route gets its own Axum route entry.
-/// Lua wildcard paths ending with `/*` are converted to Axum `{*path}` catch-all.
-pub async fn build_plugin_api_routes(ctx: &SushiContext) -> Router<PluginApiState> {
-    let routes = ctx.plugins.list_api_routes().await;
-    let mut router = Router::new();
-
-    for (method, path) in routes {
-        // Convert Lua wildcard /* to Axum catch-all /{*wild}
-        let axum_path = if path.ends_with("/*") {
-            format!("{}/{{*wild}}", &path[..path.len() - 2])
-        } else if path.ends_with("*") {
-            format!("{}/{{*wild}}", &path[..path.len() - 1])
-        } else {
-            path.clone()
-        };
-
-        router = match method.as_str() {
-            "GET" => router.route(&axum_path, axum::routing::get(plugin_api_dispatch)),
-            "POST" => router.route(&axum_path, axum::routing::post(plugin_api_dispatch)),
-            "PUT" => router.route(&axum_path, axum::routing::put(plugin_api_dispatch)),
-            "DELETE" => router.route(&axum_path, axum::routing::delete(plugin_api_dispatch)),
-            "PATCH" => router.route(&axum_path, axum::routing::patch(plugin_api_dispatch)),
-            _ => continue,
-        };
-    }
-
-    router
+/// Build a stable fallback router that reads the current capability snapshot per request.
+pub async fn build_plugin_api_routes(_ctx: &SushiContext) -> Router<PluginApiState> {
+    Router::new().fallback(plugin_api_dispatch)
 }
 
 /// Generic plugin API handler — reads method+path+body from the request
@@ -96,12 +39,18 @@ async fn plugin_api_dispatch(
         .path_and_query()
         .map(|value| value.as_str().to_string())
         .unwrap_or_else(|| match_path.clone());
+    let snapshot = state.plugins.capability_snapshot().await;
+    let Some(registration) = snapshot.match_http_on(HttpSurface::Api, &method, &match_path) else {
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            [(axum::http::header::CONTENT_TYPE, "text/plain")],
+            "not found".to_string(),
+        )
+            .into_response();
+    };
+    let registration = registration.value.clone();
 
-    if !state
-        .plugins
-        .is_api_route_public(&method, &match_path)
-        .await
-    {
+    if !registration.is_public {
         let auth_header = req
             .headers()
             .get("authorization")
@@ -146,12 +95,15 @@ async fn plugin_api_dispatch(
         }
 
         let role_slug = claims.role.clone();
-        let policy_surface = policy_surface_for_match_path(&match_path);
-
         if state
             .auth_state
             .authorizer
-            .check_http(&role_slug, policy_surface, &method, &match_path)
+            .check_http(
+                &role_slug,
+                registration.surface.as_str(),
+                &method,
+                &match_path,
+            )
             .await
             .is_err()
         {
@@ -165,6 +117,11 @@ async fn plugin_api_dispatch(
     }
 
     // Extract body for non-GET requests
+    let headers = req
+        .headers()
+        .iter()
+        .map(|(name, value)| (name.as_str().to_string(), value.as_bytes().to_vec()))
+        .collect();
     let body = if method == "GET" {
         None
     } else {
@@ -182,86 +139,66 @@ async fn plugin_api_dispatch(
         }
     };
 
+    let request =
+        HttpRequest::new(&method, &match_path, &dispatch_path, body).with_headers(headers);
     match state
         .plugins
-        .dispatch_api_handler(&method, &match_path, &dispatch_path, body)
+        .dispatch_http_request_registration(&registration, request)
         .await
     {
-        Some(Ok(response_body)) => {
-            if let Some((file_name, mime, body)) = parse_download_envelope(&response_body) {
-                let mut response = axum::response::Response::new(axum::body::Body::from(body));
-                *response.status_mut() = axum::http::StatusCode::OK;
-
-                let mime_header = axum::http::HeaderValue::from_str(&mime).unwrap_or_else(|_| {
-                    axum::http::HeaderValue::from_static("application/octet-stream")
-                });
-                response
-                    .headers_mut()
-                    .insert(axum::http::header::CONTENT_TYPE, mime_header);
-
-                let safe_name = sanitize_content_disposition_name(&file_name);
-                let disposition = format!("attachment; filename=\"{safe_name}\"");
-                let disposition_header = axum::http::HeaderValue::from_str(&disposition)
-                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("attachment"));
-                response
-                    .headers_mut()
-                    .insert(axum::http::header::CONTENT_DISPOSITION, disposition_header);
-                response
-            } else if let Some((status, body)) = parse_status_envelope(&response_body) {
-                (
-                    status,
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    body,
-                )
-                    .into_response()
-            } else {
-                let content_type = infer_response_content_type(&response_body);
-                (
-                    axum::http::StatusCode::OK,
-                    [(axum::http::header::CONTENT_TYPE, content_type)],
-                    response_body,
-                )
-                    .into_response()
+        Ok(response) => plugin_http_response(response),
+        Err(e) => {
+            if !is_plugin_disabled_error(&e) {
+                let message = format!("plugin runtime error on {method} {match_path}: {e}");
+                tracing::error!("{message}");
+                state.logs.error(&message).await;
             }
+            plugin_http_error_response(e)
         }
-        Some(Err(e)) => {
-            if is_plugin_disabled_error(&e) {
-                let body = serde_json::json!({
-                    "error": "plugin_disabled",
-                    "message": plugin_disabled_message(&e),
-                })
-                .to_string();
-                return (
-                    axum::http::StatusCode::FORBIDDEN,
-                    [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    body,
-                )
-                    .into_response();
-            }
-            let message = format!("plugin runtime error on {method} {match_path}: {e}");
-            tracing::error!("{message}");
-            state.logs.error(&message).await;
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                [(axum::http::header::CONTENT_TYPE, "text/plain")],
-                e,
-            )
-                .into_response()
-        }
-        None => (
-            axum::http::StatusCode::NOT_FOUND,
-            [(axum::http::header::CONTENT_TYPE, "text/plain")],
-            "not found".to_string(),
-        )
-            .into_response(),
     }
 }
 
-fn policy_surface_for_match_path(path: &str) -> &'static str {
-    if path == "/admin" || path.starts_with("/admin/") {
-        "admin"
+/// Map the transport-neutral plugin response to Axum.
+pub fn plugin_http_response(response: HttpResponse) -> axum::response::Response {
+    let status = axum::http::StatusCode::from_u16(response.status)
+        .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    let mut mapped = axum::response::Response::new(axum::body::Body::from(response.body));
+    *mapped.status_mut() = status;
+    for (name, value) in response.headers {
+        let Ok(name) = axum::http::HeaderName::from_bytes(name.as_bytes()) else {
+            tracing::warn!(header = %name, "ignored invalid plugin response header name");
+            continue;
+        };
+        let Ok(value) = axum::http::HeaderValue::from_str(&value) else {
+            tracing::warn!(header = %name, "ignored invalid plugin response header value");
+            continue;
+        };
+        mapped.headers_mut().append(name, value);
+    }
+    mapped
+}
+
+/// Map a plugin dispatch error to the shared HTTP response contract.
+pub fn plugin_http_error_response(error: String) -> axum::response::Response {
+    if is_plugin_disabled_error(&error) {
+        let body = serde_json::json!({
+            "error": "plugin_disabled",
+            "message": plugin_disabled_message(&error),
+        })
+        .to_string();
+        (
+            axum::http::StatusCode::FORBIDDEN,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response()
     } else {
-        "api"
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            [(axum::http::header::CONTENT_TYPE, "text/plain")],
+            error,
+        )
+            .into_response()
     }
 }
 
@@ -277,24 +214,6 @@ fn plugin_disabled_message(err: &str) -> String {
         .to_string()
 }
 
-#[derive(serde::Deserialize)]
-struct DownloadEnvelope {
-    #[serde(default)]
-    __app_web_download: bool,
-    file_name: String,
-    content_type: String,
-    body_hex: String,
-}
-
-fn parse_download_envelope(body: &str) -> Option<(String, String, Vec<u8>)> {
-    let parsed: DownloadEnvelope = serde_json::from_str(body).ok()?;
-    if !parsed.__app_web_download {
-        return None;
-    }
-    let decoded = decode_hex_bytes(&parsed.body_hex)?;
-    Some((parsed.file_name, parsed.content_type, decoded))
-}
-
 fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
     let cookie = cookie_header?;
     cookie
@@ -302,66 +221,10 @@ fn extract_token_from_cookie(cookie_header: Option<&str>) -> Option<&str> {
         .find_map(|part| part.trim().strip_prefix("sushi_token="))
 }
 
-fn decode_hex_bytes(input: &str) -> Option<Vec<u8>> {
-    if !input.len().is_multiple_of(2) {
-        return None;
-    }
-    let mut out = Vec::with_capacity(input.len() / 2);
-    let bytes = input.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        let chunk = std::str::from_utf8(&bytes[index..index + 2]).ok()?;
-        let value = u8::from_str_radix(chunk, 16).ok()?;
-        out.push(value);
-        index += 2;
-    }
-    Some(out)
-}
-
-fn sanitize_content_disposition_name(name: &str) -> String {
-    let sanitized = name
-        .chars()
-        .map(|ch| match ch {
-            '"' | '\\' | '\r' | '\n' => '_',
-            _ => ch,
-        })
-        .collect::<String>();
-    if sanitized.trim().is_empty() {
-        "download.bin".to_string()
-    } else {
-        sanitized
-    }
-}
-
-fn infer_response_content_type(body: &str) -> &'static str {
-    let trimmed = body.trim_start();
-    if trimmed.starts_with('<') {
-        "text/html; charset=utf-8"
-    } else if serde_json::from_str::<Value>(body).is_ok() {
-        "application/json"
-    } else {
-        "text/plain; charset=utf-8"
-    }
-}
-
-fn parse_status_envelope(body: &str) -> Option<(axum::http::StatusCode, String)> {
-    let parsed: Value = serde_json::from_str(body).ok()?;
-    let obj = parsed.as_object()?;
-    let sentinel = obj.get("__app_web_json")?.as_bool()?;
-    if !sentinel {
-        return None;
-    }
-    let status = obj.get("status")?.as_u64()?;
-    let status_u16 = u16::try_from(status).ok()?;
-    let status_code = axum::http::StatusCode::from_u16(status_u16).ok()?;
-    let payload = obj.get("body")?;
-    let encoded = serde_json::to_string(payload).ok()?;
-    Some((status_code, encoded))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routes::auth;
     use axum::body::to_bytes;
     use axum::body::Body;
     use axum::extract::State;
@@ -369,10 +232,11 @@ mod tests {
     use serde_json::Value;
     use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
     use sushi_core::auth::jwt::JwtService;
-    use sushi_core::auth::middleware::AuthState;
+    use sushi_core::auth::middleware::{require_auth, AuthState};
     use sushi_core::config::{ConfigStore, SushiConfig};
     use sushi_core::context::SushiContext;
     use sushi_core::lua::vm::create_sandboxed_vm;
+    use sushi_core::runtime::{PluginInstanceId, ResolvedRuntimeEntry, RuntimePluginSource};
     use sushi_core::storage::sqlite::SqliteStorage;
     use sushi_core::storage::Storage;
     use sushi_core::web::template_service::TemplateService;
@@ -522,6 +386,81 @@ mod tests {
         ctx
     }
 
+    fn identity_runtime_entry() -> ResolvedRuntimeEntry {
+        ResolvedRuntimeEntry {
+            id: PluginInstanceId::new("identity.core").expect("identity entry ID is valid"),
+            source: RuntimePluginSource::Builtin {
+                key: "identity".to_string(),
+                reference: "builtin:identity".to_string(),
+            },
+            enabled: true,
+            required: true,
+            config: serde_json::json!({}),
+            grants: serde_json::json!({}),
+            origin: "test".to_string(),
+        }
+    }
+
+    fn api_core_runtime_entry() -> ResolvedRuntimeEntry {
+        ResolvedRuntimeEntry {
+            id: PluginInstanceId::new("api.core").expect("API core entry ID is valid"),
+            source: RuntimePluginSource::Builtin {
+                key: "api-core".to_string(),
+                reference: "builtin:api-core".to_string(),
+            },
+            enabled: true,
+            required: true,
+            config: serde_json::json!({}),
+            grants: serde_json::json!({}),
+            origin: "test".to_string(),
+        }
+    }
+
+    async fn activate_api_builtins(ctx: &SushiContext) {
+        crate::builtin::activate_identity(ctx, &identity_runtime_entry())
+            .await
+            .expect("identity builtin activation succeeds");
+        crate::builtin::activate_api_core(ctx, &api_core_runtime_entry())
+            .await
+            .expect("API core builtin activation succeeds");
+    }
+
+    async fn plugin_api_router(ctx: &SushiContext) -> Router {
+        build_plugin_api_routes(ctx)
+            .await
+            .with_state(PluginApiState {
+                plugins: ctx.plugins.clone(),
+                auth_state: ctx.auth_state(),
+                logs: Arc::clone(&ctx.logs),
+                body_size_limit: 1024,
+            })
+    }
+
+    fn static_users_router(ctx: &SushiContext) -> Router {
+        let state = crate::routes::users::UsersRouteState {
+            storage: ctx.db.clone() as Arc<dyn Storage>,
+        };
+        Router::new()
+            .nest("/api/users", crate::routes::users::users_routes(state))
+            .layer(axum::middleware::from_fn_with_state(
+                ctx.auth_state(),
+                require_auth,
+            ))
+    }
+
+    fn static_auth_router(ctx: &SushiContext) -> Router {
+        let state = auth::AuthRouteState {
+            storage: ctx.db.clone() as Arc<dyn Storage>,
+            jwt: Arc::clone(&ctx.jwt),
+        };
+        Router::new()
+            .nest("/api/auth", auth::auth_routes(state))
+            .layer(axum::middleware::from_fn_with_state(
+                ctx.auth_state(),
+                require_auth,
+            ))
+    }
+
     #[tokio::test]
     async fn test_plugin_api_dispatch_applies_status_envelope() {
         let lua = create_sandboxed_vm().unwrap();
@@ -556,7 +495,6 @@ mod tests {
             auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = axum::http::Request::builder()
@@ -575,18 +513,8 @@ mod tests {
         assert_eq!(body, r#"{"ok":true}"#);
     }
 
-    #[test]
-    fn plugin_policy_surface_uses_admin_for_admin_paths() {
-        assert_eq!(
-            policy_surface_for_match_path("/admin/partials/cms/overview"),
-            "admin"
-        );
-        assert_eq!(policy_surface_for_match_path("/admin/cms"), "admin");
-        assert_eq!(policy_surface_for_match_path("/api/cms/pages"), "api");
-    }
-
     #[tokio::test]
-    async fn plugin_api_dispatch_allows_editor_for_admin_partial_when_policy_granted() {
+    async fn plugin_api_dispatch_ignores_admin_surface_routes() {
         let lua = create_sandboxed_vm().unwrap();
         let sushi = lua.create_table().unwrap();
         let handlers = lua.create_table().unwrap();
@@ -612,15 +540,7 @@ mod tests {
             )
             .await;
 
-        let auth_state = auth_state_with_snapshot(
-            vec![HttpBinding {
-                surface: "admin".to_string(),
-                method: "GET".to_string(),
-                path_pattern: "/admin/partials/kv/table".to_string(),
-                policy_key: "admin.kv.manage".to_string(),
-            }],
-            vec![("editor", "admin.kv.manage")],
-        );
+        let auth_state = auth_state_with_snapshot(vec![], vec![]);
         let token = auth_state
             .jwt_service
             .create_access_token(2, "editor_user", "editor")
@@ -631,7 +551,6 @@ mod tests {
             auth_state,
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = Request::builder()
@@ -642,73 +561,10 @@ mod tests {
             .unwrap();
 
         let response = plugin_api_dispatch(State(state), req).await.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
         let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
-        assert_eq!(body, "<div>ok</div>");
-    }
-
-    #[tokio::test]
-    async fn plugin_api_dispatch_denies_admin_partial_without_admin_surface_grant() {
-        let lua = create_sandboxed_vm().unwrap();
-        let sushi = lua.create_table().unwrap();
-        let handlers = lua.create_table().unwrap();
-        sushi.set("__handlers", handlers.clone()).unwrap();
-        lua.globals().set("sushi", sushi).unwrap();
-
-        let handler_key = "h_admin_partial_denied";
-        let handler = lua
-            .create_async_function(|_, ()| async { Ok("<div>denied</div>".to_string()) })
-            .unwrap();
-        handlers.set(handler_key, handler).unwrap();
-
-        let manager = PluginManager::new();
-        manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/admin/partials/kv/table",
-                "plugin",
-                handler_key,
-                Some("admin.kv.manage"),
-                false,
-            )
-            .await;
-
-        let auth_state = auth_state_with_snapshot(
-            vec![HttpBinding {
-                surface: "admin".to_string(),
-                method: "GET".to_string(),
-                path_pattern: "/admin/partials/kv/table".to_string(),
-                policy_key: "admin.kv.manage".to_string(),
-            }],
-            vec![],
-        );
-        let token = auth_state
-            .jwt_service
-            .create_access_token(3, "viewer_user", "viewer")
-            .expect("failed to create viewer access token");
-
-        let state = PluginApiState {
-            plugins: manager,
-            auth_state,
-            logs: Arc::new(LogService::new()),
-            body_size_limit: 1024,
-            route_map: Vec::new(),
-        };
-
-        let req = Request::builder()
-            .method("GET")
-            .uri("/admin/partials/kv/table")
-            .header(header::AUTHORIZATION, format!("Bearer {token}"))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = plugin_api_dispatch(State(state), req).await.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
-        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
-        let body = String::from_utf8(bytes.to_vec()).unwrap();
-        assert!(body.contains("Insufficient permissions"), "body: {body}");
+        assert_eq!(body, "not found");
     }
 
     #[tokio::test]
@@ -776,7 +632,6 @@ mod tests {
             auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = axum::http::Request::builder()
@@ -829,7 +684,6 @@ mod tests {
             auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = axum::http::Request::builder()
@@ -885,7 +739,6 @@ end
             auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = Request::builder()
@@ -939,7 +792,6 @@ end
             auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = Request::builder()
@@ -990,7 +842,6 @@ end
             auth_state: test_auth_state(),
             logs: logs.clone(),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = axum::http::Request::builder()
@@ -1053,7 +904,6 @@ end
             auth_state: test_auth_state(),
             logs: Arc::new(LogService::new()),
             body_size_limit: 1024,
-            route_map: Vec::new(),
         };
 
         let req = axum::http::Request::builder()
@@ -1080,7 +930,7 @@ end
     }
 
     #[tokio::test]
-    async fn test_build_app_allows_login_without_token() {
+    async fn build_app_no_longer_claims_auth_routes() {
         let ctx = test_context().await;
         let app = build_app(&ctx);
 
@@ -1098,27 +948,48 @@ end
             .await
             .unwrap();
 
-        // Request reaches login handler; it should not be blocked by middleware.
-        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
-        let body = to_bytes(response.into_body(), 1024).await.unwrap();
-        let body = String::from_utf8(body.to_vec()).unwrap();
-        assert!(body.contains("Invalid credentials"), "{body}");
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
-    async fn test_build_app_allows_me_with_viewer_token() {
+    async fn build_app_no_longer_claims_users_route() {
         let ctx = test_context().await;
         let app = build_app(&ctx);
         let token = ctx
             .jwt
-            .create_access_token(2, "viewer_user", "viewer")
+            .create_access_token(1, "admin", "admin")
             .expect("failed to create test access token");
 
         let response = app
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri("/api/auth/me")
+                    .uri("/api/users")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn production_api_router_dispatches_users_through_builtin() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let app = build_app(&ctx).merge(plugin_api_router(&ctx).await);
+        let token = ctx
+            .jwt
+            .create_access_token(1, "admin", "admin")
+            .expect("failed to create test access token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/users?limit=1")
                     .header(header::AUTHORIZATION, format!("Bearer {token}"))
                     .body(Body::empty())
                     .unwrap(),
@@ -1127,41 +998,45 @@ end
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let body = to_bytes(response.into_body(), 1024).await.unwrap();
-        let payload: Value = serde_json::from_slice(&body).expect("invalid me payload");
-        assert_eq!(
-            payload.get("username").and_then(Value::as_str),
-            Some("viewer_user")
-        );
-        assert_eq!(payload.get("role").and_then(Value::as_str), Some("viewer"));
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).expect("invalid users payload");
+        assert_eq!(payload.get("limit").and_then(Value::as_u64), Some(1));
     }
 
     #[tokio::test]
-    async fn test_build_app_requires_auth_for_users_route() {
+    async fn production_api_router_dispatches_auth_through_builtin() {
         let ctx = test_context().await;
-        let app = build_app(&ctx);
+        activate_api_builtins(&ctx).await;
+        let app = build_app(&ctx).merge(plugin_api_router(&ctx).await);
 
         let response = app
             .oneshot(
                 Request::builder()
-                    .method("GET")
-                    .uri("/api/users")
-                    .body(Body::empty())
+                    .method("POST")
+                    .uri("/api/auth/login")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"username":"missing","password":"does-not-matter"}"#,
+                    ))
                     .unwrap(),
             )
             .await
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
-        let body = to_bytes(response.into_body(), 1024).await.unwrap();
-        let body = String::from_utf8(body.to_vec()).unwrap();
-        assert!(body.contains("Missing authorization credentials"), "{body}");
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).expect("invalid login payload");
+        assert_eq!(
+            payload.get("error").and_then(Value::as_str),
+            Some("Invalid credentials")
+        );
     }
 
     #[tokio::test]
-    async fn test_build_app_accepts_cookie_token_for_users_route() {
+    async fn users_builtin_accepts_cookie_token() {
         let ctx = test_context().await;
-        let app = build_app(&ctx);
+        activate_api_builtins(&ctx).await;
+        let app = plugin_api_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")
@@ -1180,6 +1055,275 @@ end
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn users_builtin_matches_static_get_response() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let token = ctx
+            .jwt
+            .create_access_token(1, "admin", "admin")
+            .expect("failed to create test access token");
+        let request = || {
+            Request::builder()
+                .method("GET")
+                .uri("/api/users?limit=17&offset=2")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        let static_response = static_users_router(&ctx).oneshot(request()).await.unwrap();
+        let builtin_response = plugin_api_router(&ctx)
+            .await
+            .oneshot(request())
+            .await
+            .unwrap();
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(builtin_body, static_body);
+    }
+
+    #[tokio::test]
+    async fn auth_builtin_login_is_public_and_matches_static_response() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let request = || {
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"missing","password":"does-not-matter"}"#,
+                ))
+                .unwrap()
+        };
+
+        let static_response = static_auth_router(&ctx).oneshot(request()).await.unwrap();
+        let builtin_response = plugin_api_router(&ctx)
+            .await
+            .oneshot(request())
+            .await
+            .unwrap();
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(builtin_body, static_body);
+    }
+
+    #[tokio::test]
+    async fn auth_builtin_me_requires_access_token_and_returns_claims() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let app = plugin_api_router(&ctx).await;
+        let missing_credentials = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            missing_credentials.status(),
+            axum::http::StatusCode::UNAUTHORIZED
+        );
+
+        let token = ctx
+            .jwt
+            .create_access_token(2, "viewer_user", "viewer")
+            .expect("failed to create test access token");
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/auth/me")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).expect("invalid me payload");
+        assert_eq!(
+            payload.get("username").and_then(Value::as_str),
+            Some("viewer_user")
+        );
+        assert_eq!(payload.get("role").and_then(Value::as_str), Some("viewer"));
+    }
+
+    #[tokio::test]
+    async fn auth_builtin_refresh_matches_static_error_response() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let request = || {
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/refresh")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"refresh_token":"invalid.token.here"}"#))
+                .unwrap()
+        };
+
+        let static_response = static_auth_router(&ctx).oneshot(request()).await.unwrap();
+        let builtin_response = plugin_api_router(&ctx)
+            .await
+            .oneshot(request())
+            .await
+            .unwrap();
+
+        assert_eq!(builtin_response.status(), static_response.status());
+        assert_eq!(
+            builtin_response.headers().get(header::CONTENT_TYPE),
+            static_response.headers().get(header::CONTENT_TYPE)
+        );
+        let static_body = to_bytes(static_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let builtin_body = to_bytes(builtin_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(builtin_body, static_body);
+    }
+
+    #[tokio::test]
+    async fn auth_builtin_maps_invalid_json_to_bad_request() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let app = plugin_api_router(&ctx).await;
+
+        for path in ["/api/auth/login", "/api/auth/refresh"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from("{"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok()),
+                Some("application/json")
+            );
+            let body = to_bytes(response.into_body(), 1024).await.unwrap();
+            let payload: Value = serde_json::from_slice(&body).expect("invalid error payload");
+            assert!(payload.get("error").and_then(Value::as_str).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn users_builtin_maps_invalid_inputs_to_bad_request() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+        let token = ctx
+            .jwt
+            .create_access_token(1, "admin", "admin")
+            .expect("failed to create test access token");
+        let app = plugin_api_router(&ctx).await;
+        let requests = [
+            Request::builder()
+                .method("GET")
+                .uri("/api/users?limit=invalid")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+            Request::builder()
+                .method("POST")
+                .uri("/api/users")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("{"))
+                .unwrap(),
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/users/not-a-number")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        ];
+
+        for request in requests {
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok()),
+                Some("application/json")
+            );
+            let body = to_bytes(response.into_body(), 1024).await.unwrap();
+            let payload: Value = serde_json::from_slice(&body).expect("invalid error payload");
+            assert!(payload.get("error").and_then(Value::as_str).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn required_api_builtins_reject_runtime_toggle() {
+        let ctx = test_context().await;
+        activate_api_builtins(&ctx).await;
+
+        let identity_error = ctx
+            .set_plugin_enabled("identity", false, Some("test"), Some("required guard"))
+            .await
+            .expect_err("required builtin must reject ordinary runtime toggles");
+
+        assert_eq!(
+            identity_error,
+            "required_plugin_toggle_forbidden: plugin 'identity' must be changed through profile and restart"
+        );
+        let api_core_error = ctx
+            .set_plugin_enabled("api-core", false, Some("test"), Some("required guard"))
+            .await
+            .expect_err("required builtin must reject ordinary runtime toggles");
+        assert_eq!(
+            api_core_error,
+            "required_plugin_toggle_forbidden: plugin 'api-core' must be changed through profile and restart"
+        );
+        let snapshot = ctx.plugins.capability_snapshot().await;
+        let auth = snapshot
+            .match_http_on(HttpSurface::Api, "POST", "/api/auth/login")
+            .expect("rejected toggle must preserve identity capabilities");
+        assert_eq!(auth.owner.as_str(), "identity.core");
+        let users = snapshot
+            .match_http_on(HttpSurface::Api, "GET", "/api/users")
+            .expect("rejected toggle must preserve API core capabilities");
+        assert_eq!(users.owner.as_str(), "api.core");
     }
 
     #[tokio::test]
@@ -1216,7 +1360,6 @@ end
                 auth_state: ctx.auth_state(),
                 logs: Arc::new(LogService::new()),
                 body_size_limit: 1024,
-                route_map: Vec::new(),
             });
 
         let response = app
@@ -1231,6 +1374,55 @@ end
             .unwrap();
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn plugin_router_discovers_routes_registered_after_router_build() {
+        let ctx = test_context().await;
+        let app = build_plugin_api_routes(&ctx)
+            .await
+            .with_state(PluginApiState {
+                plugins: ctx.plugins.clone(),
+                auth_state: ctx.auth_state(),
+                logs: Arc::new(LogService::new()),
+                body_size_limit: 1024,
+            });
+
+        let lua = create_sandboxed_vm().unwrap();
+        let sushi = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        sushi.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("sushi", sushi).unwrap();
+        let handler = lua
+            .create_async_function(|_, ()| async { Ok("dynamic".to_string()) })
+            .unwrap();
+        handlers.set("h_dynamic", handler).unwrap();
+        ctx.plugins.register_vm("plugin", lua).await;
+        ctx.plugins
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/plugin/dynamic",
+                "plugin",
+                "h_dynamic",
+                None,
+                true,
+            )
+            .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/plugin/dynamic")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(body.as_ref(), b"dynamic");
     }
 
     #[tokio::test]
@@ -1260,7 +1452,6 @@ end
                 auth_state: ctx.auth_state(),
                 logs: Arc::new(LogService::new()),
                 body_size_limit: 1024,
-                route_map: Vec::new(),
             });
 
         let response = app
@@ -1316,7 +1507,6 @@ end
                 auth_state: ctx.auth_state(),
                 logs: Arc::new(LogService::new()),
                 body_size_limit: 1024,
-                route_map: Vec::new(),
             });
 
         let response = app
@@ -1386,7 +1576,6 @@ end
                 auth_state: ctx.auth_state(),
                 logs: Arc::new(LogService::new()),
                 body_size_limit: 1024,
-                route_map: Vec::new(),
             });
 
         let response = app
@@ -1425,7 +1614,8 @@ end
             .await
             .expect("failed to insert custom role");
 
-        let app = build_app(&ctx);
+        activate_api_builtins(&ctx).await;
+        let app = plugin_api_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")
@@ -1459,7 +1649,8 @@ end
     #[tokio::test]
     async fn test_create_user_rejects_unknown_role() {
         let ctx = test_context().await;
-        let app = build_app(&ctx);
+        activate_api_builtins(&ctx).await;
+        let app = plugin_api_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")

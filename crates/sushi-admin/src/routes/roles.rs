@@ -1,19 +1,180 @@
 use axum::extract::{Form, Path, State};
-use axum::http::{header::HeaderName, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use serde::de::{Deserializer, SeqAccess, Visitor};
 use serde::Deserialize;
 use std::sync::Arc;
 use sushi_core::auth::rbac::RbacRepository;
 use sushi_core::context::SushiContext;
+use sushi_core::runtime::{
+    AdminPageSpec, HttpHandler, HttpResponse, HttpRouteSpec, MenuContributionSpec, StagedRegistrar,
+};
 use sushi_core::storage::Storage;
 
 pub async fn roles_page(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    crate::render::render_template(&ctx, "admin/roles.html").await
+    sushi_api::router::plugin_http_response(roles_page_response(&ctx).await)
 }
 
 pub async fn roles_table_partial(State(ctx): State<SushiContext>) -> impl IntoResponse {
-    render_roles_rows(&ctx).await
+    sushi_api::router::plugin_http_response(roles_table_response(&ctx).await)
+}
+
+pub fn register_builtin_capabilities(staged: &mut StagedRegistrar, ctx: SushiContext) {
+    staged.register_menu(
+        MenuContributionSpec::new("rbac-admin.roles", "Roles", 30)
+            .with_icon(Some("shield".to_string()))
+            .with_parent(Some("host-admin.system".to_string()))
+            .with_route(Some("/admin/roles".to_string()))
+            .with_policy(Some("admin.roles.view".to_string())),
+    );
+    let page_ctx = ctx.clone();
+    staged.register_admin(
+        AdminPageSpec::new("/admin/roles", "Roles", "rbac-admin", "rust::roles-page")
+            .with_policy(Some("admin.roles.view".to_string()))
+            .with_rust_handler(HttpHandler::new(move |_| {
+                let ctx = page_ctx.clone();
+                async move { Ok(roles_page_response(&ctx).await) }
+            })),
+    );
+    let table_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "GET",
+            "/admin/partials/roles/table",
+            "rbac-admin",
+            "rust::roles-table",
+        )
+        .with_policy(Some("admin.roles.view".to_string()))
+        .with_rust_handler(HttpHandler::new(move |_| {
+            let ctx = table_ctx.clone();
+            async move { Ok(roles_table_response(&ctx).await) }
+        })),
+    );
+    let create_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "POST",
+            "/admin/partials/roles/create",
+            "rbac-admin",
+            "rust::roles-create",
+        )
+        .with_policy(Some("admin.roles.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = create_ctx.clone();
+            async move {
+                let form = match super::transport::decode_form(&request) {
+                    Ok(form) => form,
+                    Err(response) => return Ok(response),
+                };
+                Ok(roles_create_response(&ctx, form).await)
+            }
+        })),
+    );
+    let update_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "POST",
+            "/admin/partials/roles/{id}/update",
+            "rbac-admin",
+            "rust::roles-update",
+        )
+        .with_policy(Some("admin.roles.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = update_ctx.clone();
+            async move {
+                let id = match super::transport::path_i64(
+                    &request.path,
+                    "/admin/partials/roles/",
+                    "/update",
+                ) {
+                    Ok(id) => id,
+                    Err(response) => return Ok(response),
+                };
+                let form = match super::transport::decode_form(&request) {
+                    Ok(form) => form,
+                    Err(response) => return Ok(response),
+                };
+                Ok(roles_update_response(&ctx, id, form).await)
+            }
+        })),
+    );
+    let permissions_form_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "GET",
+            "/admin/partials/roles/{id}/permissions/form",
+            "rbac-admin",
+            "rust::role-permissions-form",
+        )
+        .with_policy(Some("admin.roles.view".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = permissions_form_ctx.clone();
+            async move {
+                let id = match super::transport::path_i64(
+                    &request.path,
+                    "/admin/partials/roles/",
+                    "/permissions/form",
+                ) {
+                    Ok(id) => id,
+                    Err(response) => return Ok(response),
+                };
+                Ok(role_permissions_form_response(&ctx, id).await)
+            }
+        })),
+    );
+    let permissions_update_ctx = ctx.clone();
+    staged.register_http(
+        HttpRouteSpec::new(
+            "POST",
+            "/admin/partials/roles/{id}/permissions",
+            "rbac-admin",
+            "rust::role-permissions-update",
+        )
+        .with_policy(Some("admin.roles.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = permissions_update_ctx.clone();
+            async move {
+                let id = match super::transport::path_i64(
+                    &request.path,
+                    "/admin/partials/roles/",
+                    "/permissions",
+                ) {
+                    Ok(id) => id,
+                    Err(response) => return Ok(response),
+                };
+                let form = match super::transport::decode_form(&request) {
+                    Ok(form) => form,
+                    Err(response) => return Ok(response),
+                };
+                Ok(role_permissions_update_response(&ctx, id, form).await)
+            }
+        })),
+    );
+    staged.register_http(
+        HttpRouteSpec::new(
+            "DELETE",
+            "/admin/partials/roles/{id}",
+            "rbac-admin",
+            "rust::roles-delete",
+        )
+        .with_policy(Some("admin.roles.manage".to_string()))
+        .with_rust_handler(HttpHandler::new(move |request| {
+            let ctx = ctx.clone();
+            async move {
+                let id =
+                    match super::transport::path_i64(&request.path, "/admin/partials/roles/", "") {
+                        Ok(id) => id,
+                        Err(response) => return Ok(response),
+                    };
+                Ok(roles_delete_response(&ctx, id).await)
+            }
+        })),
+    );
+}
+
+async fn roles_page_response(ctx: &SushiContext) -> HttpResponse {
+    crate::render::render_template_http_response(ctx, "admin/roles.html", serde_json::json!({}))
+        .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +188,13 @@ pub async fn roles_create_partial(
     State(ctx): State<SushiContext>,
     Form(form): Form<CreateRoleForm>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(roles_create_response(&ctx, form).await)
+}
+
+async fn roles_create_response(ctx: &SushiContext, form: CreateRoleForm) -> HttpResponse {
     if let Err(message) = validate_create_role_form(&form) {
-        return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &message).await;
+        return super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &message)
+            .await;
     }
 
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
@@ -41,8 +207,8 @@ pub async fn roles_create_partial(
         .await
     {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Role created.",
@@ -50,7 +216,9 @@ pub async fn roles_create_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -65,8 +233,13 @@ pub async fn roles_update_partial(
     Path(id): Path<i64>,
     Form(form): Form<UpdateRoleForm>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(roles_update_response(&ctx, id, form).await)
+}
+
+async fn roles_update_response(ctx: &SushiContext, id: i64, form: UpdateRoleForm) -> HttpResponse {
     if let Err(message) = validate_update_role_form(&form) {
-        return flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &message).await;
+        return super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &message)
+            .await;
     }
 
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
@@ -79,8 +252,8 @@ pub async fn roles_update_partial(
         .await
     {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Role updated.",
@@ -88,7 +261,9 @@ pub async fn roles_update_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -171,26 +346,48 @@ pub async fn role_permissions_form_partial(
     State(ctx): State<SushiContext>,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(role_permissions_form_response(&ctx, id).await)
+}
+
+async fn role_permissions_form_response(ctx: &SushiContext, id: i64) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     let role = match repo.find_role(id).await {
         Ok(Some(role)) => role,
         Ok(None) => {
-            return flash_response(&ctx, StatusCode::NOT_FOUND, "error", "Role not found").await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::NOT_FOUND,
+                "error",
+                "Role not found",
+            )
+            .await;
         }
         Err(err) => {
-            return flash_response(&ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error",
+                &err,
+            )
+            .await;
         }
     };
 
     let assignments = match repo.list_permissions_for_role(id).await {
         Ok(items) => items,
         Err(err) => {
-            return flash_response(&ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error",
+                &err,
+            )
+            .await;
         }
     };
 
-    crate::render::render_template_with_context(
-        &ctx,
+    crate::render::render_template_http_response(
+        ctx,
         "admin/partials/role_permissions_form.html",
         serde_json::json!({
             "role": {
@@ -211,6 +408,14 @@ pub async fn role_permissions_update_partial(
     Path(id): Path<i64>,
     Form(form): Form<UpdateRolePermissionsForm>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(role_permissions_update_response(&ctx, id, form).await)
+}
+
+async fn role_permissions_update_response(
+    ctx: &SushiContext,
+    id: i64,
+    form: UpdateRolePermissionsForm,
+) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
 
     // De-duplicate checkbox values while preserving deterministic order.
@@ -224,16 +429,16 @@ pub async fn role_permissions_update_partial(
     match repo.replace_role_permissions(id, &deduped).await {
         Ok(_) => {
             if let Err(err) = ctx.refresh_authorizer_snapshot().await {
-                return flash_response(
-                    &ctx,
+                return super::transport::flash_response(
+                    ctx,
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "error",
                     &format!("Role permissions updated but policy refresh failed: {err}"),
                 )
                 .await;
             }
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Role permissions updated.",
@@ -241,7 +446,9 @@ pub async fn role_permissions_update_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -249,11 +456,15 @@ pub async fn roles_delete_partial(
     State(ctx): State<SushiContext>,
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
+    sushi_api::router::plugin_http_response(roles_delete_response(&ctx, id).await)
+}
+
+async fn roles_delete_response(ctx: &SushiContext, id: i64) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     match repo.delete_role(id).await {
         Ok(_) => {
-            flash_response_with_trigger(
-                &ctx,
+            super::transport::flash_response_with_trigger(
+                ctx,
                 StatusCode::OK,
                 "success",
                 "Role deleted.",
@@ -261,7 +472,9 @@ pub async fn roles_delete_partial(
             )
             .await
         }
-        Err(err) => flash_response(&ctx, StatusCode::BAD_REQUEST, "error", &err).await,
+        Err(err) => {
+            super::transport::flash_response(ctx, StatusCode::BAD_REQUEST, "error", &err).await
+        }
     }
 }
 
@@ -305,16 +518,22 @@ fn validate_role_name_and_description(name: &str, description: Option<&str>) -> 
     Ok(())
 }
 
-async fn render_roles_rows(ctx: &SushiContext) -> Response {
+async fn roles_table_response(ctx: &SushiContext) -> HttpResponse {
     let repo = RbacRepository::new(ctx.db.clone() as Arc<dyn Storage>);
     let roles = match repo.list_roles().await {
         Ok(roles) => roles,
         Err(err) => {
-            return flash_response(ctx, StatusCode::INTERNAL_SERVER_ERROR, "error", &err).await;
+            return super::transport::flash_response(
+                ctx,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "error",
+                &err,
+            )
+            .await;
         }
     };
 
-    crate::render::render_template_with_context(
+    crate::render::render_template_http_response(
         ctx,
         "admin/partials/roles_rows.html",
         serde_json::json!({
@@ -322,39 +541,4 @@ async fn render_roles_rows(ctx: &SushiContext) -> Response {
         }),
     )
     .await
-}
-
-async fn flash_response(
-    ctx: &SushiContext,
-    status: StatusCode,
-    level: &str,
-    message: &str,
-) -> Response {
-    let mut response = crate::render::render_template_with_context(
-        ctx,
-        "admin/partials/flash.html",
-        serde_json::json!({
-            "level": level,
-            "message": message,
-        }),
-    )
-    .await;
-    *response.status_mut() = status;
-    response
-}
-
-async fn flash_response_with_trigger(
-    ctx: &SushiContext,
-    status: StatusCode,
-    level: &str,
-    message: &str,
-    trigger: &str,
-) -> Response {
-    let mut response = flash_response(ctx, status, level, message).await;
-    if let Ok(value) = HeaderValue::from_str(trigger) {
-        response
-            .headers_mut()
-            .insert(HeaderName::from_static("hx-trigger"), value);
-    }
-    response
 }
