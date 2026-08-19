@@ -30,6 +30,11 @@ root_dir = "."
 templates_dir = "web/templates"
 static_dir = "web/static"
 static_url_prefix = "/static"
+
+[runtime]
+profile = "default"
+profiles_dir = "profiles"
+bundles_dir = "bundles"
 ```
 
 ## 配置项说明
@@ -76,6 +81,14 @@ static_url_prefix = "/static"
 |-------|------|-------|------|
 | `root_dir` | string | `"."` | 文件浏览器根目录基准路径（`plugin.toml` 中相对 `path` 会相对该目录解析） |
 
+### runtime
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|-------|------|-------|------|
+| `profile` | string / null | `null` | 运行时 profile；未配置时优先加载 `default`，若默认文件不存在则使用兼容 `legacy-default` |
+| `profiles_dir` | string | `"profiles"` | profile 文件目录，相对配置文件所在目录解析 |
+| `bundles_dir` | string | `"bundles"` | bundle 文件目录，相对配置文件所在目录解析 |
+
 ## 启动命令
 
 ```bash
@@ -83,10 +96,23 @@ static_url_prefix = "/static"
 sushi serve
 
 # 只启动 API
-sushi serve --api
+sushi serve --profile api
 
 # 只启动 Admin
-sushi serve --admin
+sushi serve --profile admin
+
+# 最小恢复模式，仅保留 /health 与 bootstrap-safe CLI
+sushi serve --profile minimal
+
+# 兼容参数，内部映射到 api/admin profile 并输出弃用提示
+sushi serve --api-only
+sushi serve --admin-only
+
+# 不打开数据库，检查最终 profile
+sushi inspect profile --profile default
+
+# 启动所选插件后检查 owner-scoped capability
+sushi inspect capabilities --profile default
 
 # 运行插件
 sushi run <plugin-name>
@@ -94,3 +120,5 @@ sushi run <plugin-name>
 # CLI 帮助
 sushi --help
 ```
+
+Profile 与 bundle 的完整语义见 [Profile 组合指南](profile-composition.md)。

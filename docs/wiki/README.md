@@ -30,6 +30,7 @@ Lua 插件可调用的 Rust 接口文档。
 ### 开发指南
 - [插件开发指南](guides/plugin-development.md)
 - [配置指南](guides/configuration.md)
+- [Profile 组合指南](guides/profile-composition.md)
 
 ---
 

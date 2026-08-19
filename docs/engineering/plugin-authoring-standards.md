@@ -23,12 +23,14 @@ plugins/
 │   └── <plugin-name>/
 │       ├── plugin.toml
 │       ├── init.lua
+│       ├── migrations/
 │       ├── lua/
 │       └── web/
 └── third_party/
     └── <plugin-name>/
         ├── plugin.toml
         ├── init.lua
+        ├── migrations/
         ├── lua/
         └── web/
 ```
@@ -132,7 +134,16 @@ Rules:
 - Keep SQL parameterized; never concatenate untrusted input directly into SQL.
 - Handle database errors and return safe user feedback.
 
-### 4.5 Admin UI Convention
+### 4.5 数据库迁移
+
+- 只有受宿主信任的 `plugins/official/<name>` source 可以声明 migration；第三方插件即使修改 manifest 的 `kind` 也不会获得该能力。
+- migration 文件放在插件本地 `migrations/*.sql`，按文件名中的数字前缀确定全局执行顺序，例如 `010_create_notes.sql`。
+- migration 需要 manifest 的数据库写权限，以及 profile 中显式的 `[entries.grants] database = "write" | "admin"`。
+- 历史 migration 文件发布后不可修改；runtime 会校验 SHA-256 checksum，不一致时 fail closed。
+- 单个 migration 的 SQL 与 catalog 记录在同一数据库事务中；执行失败不得留下部分 schema 或记录。
+- migration 只向前执行，不提供自动 down migration；发布回滚必须通过新的 forward migration 修复数据结构。
+
+### 4.6 Admin UI Convention
 
 - Page registration uses contract payloads through `sushi.capability.register({...})`:
   - `surface = "web"`
