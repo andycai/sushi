@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Args;
+use std::path::Path;
 
 #[derive(Args)]
 pub struct RunArgs {
@@ -11,8 +12,13 @@ pub struct RunArgs {
     pub args: Vec<String>,
 }
 
-pub async fn run(args: RunArgs, role: &str) -> Result<()> {
-    let ctx = crate::app::bootstrap(None).await?;
+pub async fn run(
+    args: RunArgs,
+    role: &str,
+    config_path: &Path,
+    profile_override: Option<&str>,
+) -> Result<()> {
+    let ctx = crate::app::bootstrap_with_profile(Some(config_path), profile_override).await?;
     crate::commands::authorization::ensure_command_authorized(&ctx, role, &args.plugin_name)
         .await?;
 

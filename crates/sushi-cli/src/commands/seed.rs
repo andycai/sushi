@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Args;
+use std::path::Path;
 use sushi_core::auth::model::UserRole;
 use sushi_core::auth::password;
 use sushi_core::auth::repository::UserRepository;
@@ -19,8 +20,8 @@ pub struct SeedArgs {
     pub email: String,
 }
 
-pub async fn run(args: SeedArgs) -> Result<()> {
-    let ctx = crate::app::bootstrap(None).await?;
+pub async fn run(args: SeedArgs, config_path: &Path, profile_override: Option<&str>) -> Result<()> {
+    let ctx = crate::app::bootstrap_with_profile(Some(config_path), profile_override).await?;
     let repo = UserRepository::new(ctx.db.clone());
     let password_hash = password::hash_password(&args.password)
         .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?;

@@ -1,5 +1,6 @@
 pub mod authorization;
 pub mod config_cmd;
+pub mod inspect;
 pub mod plugin;
 pub mod run;
 pub mod seed;

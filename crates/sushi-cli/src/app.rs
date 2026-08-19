@@ -1,109 +1,28 @@
 use anyhow::{Context, Result};
+use std::collections::BTreeSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use sushi_core::auth::jwt::JwtService;
-use sushi_core::auth::policy_repository::PolicyRepository;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
 use sushi_core::logs::tracing_bridge;
 use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::plugin::Plugin;
+use sushi_core::runtime::{
+    historical_builtin_migrations, load_lua_migrations, MigrationRunner, ResolvedRuntimeProfile,
+    RuntimePluginSource, RuntimeProfileResolver,
+};
 use sushi_core::storage::sqlite::SqliteStorage;
-use sushi_core::storage::Storage;
 use sushi_core::web::template_service::TemplateService;
 
-const MIGRATION_SQL: &str = include_str!("../../../migrations/001_init.sql");
-const KV_MIGRATION_SQL: &str = include_str!("../../../migrations/002_kv_store.sql");
-const RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/003_rbac.sql");
-const MENU_MIGRATION_SQL: &str = include_str!("../../../migrations/004_menu.sql");
-const MENUS_RBAC_MIGRATION_SQL: &str = include_str!("../../../migrations/005_menus_rbac.sql");
-const UNIFIED_POLICY_V2_MIGRATION_SQL: &str =
-    include_str!("../../../migrations/006_unified_policy_v2.sql");
-const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
-const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
-    include_str!("../../../migrations/008_plugin_governance_v1.sql");
-const PLUGIN_GOVERNANCE_MIGRATION_NAME: &str = "008_plugin_governance_v1";
-const PLUGIN_GOVERNANCE_MIGRATION_FINALIZE_SQL: &str = r#"
-UPDATE plugin_state
-SET plugin_id = name
-WHERE plugin_id IS NULL OR TRIM(plugin_id) = '';
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_plugin_state_plugin_id ON plugin_state(plugin_id);
-
-CREATE TABLE IF NOT EXISTS plugin_state_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    plugin_id TEXT NOT NULL,
-    source_kind TEXT NOT NULL DEFAULT 'third_party',
-    changed_by TEXT NOT NULL DEFAULT '',
-    previous_enabled INTEGER,
-    next_enabled INTEGER,
-    reason TEXT NOT NULL DEFAULT '',
-    changed_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (plugin_id) REFERENCES plugin_state(plugin_id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_plugin_state_events_plugin_changed_at
-    ON plugin_state_events(plugin_id, changed_at DESC);
-
-INSERT OR IGNORE INTO policy_keys (key, surface, resource, action, name, description, is_system) VALUES
-    ('admin.plugins.manage', 'admin', 'plugins', 'manage', 'Manage Admin Plugins', 'Enable and disable plugins from admin surfaces.', 1),
-    ('cli.plugins.manage', 'cli', 'plugins', 'manage', 'Manage CLI Plugins', 'Enable and disable plugins from CLI surfaces.', 1);
-
-INSERT OR IGNORE INTO role_policy_keys (role_id, policy_key_id)
-SELECT r.id, pk.id
-FROM roles r
-JOIN policy_keys pk ON pk.key IN ('admin.plugins.manage', 'cli.plugins.manage')
-WHERE r.slug = 'admin';
-
-WITH seeded_bindings (
-    surface,
-    target_type,
-    target_ref,
-    method,
-    path_pattern,
-    command_name,
-    policy_key,
-    owner_type,
-    owner_id,
-    is_system
-) AS (
-    VALUES
-    ('admin', 'http_route', '/admin/api/plugins/{plugin}/state', 'PATCH', '/admin/api/plugins/{plugin}/state', NULL, 'admin.plugins.manage', 'system', 'builtin', 1),
-    ('cli', 'cli_command', 'plugin:status', NULL, NULL, 'plugin:status', 'cli.plugins.read', 'system', 'builtin', 1),
-    ('cli', 'cli_command', 'plugin:enable', NULL, NULL, 'plugin:enable', 'cli.plugins.manage', 'system', 'builtin', 1),
-    ('cli', 'cli_command', 'plugin:disable', NULL, NULL, 'plugin:disable', 'cli.plugins.manage', 'system', 'builtin', 1)
-)
-INSERT OR IGNORE INTO policy_bindings (
-    surface,
-    target_type,
-    target_ref,
-    method,
-    path_pattern,
-    command_name,
-    policy_key_id,
-    owner_type,
-    owner_id,
-    is_system
-)
-SELECT
-    seeded_bindings.surface,
-    seeded_bindings.target_type,
-    seeded_bindings.target_ref,
-    seeded_bindings.method,
-    seeded_bindings.path_pattern,
-    seeded_bindings.command_name,
-    pk.id,
-    seeded_bindings.owner_type,
-    seeded_bindings.owner_id,
-    seeded_bindings.is_system
-FROM seeded_bindings
-JOIN policy_keys pk ON pk.key = seeded_bindings.policy_key;
-
-INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (8, '008_plugin_governance_v1');
-"#;
-
 pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
+    bootstrap_with_profile(config_path, None).await
+}
+
+pub async fn resolve_runtime_profile(
+    config_path: Option<&Path>,
+    profile_override: Option<&str>,
+) -> Result<(ConfigStore, ResolvedRuntimeProfile)> {
     let config = match config_path {
         Some(path) if path.exists() => ConfigStore::load(path)
             .await
@@ -114,6 +33,65 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         }
         None => ConfigStore::new(SushiConfig::default()),
     };
+
+    let (configured_profile, profiles_dir, bundles_dir, plugins_dir) = {
+        let guard = config.get().await;
+        (
+            profile_override
+                .map(str::to_string)
+                .or_else(|| guard.runtime.profile.clone()),
+            resolve_dir(config_path, &guard.runtime.profiles_dir, "profile")?,
+            resolve_dir(config_path, &guard.runtime.bundles_dir, "bundle")?,
+            resolve_dir(config_path, &guard.plugins.directory, "plugin")?,
+        )
+    };
+    let resolver = RuntimeProfileResolver::new(profiles_dir, bundles_dir, plugins_dir);
+    let profile = tokio::task::spawn_blocking(move || {
+        resolver.resolve_configured(configured_profile.as_deref())
+    })
+    .await
+    .context("runtime profile resolver task failed")?
+    .context("failed to resolve runtime profile")?;
+    Ok((config, profile))
+}
+
+pub async fn bootstrap_with_profile(
+    config_path: Option<&Path>,
+    profile_override: Option<&str>,
+) -> Result<SushiContext> {
+    let (config, runtime_profile) = resolve_runtime_profile(config_path, profile_override).await?;
+    let mut resolved_lua_plugins = Vec::new();
+    let mut plugin_names = BTreeSet::new();
+    for entry in runtime_profile.entries() {
+        let RuntimePluginSource::Lua { path_id, path, .. } = &entry.source else {
+            continue;
+        };
+        let plugin = LuaPlugin::load_dir(path, path_id)
+            .await
+            .with_context(|| format!("failed to load profile entry {}", entry.id))?;
+        if !plugin_names.insert(plugin.name().to_string()) {
+            anyhow::bail!(
+                "runtime profile '{}' mounts duplicate plugin name '{}'",
+                runtime_profile.name(),
+                plugin.name()
+            );
+        }
+        resolved_lua_plugins.push((entry.clone(), plugin));
+    }
+
+    let mut migrations =
+        historical_builtin_migrations(runtime_profile.has_enabled_builtin("menu-admin"))
+            .context("failed to build builtin migration catalog")?;
+    for (entry, plugin) in &resolved_lua_plugins {
+        if !entry.enabled {
+            continue;
+        }
+        migrations.extend(
+            load_lua_migrations(entry, &plugin.effective_permissions().database).with_context(
+                || format!("failed to load migrations for runtime entry {}", entry.id),
+            )?,
+        );
+    }
 
     let db_path = {
         let guard = config.get().await;
@@ -127,35 +105,10 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
     let storage = SqliteStorage::new(&db_path)
         .await
         .context("failed to open database")?;
-    storage
-        .run_migrations(MIGRATION_SQL)
+    MigrationRunner::new(&storage)
+        .apply(&migrations)
         .await
-        .context("failed to run migrations")?;
-    storage
-        .run_migrations(KV_MIGRATION_SQL)
-        .await
-        .context("failed to run kv migrations")?;
-    storage
-        .run_migrations(RBAC_MIGRATION_SQL)
-        .await
-        .context("failed to run rbac migrations")?;
-    storage
-        .run_migrations(MENU_MIGRATION_SQL)
-        .await
-        .context("failed to run menu migrations")?;
-    storage
-        .run_migrations(MENUS_RBAC_MIGRATION_SQL)
-        .await
-        .context("failed to run menus rbac migrations")?;
-    storage
-        .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
-        .await
-        .context("failed to run unified policy migrations")?;
-    storage
-        .run_migrations(CMS_MIGRATION_SQL)
-        .await
-        .context("failed to run cms migrations")?;
-    run_plugin_governance_migration_if_needed(&storage).await?;
+        .context("failed to apply runtime migration catalog")?;
 
     let jwt = {
         let guard = config.get().await;
@@ -181,11 +134,6 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
         resolve_file_browser_root_dir(config_path, &guard.file_browser.root_dir)?
     };
 
-    let plugins_dir = {
-        let guard = config.get().await;
-        PathBuf::from(&guard.plugins.directory)
-    };
-
     config
         .update(|cfg| {
             cfg.web.static_dir = static_dir.to_string_lossy().to_string();
@@ -202,54 +150,85 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             )
         })?;
 
-    let mut lua_plugins = Vec::new();
-    let mut plugin_template_roots = Vec::new();
-    let mut plugin_static_roots = Vec::new();
-    if plugins_dir.exists() {
-        lua_plugins = LuaPlugin::scan_dir(&plugins_dir)
-            .await
-            .context("failed to scan plugins directory")?;
-        for plugin in &lua_plugins {
-            let plugin_path_id = plugin.path_id().to_string();
-            let template_root = plugin.web_templates_dir();
-            if template_root.is_dir() {
-                plugin_template_roots.push((plugin_path_id.clone(), template_root));
-            }
-            let static_root = plugin.web_static_dir();
-            if static_root.is_dir() {
-                plugin_static_roots.push((plugin_path_id, static_root));
-            }
+    let templates = TemplateService::new(&templates_dir)
+        .with_context(|| format!("failed to init template root {}", templates_dir.display()))?;
+
+    let ctx = SushiContext::new_with_runtime_profile(
+        config,
+        storage,
+        jwt,
+        templates,
+        runtime_profile.clone(),
+    );
+    tracing_bridge::register_log_service(ctx.logs.clone());
+
+    for entry in runtime_profile
+        .entries()
+        .iter()
+        .filter(|entry| entry.enabled)
+    {
+        if entry.source.builtin_key() == Some("identity") {
+            sushi_api::builtin::activate_identity(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("api-core") {
+            sushi_api::builtin::activate_api_core(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("admin-shell") {
+            sushi_admin::builtin::activate_admin_shell(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("host-admin") {
+            sushi_admin::builtin::activate_host_admin(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("governance") {
+            sushi_admin::builtin::activate_governance(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("rbac-admin") {
+            sushi_admin::builtin::activate_rbac_admin(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("menu-admin") {
+            sushi_admin::builtin::activate_menu_admin(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
+        } else if entry.source.builtin_key() == Some("policy") {
+            sushi_core::builtin::activate_policy(&ctx, entry)
+                .await
+                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
         }
     }
 
-    let templates =
-        TemplateService::new_with_plugin_roots(&templates_dir, plugin_template_roots)
-            .with_context(|| format!("failed to init template root {}", templates_dir.display()))?;
-
-    let ctx = SushiContext::new(config, storage, jwt, templates);
-    tracing_bridge::register_log_service(ctx.logs.clone());
-
-    for (plugin_name, static_root) in plugin_static_roots {
-        ctx.plugins
-            .register_plugin_static_root(&plugin_name, static_root)
-            .await;
-    }
-
     // Load plugins
-    for plugin in lua_plugins {
+    for (entry, plugin) in resolved_lua_plugins {
         let plugin_name = plugin.name().to_string();
         let plugin_path_id = plugin.path_id().to_string();
         let plugin_kind = plugin.kind();
+        ctx.runtime_host
+            .register_lua_source_for_instance(&plugin, entry.id.clone(), entry.required)
+            .await;
         ctx.plugins
-            .register_plugin_manifest_with_permissions_and_identity(
+            .register_profile_plugin_manifest(
                 plugin.manifest(),
                 plugin.effective_permissions(),
                 &plugin_path_id,
                 plugin_kind,
+                entry.enabled,
+                entry.required,
             )
             .await;
-        let _runtime_guard = ctx.plugins.acquire_plugin_runtime_lock(&plugin_name).await;
-
+        if !entry.enabled {
+            tracing::info!(
+                plugin = plugin_name,
+                entry = %entry.id,
+                "plugin is disabled by runtime profile; skipping init"
+            );
+            ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            continue;
+        }
         let enabled_before_init = match ctx.plugins.plugin_runtime_enabled(&plugin_name).await {
             Ok(enabled) => enabled,
             Err(err) => {
@@ -262,13 +241,18 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
                 continue;
             }
         };
-        if !enabled_before_init {
+        if !enabled_before_init && !entry.required {
             tracing::info!("plugin {plugin_name} is disabled by governance state; skipping init");
             ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
             continue;
         }
 
-        if let Err(e) = plugin.init(&ctx).await {
+        if let Err(e) = ctx.runtime_host.activate(&ctx, &plugin_name).await {
+            if entry.required {
+                return Err(anyhow::Error::new(e)).with_context(|| {
+                    format!("required runtime entry {} failed to activate", entry.id)
+                });
+            }
             tracing::warn!("failed to init plugin {plugin_name}: {e}");
             ctx.logs
                 .warn(&format!("failed to init plugin {plugin_name}: {e}"))
@@ -277,33 +261,10 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
             continue;
         }
 
-        let enabled_after_init = match ctx.plugins.plugin_runtime_enabled(&plugin_name).await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                let message = format!(
-                    "failed to resolve runtime state after init for plugin {plugin_name}: {err}; skipping VM registration"
-                );
-                tracing::warn!("{message}");
-                ctx.logs.warn(&message).await;
-                ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
-                continue;
-            }
-        };
-        if !enabled_after_init {
-            tracing::info!(
-                "plugin {plugin_name} became disabled during init; skipping VM registration"
-            );
-            ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
-            continue;
-        }
-
-        if let Some(lua) = plugin.into_vm() {
-            ctx.plugins.register_vm(&plugin_name, lua).await;
-            tracing::debug!("registered VM for plugin {plugin_name}");
-        }
+        tracing::debug!("activated Lua plugin {plugin_name}");
     }
 
-    hydrate_authorizer_snapshot(&ctx).await?;
+    sushi_core::builtin::refresh_policy(&ctx).await?;
 
     Ok(ctx)
 }
@@ -336,255 +297,117 @@ fn resolve_dir(config_path: Option<&Path>, dir: &str, kind: &str) -> Result<Path
     }
 }
 
-async fn hydrate_authorizer_snapshot(ctx: &SushiContext) -> Result<()> {
-    let storage: Arc<dyn Storage> = ctx.db.clone();
-    let repository = PolicyRepository::new(storage);
-    let snapshot = repository
-        .compile_snapshot()
-        .await
-        .map_err(anyhow::Error::msg)
-        .context("failed to compile policy snapshot from database")?;
-    ctx.authorizer.replace_snapshot(snapshot).await;
-    Ok(())
-}
-
-async fn migration_applied(storage: &SqliteStorage, migration_name: &str) -> Result<bool> {
-    let migration_name = migration_name.replace('\'', "''");
-    let query =
-        format!("SELECT 1 AS found FROM _sushi_migrations WHERE name = '{migration_name}' LIMIT 1");
-
-    let rows = storage
-        .query(&query, vec![])
-        .await
-        .context("failed to query migration history")?;
-    Ok(!rows.is_empty())
-}
-
-async fn run_plugin_governance_migration_if_needed(storage: &SqliteStorage) -> Result<()> {
-    if migration_applied(storage, PLUGIN_GOVERNANCE_MIGRATION_NAME)
-        .await
-        .context("failed to check plugin governance migration state")?
-    {
-        return Ok(());
-    }
-
-    match storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_SQL)
-        .await
-    {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            let err_message = err.to_string();
-            if is_duplicate_column_error(&err_message) {
-                recover_plugin_governance_migration(storage).await
-            } else {
-                Err(err).context("failed to run plugin governance migrations")
-            }
-        }
-    }
-}
-
-fn is_duplicate_column_error(error: &str) -> bool {
-    let lower = error.to_ascii_lowercase();
-    lower.contains("duplicate column name") || lower.contains("already exists")
-}
-
-async fn recover_plugin_governance_migration(storage: &SqliteStorage) -> Result<()> {
-    let existing_columns = plugin_state_columns(storage).await?;
-    let required_columns = [
-        (
-            "plugin_id",
-            "ALTER TABLE plugin_state ADD COLUMN plugin_id TEXT NOT NULL DEFAULT ''",
-        ),
-        (
-            "source_kind",
-            "ALTER TABLE plugin_state ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'third_party'",
-        ),
-        (
-            "updated_by",
-            "ALTER TABLE plugin_state ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''",
-        ),
-        (
-            "updated_at",
-            "ALTER TABLE plugin_state ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
-        ),
-        (
-            "reason",
-            "ALTER TABLE plugin_state ADD COLUMN reason TEXT NOT NULL DEFAULT ''",
-        ),
-    ];
-
-    for (column, alter_sql) in required_columns {
-        if !existing_columns.iter().any(|existing| existing == column) {
-            match storage.execute(alter_sql, vec![]).await {
-                Ok(()) => {}
-                Err(err) if is_duplicate_column_error(&err.to_string()) => {}
-                Err(err) => {
-                    return Err(err).with_context(|| {
-                        format!("failed to add missing plugin_state column `{column}`")
-                    });
-                }
-            }
-        }
-    }
-
-    storage
-        .run_migrations(PLUGIN_GOVERNANCE_MIGRATION_FINALIZE_SQL)
-        .await
-        .context("failed to finalize plugin governance migration")?;
-
-    if !migration_applied(storage, PLUGIN_GOVERNANCE_MIGRATION_NAME)
-        .await
-        .context("failed to verify plugin governance migration marker after recovery")?
-    {
-        anyhow::bail!("plugin governance migration recovery completed without migration marker");
-    }
-
-    Ok(())
-}
-
-async fn plugin_state_columns(storage: &SqliteStorage) -> Result<Vec<String>> {
-    let rows = storage
-        .query("PRAGMA table_info(plugin_state)", vec![])
-        .await
-        .context("failed to read plugin_state schema")?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|row| {
-            row.get("name")
-                .and_then(|value| value.as_str())
-                .map(ToString::to_string)
-        })
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
     use sushi_core::storage::Storage;
 
-    async fn run_base_migrations_to_007(storage: &SqliteStorage) {
-        storage.run_migrations(MIGRATION_SQL).await.unwrap();
-        storage.run_migrations(KV_MIGRATION_SQL).await.unwrap();
-        storage.run_migrations(RBAC_MIGRATION_SQL).await.unwrap();
-        storage.run_migrations(MENU_MIGRATION_SQL).await.unwrap();
-        storage
-            .run_migrations(MENUS_RBAC_MIGRATION_SQL)
-            .await
-            .unwrap();
-        storage
-            .run_migrations(UNIFIED_POLICY_V2_MIGRATION_SQL)
-            .await
-            .unwrap();
-        storage.run_migrations(CMS_MIGRATION_SQL).await.unwrap();
+    fn unique_temp_root(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("sushi-{label}-{unique}"))
     }
 
-    #[tokio::test]
-    async fn plugin_governance_migration_is_skipped_when_already_applied() {
-        let storage = SqliteStorage::new_in_memory().await.unwrap();
-        run_base_migrations_to_007(&storage).await;
-        storage
-            .execute(
-                "INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (8, '008_plugin_governance_v1')",
-                vec![],
-            )
-            .await
-            .unwrap();
+    fn write_test_plugin(root: &Path, name: &str, init_lua: &str) {
+        let plugin_dir = root.join("plugins").join("third_party").join(name);
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.toml"),
+            format!(
+                r#"
+[plugin]
+name = "{name}"
+version = "0.1.0"
+kind = "third_party"
+entry = "init.lua"
 
-        run_plugin_governance_migration_if_needed(&storage)
-            .await
-            .unwrap();
-
-        let columns = storage
-            .query("PRAGMA table_info(plugin_state)", vec![])
-            .await
-            .unwrap();
-        let has_plugin_id = columns
-            .iter()
-            .any(|column| column.get("name").and_then(|value| value.as_str()) == Some("plugin_id"));
-
-        assert!(
-            !has_plugin_id,
-            "migration should be skipped when already recorded in _sushi_migrations"
-        );
+[permissions]
+routes = true
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), init_lua).unwrap();
     }
 
-    #[tokio::test]
-    async fn plugin_governance_migration_applies_when_marker_missing() {
-        let storage = SqliteStorage::new_in_memory().await.unwrap();
-        run_base_migrations_to_007(&storage).await;
+    fn write_official_profile_stub(
+        root: &Path,
+        path_name: &str,
+        plugin_name: &str,
+        init_lua: &str,
+    ) {
+        let plugin_dir = root.join("plugins").join("official").join(path_name);
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.toml"),
+            format!(
+                r#"
+[plugin]
+name = "{plugin_name}"
+version = "0.1.0"
+kind = "official"
+entry = "init.lua"
 
-        run_plugin_governance_migration_if_needed(&storage)
-            .await
-            .unwrap();
+[permissions]
+routes = true
+commands = true
+admin = true
+database = "admin"
 
-        assert!(
-            migration_applied(&storage, PLUGIN_GOVERNANCE_MIGRATION_NAME)
-                .await
-                .unwrap()
-        );
-
-        let columns = plugin_state_columns(&storage).await.unwrap();
-        for required in [
-            "plugin_id",
-            "source_kind",
-            "updated_by",
-            "updated_at",
-            "reason",
-        ] {
-            assert!(
-                columns.iter().any(|column| column == required),
-                "expected column `{required}` to exist after applying migration"
-            );
+[policies]
+scopes = ["api.profile.*", "admin.profile.*", "cli.profile.*"]
+"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), init_lua).unwrap();
+        let migration = match path_name {
+            "cms" => Some((
+                "007_cms.sql",
+                include_str!("../../../migrations/007_cms.sql"),
+            )),
+            "kv-store" => Some((
+                "002_kv_store.sql",
+                include_str!("../../../migrations/002_kv_store.sql"),
+            )),
+            _ => None,
+        };
+        if let Some((file_name, sql)) = migration {
+            std::fs::create_dir_all(plugin_dir.join("migrations")).unwrap();
+            std::fs::write(plugin_dir.join("migrations").join(file_name), sql).unwrap();
         }
     }
 
-    #[tokio::test]
-    async fn plugin_governance_migration_recovers_from_partial_apply() {
-        let storage = SqliteStorage::new_in_memory().await.unwrap();
-        run_base_migrations_to_007(&storage).await;
-        storage
-            .execute(
-                "ALTER TABLE plugin_state ADD COLUMN plugin_id TEXT NOT NULL DEFAULT ''",
-                vec![],
-            )
-            .await
-            .unwrap();
+    fn write_profile_config(root: &Path, database_path: &Path) -> PathBuf {
+        let config_path = root.join("config.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"
+[database]
+path = "{}"
 
-        run_plugin_governance_migration_if_needed(&storage)
-            .await
-            .unwrap();
+[plugins]
+directory = "plugins"
 
-        assert!(
-            migration_applied(&storage, PLUGIN_GOVERNANCE_MIGRATION_NAME)
-                .await
-                .unwrap()
-        );
-        let columns = plugin_state_columns(&storage).await.unwrap();
-        for required in [
-            "plugin_id",
-            "source_kind",
-            "updated_by",
-            "updated_at",
-            "reason",
-        ] {
-            assert!(
-                columns.iter().any(|column| column == required),
-                "expected column `{required}` to exist after recovery"
-            );
-        }
-    }
+[web]
+templates_dir = "templates"
+static_dir = "static"
+static_url_prefix = "/static"
 
-    #[test]
-    fn duplicate_column_error_detection_is_case_insensitive() {
-        assert!(is_duplicate_column_error(
-            "duplicate column name: plugin_id"
-        ));
-        assert!(is_duplicate_column_error(
-            "DUPLICATE COLUMN NAME: plugin_id"
-        ));
-        assert!(!is_duplicate_column_error("no such table: plugin_state"));
+[runtime]
+profile = "default"
+profiles_dir = "profiles"
+bundles_dir = "bundles"
+"#,
+                database_path.display()
+            ),
+        )
+        .unwrap();
+        config_path
     }
 
     #[tokio::test]
@@ -629,8 +452,8 @@ end)
 
         let db_path_string = db_path.to_string_lossy().to_string();
         let storage = SqliteStorage::new(&db_path_string).await.unwrap();
-        run_base_migrations_to_007(&storage).await;
-        run_plugin_governance_migration_if_needed(&storage)
+        MigrationRunner::new(&storage)
+            .apply(&historical_builtin_migrations(true).unwrap())
             .await
             .unwrap();
         storage
@@ -674,6 +497,407 @@ static_url_prefix = "/static"
                 .is_none(),
             "disabled plugin side effects should not be registered during bootstrap"
         );
+
+        let enabled = ctx
+            .set_plugin_enabled(
+                "skip-probe",
+                true,
+                Some("admin"),
+                Some("enable after bootstrap"),
+            )
+            .await
+            .unwrap();
+        assert!(enabled.enabled);
+        assert!(enabled.loaded);
+        assert_eq!(
+            ctx.plugins
+                .call_api_handler("GET", "/api/bootstrap-skip-proof", None)
+                .await
+                .unwrap()
+                .unwrap(),
+            "init-ran"
+        );
+
+        let disabled = ctx
+            .set_plugin_enabled(
+                "skip-probe",
+                false,
+                Some("admin"),
+                Some("disable after enable"),
+            )
+            .await
+            .unwrap();
+        assert!(!disabled.enabled);
+        assert!(!disabled.loaded);
+        assert!(ctx
+            .plugins
+            .call_api_handler("GET", "/api/bootstrap-skip-proof", None)
+            .await
+            .is_none());
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn profile_entries_control_owner_required_and_disabled_activation() {
+        let temp_root = unique_temp_root("profile-bootstrap");
+        std::fs::create_dir_all(temp_root.join("profiles")).unwrap();
+        std::fs::create_dir_all(temp_root.join("bundles")).unwrap();
+        write_test_plugin(
+            &temp_root,
+            "required-probe",
+            r#"
+sushi.api.route("GET", "/api/profile-owner", function()
+    return "active"
+end)
+"#,
+        );
+        write_test_plugin(
+            &temp_root,
+            "disabled-probe",
+            r#"
+sushi.api.route("GET", "/api/profile-disabled", function()
+    return "unexpected"
+end)
+"#,
+        );
+        std::fs::write(
+            temp_root.join("bundles/test.toml"),
+            r#"
+schema_version = 1
+name = "test"
+
+[[entries]]
+id = "probe.required"
+source = "lua:third_party/required-probe"
+enabled = true
+required = true
+
+[[entries]]
+id = "probe.disabled"
+source = "lua:third_party/disabled-probe"
+enabled = false
+required = false
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp_root.join("profiles/default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"test\"]\n",
+        )
+        .unwrap();
+        let config_path = write_profile_config(&temp_root, &temp_root.join("data/sushi.db"));
+
+        let ctx = bootstrap(Some(&config_path)).await.unwrap();
+        let inspection = ctx.plugins.capability_snapshot().await.inspect();
+        let route = inspection
+            .iter()
+            .find(|entry| entry.key == "http:api:GET:/api/profile-owner")
+            .expect("required profile route should be active");
+        assert_eq!(route.owner.as_str(), "probe.required");
+        assert!(ctx.runtime_host.is_required("required-probe").await);
+        assert!(ctx
+            .plugins
+            .call_api_handler("GET", "/api/profile-disabled", None)
+            .await
+            .is_none());
+        let states = ctx.plugins.list_plugins().await;
+        let disabled = states
+            .iter()
+            .find(|plugin| plugin.name == "disabled-probe")
+            .unwrap();
+        assert!(!disabled.enabled);
+        assert!(!disabled.loaded);
+        let error = ctx
+            .set_plugin_enabled("required-probe", false, Some("admin"), Some("must fail"))
+            .await
+            .unwrap_err();
+        assert!(error.starts_with("required_plugin_toggle_forbidden:"));
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn invalid_profile_fails_before_database_creation() {
+        let temp_root = unique_temp_root("profile-fail-closed");
+        std::fs::create_dir_all(temp_root.join("profiles")).unwrap();
+        std::fs::write(
+            temp_root.join("profiles/default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"missing\"]\n",
+        )
+        .unwrap();
+        let database_path = temp_root.join("data/sushi.db");
+        let config_path = write_profile_config(&temp_root, &database_path);
+
+        let error = match bootstrap(Some(&config_path)).await {
+            Ok(_) => panic!("invalid profile should fail before bootstrap"),
+            Err(error) => error,
+        };
+        assert!(error
+            .to_string()
+            .contains("failed to resolve runtime profile"));
+        assert!(!database_path.exists());
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn required_profile_activation_failure_aborts_bootstrap() {
+        let temp_root = unique_temp_root("required-profile-failure");
+        std::fs::create_dir_all(temp_root.join("profiles")).unwrap();
+        std::fs::create_dir_all(temp_root.join("bundles")).unwrap();
+        write_test_plugin(&temp_root, "broken-required", "error('activation failed')");
+        std::fs::write(
+            temp_root.join("bundles/test.toml"),
+            r#"
+schema_version = 1
+name = "test"
+
+[[entries]]
+id = "probe.broken"
+source = "lua:third_party/broken-required"
+enabled = true
+required = true
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp_root.join("profiles/default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"test\"]\n",
+        )
+        .unwrap();
+        let config_path = write_profile_config(&temp_root, &temp_root.join("data/sushi.db"));
+
+        let error = match bootstrap(Some(&config_path)).await {
+            Ok(_) => panic!("required activation failure should abort bootstrap"),
+            Err(error) => error,
+        };
+        assert!(error
+            .to_string()
+            .contains("required runtime entry probe.broken failed to activate"));
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn shipped_profiles_produce_golden_capability_maps() {
+        let temp_root = unique_temp_root("profile-capability-golden");
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        write_official_profile_stub(
+            &temp_root,
+            "cms",
+            "cms",
+            r#"
+function app.init()
+    app.api.route("GET", "/api/profile/cms", function() return "cms" end)
+    app.cli.command("cms-probe", "CMS probe", function() return "cms" end)
+    app.admin.page("/admin/profile/cms", "CMS probe", function() return "cms" end)
+end
+"#,
+        );
+        write_official_profile_stub(
+            &temp_root,
+            "file-browser",
+            "file-browser",
+            r#"
+function app.init()
+    app.api.route("GET", "/app/profile/files", function() return "files" end)
+end
+"#,
+        );
+        write_official_profile_stub(
+            &temp_root,
+            "kv-store",
+            "kv-store",
+            r#"
+function app.init()
+    app.api.route("GET", "/api/profile/kv", function() return "kv" end)
+    app.cli.command("kv-probe", "KV probe", function() return "kv" end, { policy = "cli.profile.kv" })
+    app.admin.page("/admin/profile/kv", "KV probe", function() return "kv" end)
+end
+"#,
+        );
+        let expected_full = include_str!("../tests/fixtures/profile/full_capabilities.txt")
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        for (profile, expected_api, expected_admin) in [
+            ("default", true, true),
+            ("api", true, false),
+            ("admin", false, true),
+            ("minimal", false, false),
+        ] {
+            let profile_root = temp_root.join(profile);
+            let database_path = profile_root.join("data/sushi.db");
+            std::fs::create_dir_all(&profile_root).unwrap();
+            let config_path = profile_root.join("config.toml");
+            std::fs::write(
+                &config_path,
+                format!(
+                    r#"
+[database]
+path = "{}"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "templates"
+static_dir = "static"
+static_url_prefix = "/static"
+
+[runtime]
+profile = "{profile}"
+profiles_dir = "{}"
+bundles_dir = "{}"
+"#,
+                    database_path.display(),
+                    temp_root.join("plugins").display(),
+                    repo_root.join("profiles").display(),
+                    repo_root.join("bundles").display(),
+                ),
+            )
+            .unwrap();
+
+            let ctx = bootstrap(Some(&config_path)).await.unwrap();
+            let policy = ctx
+                .plugins
+                .list_plugins()
+                .await
+                .into_iter()
+                .find(|plugin| plugin.name == "policy")
+                .expect("policy builtin should be registered");
+            assert_eq!(policy.plugin_id, "builtin/policy", "profile {profile}");
+            assert_eq!(policy.source_kind, "builtin", "profile {profile}");
+            assert!(policy.enabled, "profile {profile}");
+            assert!(policy.loaded, "profile {profile}");
+            assert_eq!(policy.permissions.database, "admin", "profile {profile}");
+            assert!(
+                ctx.plugins.is_plugin_required("policy").await,
+                "profile {profile}"
+            );
+            let toggle_error = ctx
+                .set_plugin_enabled("policy", false, Some("test"), Some("required guard"))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                toggle_error,
+                "required_plugin_toggle_forbidden: plugin 'policy' must be changed through profile and restart",
+                "profile {profile}"
+            );
+            assert_eq!(
+                ctx.authorizer.has_command_binding("cli", "kv-probe").await,
+                profile != "minimal",
+                "profile {profile} Lua policy binding hydration"
+            );
+            let migration_rows = ctx
+                .db
+                .query(
+                    "SELECT plugin_id, migration_id FROM plugin_migrations ORDER BY migration_id",
+                    vec![],
+                )
+                .await
+                .unwrap();
+            let migration_ids = migration_rows
+                .iter()
+                .filter_map(|row| row.get("migration_id").and_then(|value| value.as_str()))
+                .collect::<Vec<_>>();
+            assert!(migration_ids.contains(&"001_init"));
+            assert!(migration_ids.contains(&"003_rbac"));
+            assert!(migration_ids.contains(&"006_unified_policy_v2"));
+            assert!(migration_ids.contains(&"008_plugin_governance_v1"));
+            let policy_migration_owners = migration_rows
+                .iter()
+                .filter(|row| {
+                    matches!(
+                        row.get("migration_id").and_then(|value| value.as_str()),
+                        Some("003_rbac" | "006_unified_policy_v2")
+                    )
+                })
+                .filter_map(|row| row.get("plugin_id").and_then(|value| value.as_str()))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                policy_migration_owners,
+                vec!["builtin/policy", "builtin/policy"],
+                "profile {profile}"
+            );
+            if expected_admin {
+                assert!(migration_ids.contains(&"004_menu"));
+                assert!(migration_ids.contains(&"005_menus_rbac"));
+                assert!(migration_ids.contains(&"009_menu_contributions"));
+            } else {
+                assert!(!migration_ids.contains(&"004_menu"));
+                assert!(!migration_ids.contains(&"005_menus_rbac"));
+                assert!(!migration_ids.contains(&"009_menu_contributions"));
+            }
+            if profile != "minimal" {
+                assert!(migration_ids.contains(&"007_cms"));
+                assert!(migration_ids.contains(&"002_kv_store"));
+            } else {
+                assert!(!migration_ids.contains(&"007_cms"));
+                assert!(!migration_ids.contains(&"002_kv_store"));
+            }
+            let actual = ctx
+                .plugins
+                .capability_snapshot()
+                .await
+                .inspect()
+                .into_iter()
+                .map(|entry| format!("{}\towner={}", entry.key, entry.owner))
+                .collect::<Vec<_>>();
+            let expected = expected_full
+                .iter()
+                .filter(|entry| expected_api || !entry.ends_with("owner=identity.core"))
+                .filter(|entry| expected_api || !entry.ends_with("owner=api.core"))
+                .filter(|entry| expected_admin || !entry.ends_with("owner=admin.shell"))
+                .filter(|entry| expected_admin || !entry.ends_with("owner=host.admin"))
+                .filter(|entry| expected_admin || !entry.ends_with("owner=governance.admin"))
+                .filter(|entry| expected_admin || !entry.ends_with("owner=rbac.admin"))
+                .filter(|entry| expected_admin || !entry.ends_with("owner=menu.admin"))
+                .cloned()
+                .collect::<Vec<_>>();
+            if profile == "minimal" {
+                assert!(actual.is_empty());
+            } else {
+                assert_eq!(actual, expected, "profile {profile}");
+            }
+            assert_eq!(
+                ctx.runtime_profile.has_enabled_builtin("identity")
+                    && ctx.runtime_profile.has_enabled_builtin("api-core"),
+                expected_api,
+                "profile {profile} api surface"
+            );
+            assert_eq!(
+                ctx.runtime_profile.has_enabled_builtin("admin-shell"),
+                expected_admin,
+                "profile {profile} Admin Shell surface"
+            );
+            assert_eq!(
+                ctx.runtime_profile.has_enabled_builtin("governance"),
+                expected_admin,
+                "profile {profile} governance surface"
+            );
+            assert_eq!(
+                ctx.runtime_profile.has_enabled_builtin("host-admin"),
+                expected_admin,
+                "profile {profile} admin surface"
+            );
+            assert_eq!(
+                ctx.runtime_profile.has_enabled_builtin("rbac-admin"),
+                expected_admin,
+                "profile {profile} RBAC Admin surface"
+            );
+            assert_eq!(
+                ctx.runtime_profile.has_enabled_builtin("menu-admin"),
+                expected_admin,
+                "profile {profile} Menu Admin surface"
+            );
+            assert!(
+                ctx.runtime_profile.has_enabled_builtin("policy"),
+                "profile {profile} policy surface"
+            );
+        }
 
         std::fs::remove_dir_all(&temp_root).ok();
     }

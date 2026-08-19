@@ -1,5 +1,6 @@
 use anyhow::{Error, Result};
 use clap::{Args, Subcommand};
+use std::path::Path;
 use sushi_core::plugin::manager::PluginInfo;
 
 #[derive(Args)]
@@ -35,8 +36,13 @@ pub enum PluginCommand {
     },
 }
 
-pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
-    let ctx = crate::app::bootstrap(None).await?;
+pub async fn run(
+    args: PluginArgs,
+    role: &str,
+    config_path: &Path,
+    profile_override: Option<&str>,
+) -> Result<()> {
+    let ctx = crate::app::bootstrap_with_profile(Some(config_path), profile_override).await?;
 
     match args.command {
         PluginCommand::List => {
@@ -77,7 +83,6 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
                 .await?;
 
             let state = ctx
-                .plugins
                 .set_plugin_enabled(&plugin, true, Some(role), reason.as_deref())
                 .await
                 .map_err(map_toggle_error)?;
@@ -88,7 +93,6 @@ pub async fn run(args: PluginArgs, role: &str) -> Result<()> {
                 .await?;
 
             let state = ctx
-                .plugins
                 .set_plugin_enabled(&plugin, false, Some(role), reason.as_deref())
                 .await
                 .map_err(map_toggle_error)?;
