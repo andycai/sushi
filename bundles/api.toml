@@ -1,0 +1,14 @@
+schema_version = 1
+name = "api"
+
+[[entries]]
+id = "identity.core"
+source = "builtin:identity"
+enabled = true
+required = true
+
+[[entries]]
+id = "api.core"
+source = "builtin:api-core"
+enabled = true
+required = true

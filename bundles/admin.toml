@@ -1,0 +1,32 @@
+schema_version = 1
+name = "admin"
+
+[[entries]]
+id = "admin.shell"
+source = "builtin:admin-shell"
+enabled = true
+required = true
+
+[[entries]]
+id = "host.admin"
+source = "builtin:host-admin"
+enabled = true
+required = true
+
+[[entries]]
+id = "governance.admin"
+source = "builtin:governance"
+enabled = true
+required = true
+
+[[entries]]
+id = "rbac.admin"
+source = "builtin:rbac-admin"
+enabled = true
+required = true
+
+[[entries]]
+id = "menu.admin"
+source = "builtin:menu-admin"
+enabled = true
+required = true

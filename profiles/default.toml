@@ -1,0 +1,3 @@
+schema_version = 1
+name = "default"
+bundles = ["base", "api", "admin", "official"]

@@ -1,0 +1,26 @@
+schema_version = 1
+name = "official"
+
+[[entries]]
+id = "cms.default"
+source = "lua:official/cms"
+enabled = true
+required = false
+
+[entries.grants]
+database = "admin"
+
+[[entries]]
+id = "file-browser.default"
+source = "lua:official/file-browser"
+enabled = true
+required = false
+
+[[entries]]
+id = "kv-store.default"
+source = "lua:official/kv-store"
+enabled = true
+required = false
+
+[entries.grants]
+database = "admin"

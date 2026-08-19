@@ -41,6 +41,16 @@ function M.register(deps)
         policy = "admin.kv.manage",
         assets = { bundles = { "workspace" } },
     })
+    app.capability.register({
+        surface = "menu",
+        id = "kv-store.default",
+        label = "KV Store",
+        icon = "database",
+        position = 51,
+        parent_id = "host-admin.plugins",
+        route = "/admin/kv",
+        policy = "admin.kv.manage",
+    })
 
     app.cli.command("kv-list", "List all KV entries", deps.cli.kv_list, { policy = "cli.kv.list" })
     app.cli.command("kv-get", "Get a KV entry by key", deps.cli.kv_get, { policy = "cli.kv.get" })

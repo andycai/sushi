@@ -194,6 +194,16 @@ function M.register(deps)
             return app.web.render("plugins/official/cms/cms.html")
         end,
     })
+    app.capability.register({
+        surface = "menu",
+        id = "cms.default",
+        label = "CMS",
+        icon = "file-text",
+        position = 52,
+        parent_id = "host-admin.plugins",
+        route = "/admin/cms",
+        policy = "admin.cms.read",
+    })
 
     register_cli_command({
         name = "cms",
