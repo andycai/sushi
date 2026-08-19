@@ -65,12 +65,18 @@
 
 每份活跃 Agent Note 遵循统一的文件内格式，由 `mozi-agent-notes/scripts/validate_agent_notes.py` 检查。归档记录保留封存时的格式，并增加上述归档日期行。
 
+### 文档语言
+
+<!-- agent-note-contract: language=zh-CN; fixed-headings=zh-CN -->
+
+本仓库生成或更新的 Agent Note 标题、固定章节标题和正文必须使用中文。以下内容可以保留英文：`Status:` 和 `Archived:` 元数据、生命周期与分类值、代码标识符、命令、路径、协议名称及无法准确翻译的专有名词。不得因为参考资料、测试夹具或技能示例使用英文，就输出英文 Note 正文或英文固定章节标题。验证器会拒绝标题或正文完全不含中文的活跃 Note，也会拒绝固定章节使用英文或中英双语标题；这只是最低限度的机械检查，不能替代人工语言审查。
+
 ### 头部块
 
 每份 Agent Note 的前三行严格为：
 
 ```markdown
-# Agent Note: <title>
+# Agent Note: <中文动作导向标题>
 
 Status: <status>
 ```
@@ -79,49 +85,49 @@ Status: <status>
 
 - `Status: proposed`
 - `Status: implemented`
-- `Status: rejected — <why, in one line>`
+- `Status: rejected — <中文单行原因>`
 
 状态行不带日期、不带括号补充说明：文件名记录首次提出日期，git 记录其余一切；「以修订形式接受」之类的说明属于正文内容（在陈述决策的地方说明修订）。拒绝原因是唯一带内容的状态，因为读者查阅被否决的 Agent Note 时，结论正是他们要找的。
 
 ### 正文骨架
 
-每份 Agent Note 的正文以 `## Problem` 开头：动机，写法上不依赖解决方案即可独立成文。后续内容取决于生命周期；固定章节使用以下规范名称且仅限这些名称，而真正独特的技术章节（包拓扑、协议约定、schema 等）在必需章节之间可自由组织。
+每份 Agent Note 的正文以 `## 问题` 开头：动机，写法上不依赖解决方案即可独立成文。固定章节标题只使用下方定义的中文名称；真正独特的技术章节（包拓扑、协议约定、schema 等）在必需章节之间可自由组织，并使用中文标题。
 
 #### `proposed/`
 
 ```markdown
-## Problem
-## Proposal
-…bespoke sections…
-## Alternatives considered
-## Acceptance criteria
-## Risks
+## 问题
+## 提案
+…中文自定义章节…
+## 曾考虑的替代方案
+## 验收标准
+## 风险
 ```
 
-`## Proposal` 描述拟议的变更，可以合理地使用将来时态——计划、迁移步骤和待解决问题在工作尚未完成时属于此处。`## Acceptance criteria` 说明什么可观察状态意味着完成。`## Risks` 涵盖可能出错的事项以及该变更有意放弃的东西。
+`## 提案` 描述拟议的变更，可以合理地使用将来时态——计划、迁移步骤和待解决问题在工作尚未完成时属于此处。`## 验收标准` 说明什么可观察状态意味着完成。`## 风险` 涵盖可能出错的事项以及该变更有意放弃的东西。
 
 #### `implemented/`
 
 ```markdown
-## Problem
-## Decision
-…bespoke sections…
-## Alternatives considered
-## Consequences
+## 问题
+## 决策
+…中文自定义章节…
+## 曾考虑的替代方案
+## 后果
 ```
 
-`## Decision` 以现在时态描述已交付的现实，整个文件按 [implemented/AGENTS.md](implemented/AGENTS.md) 的要求与之保持同步。`## Consequences` 记录权衡的代价**与**收益。提案阶段的标题在此属于规格用语：`## Proposal`、`## Plan`、`## Migration plan` 和 `## Acceptance criteria` 不得出现在 implemented Agent Note 中。`## Testing`、`## Deferred` 或 `## Related` 章节在陈述现在时态的事实时是允许的。
+`## 决策` 以现在时态描述已交付的现实，整个文件按 [implemented/AGENTS.md](implemented/AGENTS.md) 的要求与之保持同步。`## 后果` 记录权衡的代价**与**收益。提案阶段的标题在此属于规格用语：`## 提案`、`## 计划`、`## 迁移计划` 和 `## 验收标准` 不得出现在 implemented Agent Note 中。`## 测试`、`## 验证`、`## 延后事项` 或 `## 相关内容` 章节在陈述现在时态的事实时是允许的。
 
 #### `rejected/`
 
-被否决的 Agent Note 是冻结的提案：保留提案时的所有章节（包括 `## Acceptance criteria` 或 `## Plan`），结论写在 `Status:` 行上。仅头部块、`## Problem` 开头、`## Proposal` 章节以及下方的「曾考虑的替代方案」强制要求适用。
+被否决的 Agent Note 是冻结的提案：保留提案时的所有章节（包括 `## 验收标准` 或 `## 计划`），结论写在 `Status:` 行上。仅头部块、`## 问题` 开头、`## 提案` 章节以及下方的「曾考虑的替代方案」强制要求适用。
 
 ### 曾考虑的替代方案——必需
 
-每份 Agent Note 都必须包含 `## Alternatives considered` 章节：每个真实的替代方案及其落选原因，每个替代方案用一个加粗引导的段落，或对争议较大的替代方案用 `### Why not <X>?` 子节。记录决策时不记录它击败了什么，就是在邀请反复争论——这正是 Agent Note 旨在防止的问题。
+每份 Agent Note 都必须包含 `## 曾考虑的替代方案` 章节：每个真实的替代方案及其落选原因，每个替代方案用一个加粗引导的中文段落，或对争议较大的替代方案用 `### 为什么不选择 <X>？` 子节。记录决策时不记录它击败了什么，就是在邀请反复争论——这正是 Agent Note 旨在防止的问题。
 
-替代方案是记录下来的，不是凭空编造的。当前仓库所有 Agent Note 都必须包含 `## Alternatives considered`；如果没有真实备选方案，应明确说明没有，而不是省略章节或创造不存在的选项。
+替代方案是记录下来的，不是凭空编造的。当前仓库所有 Agent Note 都必须包含 `## 曾考虑的替代方案`；如果没有真实备选方案，应明确说明没有，而不是省略章节或创造不存在的选项。
 
 ### 在生命周期之间移动
 
-将文件在生命周期文件夹之间移动意味着在同一个变更中更新 `Status:` 行并满足目标文件夹的骨架要求，否则验证器会失败。具体而言，`proposed/` → `implemented/` 将 `## Proposal` 改写为现在时态的 `## Decision`，将 `## Acceptance criteria` 和 `## Risks` 折入 `## Consequences`（或折入一个现在时态的 `## Testing`/`## Verification` 章节，用于描述现在锁定该行为的内容），并用实际交付的内容替换计划——也就是将 [implemented/AGENTS.md](implemented/AGENTS.md) 所要求的改写变成可机械检查的规则。`proposed/` → `rejected/` 仅在 `Status:` 行添加原因并冻结文件。
+将文件在生命周期文件夹之间移动意味着在同一个变更中更新 `Status:` 行并满足目标文件夹的骨架要求，否则验证器会失败。具体而言，`proposed/` → `implemented/` 将 `## 提案` 改写为现在时态的 `## 决策`，将 `## 验收标准` 和 `## 风险` 折入 `## 后果`（或折入一个现在时态的 `## 测试`/`## 验证` 章节，用于描述现在锁定该行为的内容），并用实际交付的内容替换计划——也就是将 [implemented/AGENTS.md](implemented/AGENTS.md) 所要求的改写变成可机械检查的规则。`proposed/` → `rejected/` 仅在 `Status:` 行添加原因并冻结文件。
