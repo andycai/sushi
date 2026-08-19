@@ -154,7 +154,7 @@ fn cms_admin_interface_exposes_workbench_handlers() {
     assert!(source.contains("post.get_by_slug(slug_value, { only_published = false })"));
     assert!(source.contains("cms_overview_template_fallback_marker"));
     assert!(source.contains(
-        "pcall(sushi.web.render, \"plugins/official/cms/fragments/overview_panel.html\", data)"
+        "pcall(app.web.render, \"plugins/official/cms/fragments/overview_panel.html\", data)"
     ));
 }
 
@@ -174,10 +174,10 @@ fn cms_register_uses_v2_policy_key_shape_and_public_app_routes() {
     )
     .expect("failed to read cms bootstrap register");
 
-    assert!(source.contains("sushi.capability.register"));
-    assert!(!source.contains("sushi.api.route("));
-    assert!(!source.contains("sushi.cli.command("));
-    assert!(!source.contains("sushi.web.page("));
+    assert!(source.contains("app.capability.register"));
+    assert!(!source.contains("app.api.route("));
+    assert!(!source.contains("app.cli.command("));
+    assert!(!source.contains("app.web.page("));
     assert!(source.contains("policy = \"api.cms.read\""));
     assert!(source.contains("policy = \"api.cms.write\""));
     assert!(source.contains("policy = \"api.cms.delete\""));

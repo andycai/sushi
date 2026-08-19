@@ -1,32 +1,39 @@
+#![allow(deprecated)]
+
 pub mod event;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Registered API route.
+#[deprecated(note = "use runtime::OwnedRegistration<HttpRouteSpec>")]
 pub struct RouteEntry {
     pub method: String,
     pub path: String,
 }
 
 /// Registered admin page.
+#[deprecated(note = "use runtime::OwnedRegistration<AdminPageSpec>")]
 pub struct AdminPageEntry {
     pub path: String,
     pub title: String,
 }
 
 /// Registered admin widget.
+#[deprecated(note = "widgets will migrate to the owner-scoped runtime registry")]
 pub struct AdminWidgetEntry {
     pub name: String,
 }
 
 /// Registered CLI command.
+#[deprecated(note = "use runtime::OwnedRegistration<CliCommandSpec>")]
 pub struct CliCommandEntry {
     pub name: String,
     pub description: String,
 }
 
 /// API route registry.
+#[deprecated(note = "use runtime::CapabilityRegistry")]
 #[derive(Default)]
 pub struct ApiRegistry {
     pub routes: Arc<Mutex<Vec<RouteEntry>>>,
@@ -62,6 +69,7 @@ impl Clone for ApiRegistry {
 }
 
 /// Admin page/widget registry.
+#[deprecated(note = "use runtime::CapabilityRegistry")]
 #[derive(Default)]
 pub struct AdminRegistry {
     pub pages: Arc<Mutex<Vec<AdminPageEntry>>>,
@@ -97,6 +105,7 @@ impl Clone for AdminRegistry {
 }
 
 /// CLI command registry.
+#[deprecated(note = "use runtime::CapabilityRegistry")]
 #[derive(Default)]
 pub struct CliRegistry {
     pub commands: Arc<Mutex<Vec<CliCommandEntry>>>,

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod builtin;
 pub mod config;
 pub mod context;
 pub mod db;
@@ -7,5 +8,6 @@ pub mod logs;
 pub mod lua;
 pub mod plugin;
 pub mod registry;
+pub mod runtime;
 pub mod storage;
 pub mod web;

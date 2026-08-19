@@ -17,6 +17,8 @@ pub struct SushiConfig {
     pub file_browser: FileBrowserConfig,
     #[serde(default)]
     pub web: WebConfig,
+    #[serde(default)]
+    pub runtime: RuntimeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +135,34 @@ pub struct PluginsConfig {
     pub directory: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfig {
+    #[serde(default)]
+    pub profile: Option<String>,
+    #[serde(default = "default_profiles_dir")]
+    pub profiles_dir: String,
+    #[serde(default = "default_bundles_dir")]
+    pub bundles_dir: String,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            profile: None,
+            profiles_dir: default_profiles_dir(),
+            bundles_dir: default_bundles_dir(),
+        }
+    }
+}
+
+fn default_profiles_dir() -> String {
+    "profiles".to_string()
+}
+
+fn default_bundles_dir() -> String {
+    "bundles".to_string()
+}
+
 impl Default for PluginsConfig {
     fn default() -> Self {
         Self {
@@ -204,6 +234,7 @@ impl Default for SushiConfig {
             plugins: PluginsConfig::default(),
             file_browser: FileBrowserConfig::default(),
             web: WebConfig::default(),
+            runtime: RuntimeConfig::default(),
         }
     }
 }
@@ -283,6 +314,11 @@ root_dir = "/srv/files"
 templates_dir = "custom/templates"
 static_dir = "static/www"
 static_url_prefix = "/assets"
+
+[runtime]
+profile = "admin"
+profiles_dir = "runtime/profiles"
+bundles_dir = "runtime/bundles"
 "#;
         let config: SushiConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.host, "0.0.0.0");
@@ -295,6 +331,9 @@ static_url_prefix = "/assets"
         assert_eq!(config.web.templates_dir, "custom/templates");
         assert_eq!(config.web.static_dir, "static/www");
         assert_eq!(config.web.static_url_prefix, "/assets");
+        assert_eq!(config.runtime.profile.as_deref(), Some("admin"));
+        assert_eq!(config.runtime.profiles_dir, "runtime/profiles");
+        assert_eq!(config.runtime.bundles_dir, "runtime/bundles");
     }
 
     #[test]
@@ -310,6 +349,9 @@ static_url_prefix = "/assets"
         assert_eq!(config.web.templates_dir, "web/templates");
         assert_eq!(config.web.static_dir, "web/static");
         assert_eq!(config.web.static_url_prefix, "/static");
+        assert_eq!(config.runtime.profile, None);
+        assert_eq!(config.runtime.profiles_dir, "profiles");
+        assert_eq!(config.runtime.bundles_dir, "bundles");
     }
 
     #[test]
@@ -321,6 +363,9 @@ static_url_prefix = "/assets"
         assert_eq!(config.web.templates_dir, "web/templates");
         assert_eq!(config.web.static_dir, "web/static");
         assert_eq!(config.web.static_url_prefix, "/static");
+        assert_eq!(config.runtime.profile, None);
+        assert_eq!(config.runtime.profiles_dir, "profiles");
+        assert_eq!(config.runtime.bundles_dir, "bundles");
     }
 
     #[tokio::test]

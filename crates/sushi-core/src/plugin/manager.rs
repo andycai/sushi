@@ -1,10 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 use super::state_repository::PluginStateRepository;
 use super::{DatabasePermission, Permissions, PluginKind, PluginManifest};
+use crate::runtime::{
+    AdminPageSpec, CapabilityRegistry, CapabilitySnapshot, CliCommandSpec, HttpRequest,
+    HttpResponse, HttpRouteSpec, LuaRuntimeInstance, PendingCapabilityCommit, PluginInstanceId,
+    RegistrationConflict, RegistrationSource, StagedRegistrar, StaticRootSpec,
+};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PluginPermissionsView {
@@ -39,67 +44,15 @@ pub struct PageResolvedAssets {
     pub css: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-struct ApiHandlerBinding {
-    plugin_name: String,
-    handler_key: String,
-    policy_key: Option<String>,
-    is_public: bool,
-}
-
-#[derive(Debug, Clone)]
-struct CliHandlerBinding {
-    plugin_name: String,
-    handler_key: String,
-    policy_key: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct AdminHandlerBinding {
-    plugin_name: String,
-    handler_key: String,
-    policy_key: Option<String>,
-    title: String,
-    assets: PageResolvedAssets,
-}
-
 /// Manages loaded Lua plugin VMs and dispatches handler calls.
 #[derive(Clone, Default)]
 pub struct PluginManager {
-    vms: Arc<RwLock<HashMap<String, mlua::Lua>>>,
-    api_handlers: Arc<RwLock<HashMap<(String, String), ApiHandlerBinding>>>,
-    cli_handlers: Arc<RwLock<HashMap<String, CliHandlerBinding>>>,
-    admin_handlers: Arc<RwLock<HashMap<String, AdminHandlerBinding>>>,
+    vms: Arc<RwLock<HashMap<String, Arc<LuaRuntimeInstance>>>>,
     plugin_info: Arc<RwLock<HashMap<String, PluginInfo>>>,
-    plugin_static_roots: Arc<RwLock<HashMap<String, PathBuf>>>,
+    required_plugins: Arc<RwLock<HashSet<String>>>,
+    capabilities: CapabilityRegistry,
     state_repo: Option<Arc<PluginStateRepository>>,
     plugin_runtime_locks: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>,
-}
-
-fn match_api_handler_binding(
-    map: &HashMap<(String, String), ApiHandlerBinding>,
-    method: &str,
-    path: &str,
-) -> Option<ApiHandlerBinding> {
-    let method_upper = method.to_uppercase();
-
-    if let Some(binding) = map.get(&(method_upper.clone(), path.to_string())) {
-        return Some(binding.clone());
-    }
-
-    let mut best_match = None;
-    let mut longest_prefix_len = 0;
-    for ((registered_method, registered_path), binding) in map.iter() {
-        if registered_method == &method_upper && registered_path.ends_with('*') {
-            let prefix = &registered_path[..registered_path.len() - 1];
-            if path.starts_with(prefix) && prefix.len() > longest_prefix_len {
-                longest_prefix_len = prefix.len();
-                best_match = Some(binding.clone());
-            }
-        }
-    }
-
-    best_match
 }
 
 impl PluginManager {
@@ -114,9 +67,98 @@ impl PluginManager {
         }
     }
 
+    pub fn new_with_sqlite_storage(storage: Arc<crate::storage::sqlite::SqliteStorage>) -> Self {
+        Self {
+            state_repo: Some(Arc::new(PluginStateRepository::new_sqlite(storage))),
+            ..Self::default()
+        }
+    }
+
     pub async fn register_plugin_manifest(&self, manifest: &PluginManifest) {
         self.register_plugin_manifest_with_permissions(manifest, &manifest.permissions)
             .await;
+    }
+
+    pub async fn register_builtin_profile_plugin(
+        &self,
+        plugin_id: &str,
+        plugin_name: &str,
+        version: &str,
+        description: &str,
+        permissions: &Permissions,
+        default_enabled: bool,
+        required: bool,
+    ) {
+        self.set_plugin_required(plugin_name, required).await;
+        let existing = self.plugin_info.read().await.get(plugin_name).cloned();
+        let mut resolved_plugin_id = plugin_id.to_string();
+        let mut enabled = existing
+            .as_ref()
+            .map(|plugin| plugin.enabled)
+            .unwrap_or(default_enabled);
+        let mut loaded = existing
+            .as_ref()
+            .map(|plugin| plugin.loaded)
+            .unwrap_or(false);
+        let mut resolved_version = version.to_string();
+
+        if let Some(repo) = &self.state_repo {
+            if let Err(error) = repo
+                .upsert_profile_plugin(
+                    plugin_id,
+                    plugin_name,
+                    "builtin",
+                    version,
+                    default_enabled,
+                    required,
+                )
+                .await
+            {
+                tracing::warn!(
+                    plugin = plugin_name,
+                    error = %error,
+                    "failed to upsert builtin runtime state"
+                );
+            }
+
+            match repo.get_by_name(plugin_name).await {
+                Ok(Some(state)) => {
+                    resolved_plugin_id = state.plugin_id;
+                    enabled = state.enabled;
+                    loaded = state.loaded;
+                    if !state.version.is_empty() {
+                        resolved_version = state.version;
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        plugin = plugin_name,
+                        error = %error,
+                        "failed to read builtin runtime state"
+                    );
+                }
+            }
+        }
+
+        self.plugin_info.write().await.insert(
+            plugin_name.to_string(),
+            PluginInfo {
+                plugin_id: resolved_plugin_id,
+                source_kind: "builtin".to_string(),
+                name: plugin_name.to_string(),
+                version: resolved_version,
+                description: description.to_string(),
+                enabled,
+                loaded,
+                permissions: PluginPermissionsView {
+                    routes: permissions.routes,
+                    commands: permissions.commands,
+                    admin: permissions.admin,
+                    database: db_permission_name(&permissions.database).to_string(),
+                },
+            },
+        );
     }
 
     pub async fn register_plugin_manifest_with_permissions(
@@ -140,7 +182,28 @@ impl PluginManager {
         plugin_id: &str,
         kind: PluginKind,
     ) {
+        self.register_profile_plugin_manifest(
+            manifest,
+            effective_permissions,
+            plugin_id,
+            kind,
+            true,
+            false,
+        )
+        .await;
+    }
+
+    pub async fn register_profile_plugin_manifest(
+        &self,
+        manifest: &PluginManifest,
+        effective_permissions: &Permissions,
+        plugin_id: &str,
+        kind: PluginKind,
+        default_enabled: bool,
+        required: bool,
+    ) {
         let plugin_name = manifest.plugin.name.clone();
+        self.set_plugin_required(&plugin_name, required).await;
         let manifest_version = manifest.plugin.version.clone();
         let source_kind = kind.tier_name().to_string();
 
@@ -154,7 +217,14 @@ impl PluginManager {
         // Best-effort identity upsert: runtime state must not block plugin bootstrap.
         if let Some(repo) = &self.state_repo {
             if let Err(err) = repo
-                .upsert_discovered_plugin(plugin_id, &plugin_name, &source_kind, &manifest_version)
+                .upsert_profile_plugin(
+                    plugin_id,
+                    &plugin_name,
+                    &source_kind,
+                    &manifest_version,
+                    default_enabled,
+                    required,
+                )
                 .await
             {
                 tracing::warn!(
@@ -206,6 +276,17 @@ impl PluginManager {
     }
 
     pub async fn mark_plugin_loaded(&self, plugin_name: &str, loaded: bool) {
+        if let Some(repo) = &self.state_repo {
+            if let Err(err) = repo.set_loaded(plugin_name, loaded).await {
+                tracing::warn!(
+                    "failed to persist plugin loaded state: plugin={} loaded={} error={}",
+                    plugin_name,
+                    loaded,
+                    err
+                );
+            }
+        }
+
         let mut plugin_info = self.plugin_info.write().await;
         if let Some(item) = plugin_info.get_mut(plugin_name) {
             item.loaded = loaded;
@@ -230,6 +311,19 @@ impl PluginManager {
                 },
             },
         );
+    }
+
+    pub async fn is_plugin_required(&self, plugin_name: &str) -> bool {
+        self.required_plugins.read().await.contains(plugin_name)
+    }
+
+    async fn set_plugin_required(&self, plugin_name: &str, required: bool) {
+        let mut required_plugins = self.required_plugins.write().await;
+        if required {
+            required_plugins.insert(plugin_name.to_string());
+        } else {
+            required_plugins.remove(plugin_name);
+        }
     }
 
     pub async fn list_plugins(&self) -> Vec<PluginInfo> {
@@ -283,8 +377,55 @@ impl PluginManager {
 
     /// Store a loaded Lua VM for a plugin.
     pub async fn register_vm(&self, plugin_name: &str, lua: mlua::Lua) {
-        self.vms.write().await.insert(plugin_name.to_string(), lua);
+        self.vms.write().await.insert(
+            plugin_name.to_string(),
+            Arc::new(LuaRuntimeInstance::new(plugin_name, lua)),
+        );
         self.mark_plugin_loaded(plugin_name, true).await;
+    }
+
+    pub async fn unregister_vm(&self, plugin_name: &str) {
+        self.vms.write().await.remove(plugin_name);
+        self.mark_plugin_loaded(plugin_name, false).await;
+    }
+
+    pub async fn prepare_owner_activation(
+        &self,
+        staged: StagedRegistrar,
+    ) -> Result<PendingCapabilityCommit, RegistrationConflict> {
+        self.capabilities.prepare_owner_replacement(staged).await
+    }
+
+    pub fn stage_owner_activation(&self, owner: PluginInstanceId) -> StagedRegistrar {
+        self.capabilities.stage(owner)
+    }
+
+    pub fn stage_lua_activation(&self, owner: PluginInstanceId) -> StagedRegistrar {
+        self.capabilities
+            .stage_with_source(owner, RegistrationSource::Lua)
+    }
+
+    pub fn stage_builtin_activation(&self, owner: PluginInstanceId) -> StagedRegistrar {
+        self.capabilities
+            .stage_with_source(owner, RegistrationSource::Builtin)
+    }
+
+    pub async fn publish_lua_activation(
+        &self,
+        plugin_name: &str,
+        pending: PendingCapabilityCommit,
+        runtime: Arc<LuaRuntimeInstance>,
+    ) {
+        self.vms
+            .write()
+            .await
+            .insert(plugin_name.to_string(), runtime);
+        pending.publish().await;
+        self.mark_plugin_loaded(plugin_name, true).await;
+    }
+
+    pub async fn has_vm(&self, plugin_name: &str) -> bool {
+        self.vms.read().await.contains_key(plugin_name)
     }
 
     /// Register an API route handler.
@@ -336,15 +477,24 @@ impl PluginManager {
         policy_key: Option<&str>,
         is_public: bool,
     ) {
-        self.api_handlers.write().await.insert(
-            (method.to_uppercase(), path.to_string()),
-            ApiHandlerBinding {
-                plugin_name: plugin_name.to_string(),
-                handler_key: handler_key.to_string(),
-                policy_key: policy_key.map(ToOwned::to_owned),
-                is_public,
-            },
+        let mut staged = self
+            .capabilities
+            .stage(PluginInstanceId::legacy(plugin_name));
+        staged.register_http(
+            HttpRouteSpec::new(method, path, plugin_name, handler_key)
+                .with_policy(policy_key.map(ToOwned::to_owned))
+                .with_public(is_public),
         );
+        if let Err(err) = self.capabilities.commit(staged).await {
+            tracing::warn!(
+                "rejected legacy API registration: plugin={} method={} path={} error={}",
+                plugin_name,
+                method,
+                path,
+                err
+            );
+            return;
+        }
     }
 
     /// Register a CLI command handler.
@@ -366,14 +516,22 @@ impl PluginManager {
         handler_key: &str,
         policy_key: Option<&str>,
     ) {
-        self.cli_handlers.write().await.insert(
-            command_name.to_string(),
-            CliHandlerBinding {
-                plugin_name: plugin_name.to_string(),
-                handler_key: handler_key.to_string(),
-                policy_key: policy_key.map(ToOwned::to_owned),
-            },
+        let mut staged = self
+            .capabilities
+            .stage(PluginInstanceId::legacy(plugin_name));
+        staged.register_cli(
+            CliCommandSpec::new(command_name, "", plugin_name, handler_key)
+                .with_policy(policy_key.map(ToOwned::to_owned)),
         );
+        if let Err(err) = self.capabilities.commit(staged).await {
+            tracing::warn!(
+                "rejected legacy CLI registration: plugin={} command={} error={}",
+                plugin_name,
+                command_name,
+                err
+            );
+            return;
+        }
     }
 
     /// Register an admin page handler.
@@ -438,16 +596,23 @@ impl PluginManager {
         assets: PageResolvedAssets,
         policy_key: Option<&str>,
     ) {
-        self.admin_handlers.write().await.insert(
-            page_path.to_string(),
-            AdminHandlerBinding {
-                plugin_name: plugin_name.to_string(),
-                handler_key: handler_key.to_string(),
-                policy_key: policy_key.map(ToOwned::to_owned),
-                title: title.to_string(),
-                assets,
-            },
+        let mut staged = self
+            .capabilities
+            .stage(PluginInstanceId::legacy(plugin_name));
+        staged.register_admin(
+            AdminPageSpec::new(page_path, title, plugin_name, handler_key)
+                .with_policy(policy_key.map(ToOwned::to_owned))
+                .with_assets(assets.js.clone(), assets.css.clone()),
         );
+        if let Err(err) = self.capabilities.commit(staged).await {
+            tracing::warn!(
+                "rejected legacy Admin registration: plugin={} path={} error={}",
+                plugin_name,
+                page_path,
+                err
+            );
+            return;
+        }
     }
 
     /// Call an API route handler, returns the response body as String.
@@ -472,39 +637,70 @@ impl PluginManager {
         dispatch_path: &str,
         body: Option<Vec<u8>>,
     ) -> Option<Result<String, String>> {
-        let map = self.api_handlers.read().await;
-        let binding = match_api_handler_binding(&map, method, path)?;
-        let plugin_name = binding.plugin_name;
-        let handler_key = binding.handler_key;
-        drop(map);
+        let snapshot = self.capabilities.snapshot().await;
+        let registration = snapshot.match_http(method, path)?;
+        Some(
+            self.dispatch_http_registration(&registration.value, path, dispatch_path, body)
+                .await,
+        )
+    }
 
-        if let Err(err) = self.guard_plugin_enabled(&plugin_name).await {
-            return Some(Err(err));
+    pub async fn dispatch_http_registration(
+        &self,
+        registration: &HttpRouteSpec,
+        path: &str,
+        dispatch_path: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<String, String> {
+        self.guard_plugin_enabled(&registration.plugin_name).await?;
+        self.call_api_handler_with_dispatch(
+            &registration.plugin_name,
+            &registration.handler_key,
+            path,
+            dispatch_path,
+            body,
+            registration.lua_runtime.clone(),
+        )
+        .await
+    }
+
+    pub async fn dispatch_http_request_registration(
+        &self,
+        registration: &HttpRouteSpec,
+        request: HttpRequest,
+    ) -> Result<HttpResponse, String> {
+        if let Some(handler) = &registration.rust_handler {
+            self.guard_plugin_enabled(&registration.plugin_name).await?;
+            return handler.call(request).await;
         }
 
-        Some(
-            self.call_api_handler_with_dispatch(
-                &plugin_name,
-                &handler_key,
-                path,
-                dispatch_path,
-                body,
+        let response_body = self
+            .dispatch_http_registration(
+                registration,
+                &request.path,
+                &request.dispatch_path,
+                request.body,
             )
-            .await,
-        )
+            .await?;
+        Ok(HttpResponse::from_plugin_body(response_body))
     }
 
     /// Return the optional policy key for an API route registration.
     pub async fn api_route_policy(&self, method: &str, path: &str) -> Option<String> {
-        let map = self.api_handlers.read().await;
-        match_api_handler_binding(&map, method, path).and_then(|binding| binding.policy_key)
+        self.capabilities
+            .snapshot()
+            .await
+            .match_http(method, path)
+            .and_then(|registration| registration.value.policy_key.clone())
     }
 
     /// Return true when the API route was registered as public.
     pub async fn is_api_route_public(&self, method: &str, path: &str) -> bool {
-        let map = self.api_handlers.read().await;
-        match_api_handler_binding(&map, method, path)
-            .map(|binding| binding.is_public)
+        self.capabilities
+            .snapshot()
+            .await
+            .match_http(method, path)
+            .map(|registration| registration.value.is_public)
             .unwrap_or(false)
     }
 
@@ -514,85 +710,138 @@ impl PluginManager {
         command_name: &str,
         args: &[String],
     ) -> Option<Result<String, String>> {
-        let binding = {
-            let map = self.cli_handlers.read().await;
-            map.get(command_name).cloned()?
-        };
-        if let Err(err) = self.guard_plugin_enabled(&binding.plugin_name).await {
+        let snapshot = self.capabilities.snapshot().await;
+        let registration = snapshot.cli_command(command_name)?;
+        let plugin_name = registration.value.plugin_name.clone();
+        let handler_key = registration.value.handler_key.clone();
+        let runtime = registration.value.lua_runtime.clone();
+        if let Err(err) = self.guard_plugin_enabled(&plugin_name).await {
             return Some(Err(err));
         }
         Some(
-            self.call_handler_with_args(&binding.plugin_name, &binding.handler_key, args)
+            self.call_handler_with_args(&plugin_name, &handler_key, args, runtime)
                 .await,
         )
     }
 
     /// Return the optional policy key for a CLI command registration.
     pub async fn cli_command_policy(&self, command_name: &str) -> Option<String> {
-        self.cli_handlers
-            .read()
+        self.capabilities
+            .snapshot()
             .await
-            .get(command_name)
-            .and_then(|binding| binding.policy_key.clone())
+            .cli_command(command_name)
+            .and_then(|registration| registration.value.policy_key.clone())
     }
 
     /// Call an admin page handler, returns HTML String.
     pub async fn call_admin_handler(&self, page_path: &str) -> Option<Result<String, String>> {
-        let binding = {
-            let map = self.admin_handlers.read().await;
-            map.get(page_path).cloned()?
-        };
-        if let Err(err) = self.guard_plugin_enabled(&binding.plugin_name).await {
-            return Some(Err(err));
-        }
+        let snapshot = self.capabilities.snapshot().await;
+        let registration = snapshot.admin_page(page_path)?;
         Some(
-            self.call_handler_no_args(&binding.plugin_name, &binding.handler_key)
-                .await,
+            self.dispatch_admin_request_registration(
+                &registration.value,
+                HttpRequest::new("GET", page_path, page_path, None),
+            )
+            .await
+            .and_then(|response| {
+                String::from_utf8(response.body)
+                    .map_err(|error| format!("admin response body is not UTF-8: {error}"))
+            }),
         )
+    }
+
+    pub async fn dispatch_admin_registration(
+        &self,
+        registration: &AdminPageSpec,
+    ) -> Result<String, String> {
+        let response = self
+            .dispatch_admin_request_registration(
+                registration,
+                HttpRequest::new("GET", &registration.path, &registration.path, None),
+            )
+            .await?;
+        String::from_utf8(response.body)
+            .map_err(|error| format!("admin response body is not UTF-8: {error}"))
+    }
+
+    pub async fn dispatch_admin_request_registration(
+        &self,
+        registration: &AdminPageSpec,
+        request: HttpRequest,
+    ) -> Result<HttpResponse, String> {
+        self.guard_plugin_enabled(&registration.plugin_name).await?;
+        if let Some(handler) = &registration.rust_handler {
+            return handler.call(request).await;
+        }
+        let html = self
+            .call_handler_no_args(
+                &registration.plugin_name,
+                &registration.handler_key,
+                registration.lua_runtime.clone(),
+            )
+            .await?;
+        Ok(HttpResponse::new(200, html).with_header("content-type", "text/html; charset=utf-8"))
     }
 
     /// Return the optional policy key for an admin page registration.
     pub async fn admin_page_policy(&self, page_path: &str) -> Option<String> {
-        self.admin_handlers
-            .read()
+        self.capabilities
+            .snapshot()
             .await
-            .get(page_path)
-            .and_then(|binding| binding.policy_key.clone())
+            .admin_page(page_path)
+            .and_then(|registration| registration.value.policy_key.clone())
     }
 
     /// List all registered API routes.
     pub async fn list_api_routes(&self) -> Vec<(String, String)> {
-        self.api_handlers
-            .read()
+        self.capabilities
+            .snapshot()
             .await
-            .keys()
-            .map(|(m, p)| (m.clone(), p.clone()))
+            .http_routes()
+            .iter()
+            .map(|registration| {
+                (
+                    registration.value.method.clone(),
+                    registration.value.path.clone(),
+                )
+            })
             .collect()
     }
 
     /// List all registered CLI commands.
     pub async fn list_cli_commands(&self) -> Vec<String> {
-        self.cli_handlers.read().await.keys().cloned().collect()
+        self.capabilities
+            .snapshot()
+            .await
+            .cli_commands()
+            .iter()
+            .map(|registration| registration.value.name.clone())
+            .collect()
     }
 
     /// List all registered admin pages.
     pub async fn list_admin_pages(&self) -> Vec<String> {
-        self.admin_handlers.read().await.keys().cloned().collect()
+        self.capabilities
+            .snapshot()
+            .await
+            .admin_pages()
+            .iter()
+            .map(|registration| registration.value.path.clone())
+            .collect()
     }
 
     /// List all registered admin pages for a specific plugin.
     pub async fn list_admin_pages_for_plugin(&self, plugin_name: &str) -> Vec<PluginAdminPageInfo> {
-        let mut pages = self
-            .admin_handlers
-            .read()
-            .await
+        let snapshot = self.capabilities.snapshot().await;
+        let mut pages = snapshot
+            .admin_pages()
             .iter()
-            .filter_map(|(path, binding)| {
-                if binding.plugin_name == plugin_name {
+            .filter_map(|registration| {
+                if registration.value.plugin_name == plugin_name {
                     Some(PluginAdminPageInfo {
-                        plugin: binding.plugin_name.clone(),
-                        path: path.clone(),
-                        title: binding.title.clone(),
+                        plugin: registration.value.plugin_name.clone(),
+                        path: registration.value.path.clone(),
+                        title: registration.value.title.clone(),
                     })
                 } else {
                     None
@@ -605,32 +854,53 @@ impl PluginManager {
 
     /// Get resolved JS/CSS assets for a registered admin page.
     pub async fn admin_page_assets(&self, page_path: &str) -> Option<PageResolvedAssets> {
-        self.admin_handlers
-            .read()
+        self.capabilities
+            .snapshot()
             .await
-            .get(page_path)
-            .map(|binding| binding.assets.clone())
+            .admin_page(page_path)
+            .map(|registration| PageResolvedAssets {
+                js: registration.value.js.clone(),
+                css: registration.value.css.clone(),
+            })
+    }
+
+    pub async fn capability_snapshot(&self) -> Arc<CapabilitySnapshot> {
+        self.capabilities.snapshot().await
+    }
+
+    pub fn capability_registry(&self) -> CapabilityRegistry {
+        self.capabilities.clone()
+    }
+
+    pub async fn remove_owner_capabilities(&self, owner: &PluginInstanceId) {
+        self.capabilities.remove_owner(owner).await;
     }
 
     /// Register plugin-scoped static assets root (`plugins/<name>/web/static`).
     pub async fn register_plugin_static_root(&self, plugin_name: &str, static_root: PathBuf) {
-        self.plugin_static_roots
-            .write()
-            .await
-            .insert(plugin_name.to_string(), static_root);
+        let mut staged = self
+            .capabilities
+            .stage(PluginInstanceId::legacy(plugin_name));
+        staged.register_static_root(StaticRootSpec::new(plugin_name, static_root));
+        if let Err(err) = self.capabilities.commit(staged).await {
+            tracing::warn!(plugin = plugin_name, error = %err, "failed to register legacy static root");
+        }
     }
 
     /// List all registered plugin static roots sorted by plugin name.
     pub async fn list_plugin_static_roots(&self) -> Vec<(String, PathBuf)> {
-        let mut roots = self
-            .plugin_static_roots
-            .read()
+        self.capabilities
+            .snapshot()
             .await
+            .static_roots()
             .iter()
-            .map(|(name, root)| (name.clone(), root.clone()))
-            .collect::<Vec<_>>();
-        roots.sort_by(|a, b| a.0.cmp(&b.0));
-        roots
+            .map(|registration| {
+                (
+                    registration.value.plugin_id.clone(),
+                    registration.value.root.clone(),
+                )
+            })
+            .collect()
     }
 
     pub async fn set_plugin_enabled(
@@ -640,7 +910,23 @@ impl PluginManager {
         actor: Option<&str>,
         reason: Option<&str>,
     ) -> Result<PluginInfo, String> {
+        if self.is_plugin_required(plugin_name).await {
+            return Err(format!(
+                "required_plugin_toggle_forbidden: plugin '{plugin_name}' must be changed through profile and restart"
+            ));
+        }
         let _runtime_guard = self.acquire_plugin_runtime_lock(plugin_name).await;
+        self.set_plugin_enabled_intent(plugin_name, enabled, actor, reason)
+            .await
+    }
+
+    pub(crate) async fn set_plugin_enabled_intent(
+        &self,
+        plugin_name: &str,
+        enabled: bool,
+        actor: Option<&str>,
+        reason: Option<&str>,
+    ) -> Result<PluginInfo, String> {
         let known_plugin = self
             .plugin_info
             .read()
@@ -756,11 +1042,10 @@ impl PluginManager {
         &self,
         plugin_name: &str,
         handler_key: &str,
+        runtime: Option<Arc<LuaRuntimeInstance>>,
     ) -> Result<String, String> {
-        let vms = self.vms.read().await;
-        let lua = vms
-            .get(plugin_name)
-            .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;
+        let runtime = self.resolve_lua_runtime(plugin_name, runtime).await?;
+        let lua = runtime.lua();
 
         let func = self.get_handler_fn(lua, handler_key)?;
         func.call_async::<String>(()).await.map_err(|e| {
@@ -776,11 +1061,10 @@ impl PluginManager {
         plugin_name: &str,
         handler_key: &str,
         args: &[String],
+        runtime: Option<Arc<LuaRuntimeInstance>>,
     ) -> Result<String, String> {
-        let vms = self.vms.read().await;
-        let lua = vms
-            .get(plugin_name)
-            .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;
+        let runtime = self.resolve_lua_runtime(plugin_name, runtime).await?;
+        let lua = runtime.lua();
 
         let func = self.get_handler_fn(lua, handler_key)?;
 
@@ -809,11 +1093,10 @@ impl PluginManager {
         path: &str,
         dispatch_path: &str,
         body: Option<Vec<u8>>,
+        runtime: Option<Arc<LuaRuntimeInstance>>,
     ) -> Result<String, String> {
-        let vms = self.vms.read().await;
-        let lua = vms
-            .get(plugin_name)
-            .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))?;
+        let runtime = self.resolve_lua_runtime(plugin_name, runtime).await?;
+        let lua = runtime.lua();
 
         let func = self.get_handler_fn(lua, handler_key)?;
 
@@ -851,15 +1134,37 @@ impl PluginManager {
         })
     }
 
-    fn get_handler_fn(&self, lua: &mlua::Lua, handler_key: &str) -> Result<mlua::Function, String> {
-        let app: mlua::Table = lua
-            .globals()
-            .get("app")
-            .map_err(|e| format!("no app global: {e}"))?;
+    async fn resolve_lua_runtime(
+        &self,
+        plugin_name: &str,
+        pinned: Option<Arc<LuaRuntimeInstance>>,
+    ) -> Result<Arc<LuaRuntimeInstance>, String> {
+        if let Some(runtime) = pinned {
+            return Ok(runtime);
+        }
+        self.vms
+            .read()
+            .await
+            .get(plugin_name)
+            .cloned()
+            .ok_or_else(|| format!("plugin '{plugin_name}' not loaded"))
+    }
 
-        let handlers: mlua::Table = app
-            .get("__handlers")
-            .map_err(|e| format!("no __handlers table: {e}"))?;
+    fn get_handler_fn(&self, lua: &mlua::Lua, handler_key: &str) -> Result<mlua::Function, String> {
+        let handlers: mlua::Table = match lua.globals().get::<mlua::Value>("app") {
+            Ok(mlua::Value::Table(app)) => app
+                .get("__handlers")
+                .map_err(|e| format!("no app.__handlers table: {e}"))?,
+            _ => {
+                let sushi: mlua::Table = lua
+                    .globals()
+                    .get("sushi")
+                    .map_err(|e| format!("no app or sushi global: {e}"))?;
+                sushi
+                    .get("__handlers")
+                    .map_err(|e| format!("no sushi.__handlers table: {e}"))?
+            }
+        };
 
         handlers
             .get(handler_key)
@@ -881,6 +1186,7 @@ mod tests {
     use super::*;
     use crate::plugin::state_repository::PluginStateRepository;
     use crate::plugin::{Permissions, PluginMeta, PluginPoliciesConfig};
+    use crate::runtime::{HttpHandler, HttpRequest, HttpResponse};
     use crate::storage::sqlite::SqliteStorage;
     use crate::storage::Storage;
     use std::sync::Arc;
@@ -1004,11 +1310,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn register_vm_persists_loaded_state_for_storage_backed_manager() {
+        let storage = storage_with_governance_schema().await;
+        let storage_trait: Arc<dyn Storage> = storage;
+        let manager = PluginManager::new_with_storage(storage_trait);
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "example".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Example plugin".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+        manager
+            .register_plugin_manifest_with_permissions_and_identity(
+                &manifest,
+                &manifest.permissions,
+                "third_party/example",
+                PluginKind::ThirdParty,
+            )
+            .await;
+
+        manager.register_vm("example", mlua::Lua::new()).await;
+
+        let plugins = manager.list_plugins().await;
+        assert_eq!(plugins.len(), 1);
+        assert!(plugins[0].loaded);
+    }
+
+    #[tokio::test]
     async fn list_admin_pages_for_plugin_returns_titles() {
         let manager = PluginManager::new();
         manager
             .register_admin_handler(
-                "/admin/plugins/kv-store",
+                "/admin/kv-store/workspace",
                 "kv-store",
                 "KV Store Workspace",
                 "handler::workspace",
@@ -1033,7 +1372,7 @@ mod tests {
         let manager = PluginManager::new();
         manager
             .register_admin_handler_with_assets(
-                "/admin/plugins/kv-store",
+                "/admin/kv-store/workspace",
                 "kv-store",
                 "KV Store Workspace",
                 "handler::workspace",
@@ -1045,7 +1384,7 @@ mod tests {
             .await;
 
         let assets = manager
-            .admin_page_assets("/admin/plugins/kv-store")
+            .admin_page_assets("/admin/kv-store/workspace")
             .await
             .expect("expected assets for registered page");
 
@@ -1186,6 +1525,136 @@ mod tests {
                 .as_deref(),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn legacy_registrations_are_projected_into_owned_capability_snapshot() {
+        let manager = PluginManager::new();
+        manager
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/notes",
+                "notes",
+                "handler::api",
+                Some("api.notes.read"),
+                false,
+            )
+            .await;
+        manager
+            .register_admin_handler_with_assets_and_policy(
+                "/admin/notes",
+                "notes",
+                "Notes",
+                "handler::admin",
+                PageResolvedAssets {
+                    js: vec!["/static/plugins/official/notes/notes.js".to_string()],
+                    css: vec!["/static/plugins/official/notes/notes.css".to_string()],
+                },
+                Some("admin.notes.read"),
+            )
+            .await;
+        manager
+            .register_cli_handler_with_policy(
+                "notes-list",
+                "notes",
+                "handler::cli",
+                Some("cli.notes.read"),
+            )
+            .await;
+
+        let snapshot = manager.capability_snapshot().await;
+        assert_eq!(snapshot.http_routes().len(), 1);
+        assert_eq!(snapshot.admin_pages().len(), 1);
+        assert_eq!(snapshot.cli_commands().len(), 1);
+        assert_eq!(snapshot.http_routes()[0].owner.as_str(), "legacy:notes");
+        assert_eq!(
+            snapshot.http_routes()[0].value.policy_key.as_deref(),
+            Some("api.notes.read")
+        );
+        assert_eq!(
+            snapshot.admin_pages()[0].value.js,
+            vec!["/static/plugins/official/notes/notes.js".to_string()]
+        );
+        assert_eq!(
+            snapshot.cli_commands()[0].value.policy_key.as_deref(),
+            Some("cli.notes.read")
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_cross_owner_registration_does_not_override_existing_capability() {
+        let manager = PluginManager::new();
+        manager
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/notes",
+                "notes",
+                "handler::notes",
+                Some("api.notes.read"),
+                false,
+            )
+            .await;
+        manager
+            .register_api_handler_with_policy_and_public(
+                "GET",
+                "/api/notes",
+                "cms",
+                "handler::cms",
+                Some("api.cms.read"),
+                true,
+            )
+            .await;
+
+        let snapshot = manager.capability_snapshot().await;
+        assert_eq!(snapshot.http_routes().len(), 1);
+        assert_eq!(snapshot.http_routes()[0].owner.as_str(), "legacy:notes");
+        assert_eq!(
+            snapshot.http_routes()[0].value.handler_key,
+            "handler::notes"
+        );
+        assert_eq!(
+            manager
+                .api_route_policy("GET", "/api/notes")
+                .await
+                .as_deref(),
+            Some("api.notes.read")
+        );
+        assert!(!manager.is_api_route_public("GET", "/api/notes").await);
+    }
+
+    #[tokio::test]
+    async fn disabled_plugin_keeps_registrations_in_current_compatibility_phase() {
+        let manager = PluginManager::new();
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "notes".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Notes plugin".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+        manager.register_plugin_manifest(&manifest).await;
+        manager
+            .register_api_handler("GET", "/api/notes", "notes", "handler::notes")
+            .await;
+
+        manager
+            .set_plugin_enabled("notes", false, Some("admin"), Some("characterization"))
+            .await
+            .expect("disable succeeds");
+
+        assert_eq!(
+            manager.list_api_routes().await,
+            vec![("GET".to_string(), "/api/notes".to_string())]
+        );
+        assert!(!manager
+            .plugin_runtime_enabled("notes")
+            .await
+            .expect("plugin remains known"));
     }
 
     #[tokio::test]
@@ -1356,6 +1825,181 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn in_flight_dispatch_keeps_snapshot_pinned_lua_runtime() {
+        let manager = PluginManager::new();
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "notes".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Notes plugin".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+        manager.register_plugin_manifest(&manifest).await;
+
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let old_lua = mlua::Lua::new();
+        let old_app = old_lua.create_table().unwrap();
+        let old_handlers = old_lua.create_table().unwrap();
+        old_app.set("__handlers", old_handlers.clone()).unwrap();
+        old_lua.globals().set("app", old_app).unwrap();
+        let old_handler = old_lua
+            .create_async_function({
+                let entered = Arc::clone(&entered);
+                let release = Arc::clone(&release);
+                move |_, _: mlua::Value| {
+                    let entered = Arc::clone(&entered);
+                    let release = Arc::clone(&release);
+                    async move {
+                        entered.wait().await;
+                        release.wait().await;
+                        Ok("old".to_string())
+                    }
+                }
+            })
+            .unwrap();
+        old_handlers.set("handler", old_handler).unwrap();
+        let old_runtime = Arc::new(LuaRuntimeInstance::new("notes", old_lua));
+        let mut old_staged =
+            manager.stage_owner_activation(PluginInstanceId::new("lua:notes").unwrap());
+        old_staged.register_http(
+            HttpRouteSpec::new("GET", "/api/notes", "notes", "handler")
+                .with_lua_runtime(Arc::clone(&old_runtime)),
+        );
+        let old_pending = manager.prepare_owner_activation(old_staged).await.unwrap();
+        manager
+            .publish_lua_activation("notes", old_pending, old_runtime)
+            .await;
+
+        let in_flight_manager = manager.clone();
+        let in_flight = tokio::spawn(async move {
+            in_flight_manager
+                .call_api_handler("GET", "/api/notes", None)
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        entered.wait().await;
+
+        let new_lua = mlua::Lua::new();
+        let new_app = new_lua.create_table().unwrap();
+        let new_handlers = new_lua.create_table().unwrap();
+        new_app.set("__handlers", new_handlers.clone()).unwrap();
+        new_lua.globals().set("app", new_app).unwrap();
+        new_handlers
+            .set(
+                "handler",
+                new_lua
+                    .create_function(|_, _: mlua::Value| Ok("new".to_string()))
+                    .unwrap(),
+            )
+            .unwrap();
+        let new_runtime = Arc::new(LuaRuntimeInstance::new("notes", new_lua));
+        let mut new_staged =
+            manager.stage_owner_activation(PluginInstanceId::new("lua:notes").unwrap());
+        new_staged.register_http(
+            HttpRouteSpec::new("GET", "/api/notes", "notes", "handler")
+                .with_lua_runtime(Arc::clone(&new_runtime)),
+        );
+        let new_pending = manager.prepare_owner_activation(new_staged).await.unwrap();
+        manager
+            .publish_lua_activation("notes", new_pending, new_runtime)
+            .await;
+
+        assert_eq!(
+            manager
+                .call_api_handler("GET", "/api/notes", None)
+                .await
+                .unwrap()
+                .unwrap(),
+            "new"
+        );
+        release.wait().await;
+        assert_eq!(in_flight.await.unwrap(), "old");
+    }
+
+    #[tokio::test]
+    async fn in_flight_dispatch_completes_after_owner_deactivation() {
+        let manager = PluginManager::new();
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "notes".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Notes plugin".to_string(),
+                entry: "init.lua".to_string(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+        manager.register_plugin_manifest(&manifest).await;
+
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let lua = mlua::Lua::new();
+        let app = lua.create_table().unwrap();
+        let handlers = lua.create_table().unwrap();
+        app.set("__handlers", handlers.clone()).unwrap();
+        lua.globals().set("app", app).unwrap();
+        handlers
+            .set(
+                "handler",
+                lua.create_async_function({
+                    let entered = Arc::clone(&entered);
+                    let release = Arc::clone(&release);
+                    move |_, _: mlua::Value| {
+                        let entered = Arc::clone(&entered);
+                        let release = Arc::clone(&release);
+                        async move {
+                            entered.wait().await;
+                            release.wait().await;
+                            Ok("completed".to_string())
+                        }
+                    }
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let runtime = Arc::new(LuaRuntimeInstance::new("notes", lua));
+        let owner = PluginInstanceId::new("lua:notes").unwrap();
+        let mut staged = manager.stage_owner_activation(owner.clone());
+        staged.register_http(
+            HttpRouteSpec::new("GET", "/api/notes", "notes", "handler")
+                .with_lua_runtime(Arc::clone(&runtime)),
+        );
+        let pending = manager.prepare_owner_activation(staged).await.unwrap();
+        manager
+            .publish_lua_activation("notes", pending, runtime)
+            .await;
+
+        let in_flight_manager = manager.clone();
+        let in_flight = tokio::spawn(async move {
+            in_flight_manager
+                .call_api_handler("GET", "/api/notes", None)
+                .await
+                .unwrap()
+                .unwrap()
+        });
+        entered.wait().await;
+
+        manager.remove_owner_capabilities(&owner).await;
+        manager.unregister_vm("notes").await;
+        assert!(manager
+            .call_api_handler("GET", "/api/notes", None)
+            .await
+            .is_none());
+
+        release.wait().await;
+        assert_eq!(in_flight.await.unwrap(), "completed");
+    }
+
+    #[tokio::test]
     async fn storage_backed_set_plugin_enabled_updates_repo_and_list() {
         let sqlite = storage_with_governance_schema().await;
         let storage: Arc<dyn Storage> = sqlite.clone();
@@ -1414,5 +2058,139 @@ mod tests {
             .await
             .expect("query missing plugin state");
         assert!(stored.is_none());
+    }
+
+    #[tokio::test]
+    async fn rust_http_handler_uses_shared_dispatch_and_enable_guard() {
+        let manager = PluginManager::new();
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "builtin-notes".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Builtin notes".to_string(),
+                entry: String::new(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+        manager.register_plugin_manifest(&manifest).await;
+
+        let mut staged =
+            manager.stage_owner_activation(PluginInstanceId::new("builtin.notes").unwrap());
+        staged.register_http(
+            HttpRouteSpec::new(
+                "POST",
+                "/api/builtin-notes",
+                "builtin-notes",
+                "rust::create",
+            )
+            .with_rust_handler(HttpHandler::new(|request| async move {
+                Ok(HttpResponse::new(201, request.body.unwrap_or_default())
+                    .with_header("content-type", "application/octet-stream"))
+            })),
+        );
+        manager
+            .prepare_owner_activation(staged)
+            .await
+            .unwrap()
+            .publish()
+            .await;
+
+        let snapshot = manager.capability_snapshot().await;
+        let registration = snapshot
+            .match_http("POST", "/api/builtin-notes")
+            .unwrap()
+            .value
+            .clone();
+        let response = manager
+            .dispatch_http_request_registration(
+                &registration,
+                HttpRequest::new(
+                    "POST",
+                    "/api/builtin-notes",
+                    "/api/builtin-notes",
+                    Some(vec![0xff, 0x00]),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status, 201);
+        assert_eq!(response.body, vec![0xff, 0x00]);
+
+        manager
+            .set_plugin_enabled("builtin-notes", false, None, None)
+            .await
+            .unwrap();
+        let error = manager
+            .dispatch_http_request_registration(
+                &registration,
+                HttpRequest::new("POST", "/api/builtin-notes", "/api/builtin-notes", None),
+            )
+            .await
+            .expect_err("disabled Rust handler must fail closed");
+        assert!(error.starts_with("plugin_disabled:"), "error: {error}");
+    }
+
+    #[tokio::test]
+    async fn rust_admin_handler_uses_shared_dispatch_and_enable_guard() {
+        let manager = PluginManager::new();
+        let manifest = PluginManifest {
+            plugin: PluginMeta {
+                name: "builtin-admin".to_string(),
+                version: "0.1.0".to_string(),
+                description: "Builtin admin".to_string(),
+                entry: String::new(),
+            },
+            permissions: Permissions::default(),
+            policies: PluginPoliciesConfig::default(),
+            admin: None,
+            file_browser: None,
+        };
+        manager.register_plugin_manifest(&manifest).await;
+
+        let mut staged =
+            manager.stage_owner_activation(PluginInstanceId::new("builtin.admin").unwrap());
+        staged.register_admin(
+            AdminPageSpec::new("/admin/builtin", "Builtin", "builtin-admin", "rust::admin")
+                .with_rust_handler(HttpHandler::new(|request| async move {
+                    assert_eq!(request.path, "/admin/builtin");
+                    Ok(HttpResponse::new(200, "<main>builtin</main>")
+                        .with_header("content-type", "text/html; charset=utf-8"))
+                })),
+        );
+        manager
+            .prepare_owner_activation(staged)
+            .await
+            .unwrap()
+            .publish()
+            .await;
+
+        let snapshot = manager.capability_snapshot().await;
+        let registration = snapshot.admin_page("/admin/builtin").unwrap().value.clone();
+        let response = manager
+            .dispatch_admin_request_registration(
+                &registration,
+                HttpRequest::new("GET", "/admin/builtin", "/admin/builtin", None),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, b"<main>builtin</main>");
+        assert_eq!(response.headers[0].1, "text/html; charset=utf-8");
+
+        manager
+            .set_plugin_enabled("builtin-admin", false, None, None)
+            .await
+            .unwrap();
+        let error = manager
+            .dispatch_admin_request_registration(
+                &registration,
+                HttpRequest::new("GET", "/admin/builtin", "/admin/builtin", None),
+            )
+            .await
+            .expect_err("disabled Rust admin handler must fail closed");
+        assert!(error.starts_with("plugin_disabled:"), "error: {error}");
     }
 }

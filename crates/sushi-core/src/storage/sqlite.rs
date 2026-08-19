@@ -1,4 +1,4 @@
-use super::{Row, Storage, StorageError};
+use super::{Row, Storage, StorageConn, StorageError};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -43,6 +43,69 @@ impl SqliteStorage {
         })
         .await
         .map_err(|e| StorageError::QueryError(e.to_string()))?
+    }
+
+    pub async fn transaction<T, F>(&self, operation: F) -> Result<T, StorageError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut StorageConn<'_>) -> Result<T, StorageError> + Send + 'static,
+    {
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            let mut conn = conn.blocking_lock();
+            let transaction = conn
+                .transaction()
+                .map_err(|e| StorageError::TransactionError(e.to_string()))?;
+            let result = {
+                let mut transaction_conn = StorageConn { conn: &transaction };
+                operation(&mut transaction_conn)?
+            };
+            transaction
+                .commit()
+                .map_err(|e| StorageError::TransactionError(e.to_string()))?;
+            Ok(result)
+        })
+        .await
+        .map_err(|e| StorageError::TransactionError(e.to_string()))?
+    }
+
+    pub async fn apply_plugin_migration(
+        &self,
+        plugin_id: &str,
+        migration_id: &str,
+        checksum: &str,
+        sql: &str,
+    ) -> Result<(), StorageError> {
+        let plugin_id = plugin_id.to_string();
+        let migration_id = migration_id.to_string();
+        let checksum = checksum.to_string();
+        let sql = sql.to_string();
+        self.transaction(move |conn| {
+            conn.execute_batch(&sql)?;
+            conn.execute(
+                "INSERT INTO plugin_migrations (plugin_id, migration_id, checksum) VALUES (?, ?, ?)",
+                vec![plugin_id.into(), migration_id.into(), checksum.into()],
+            )
+        })
+        .await
+    }
+
+    pub async fn record_plugin_migration(
+        &self,
+        plugin_id: &str,
+        migration_id: &str,
+        checksum: &str,
+    ) -> Result<(), StorageError> {
+        let plugin_id = plugin_id.to_string();
+        let migration_id = migration_id.to_string();
+        let checksum = checksum.to_string();
+        self.transaction(move |conn| {
+            conn.execute(
+                "INSERT INTO plugin_migrations (plugin_id, migration_id, checksum) VALUES (?, ?, ?)",
+                vec![plugin_id.into(), migration_id.into(), checksum.into()],
+            )
+        })
+        .await
     }
 }
 

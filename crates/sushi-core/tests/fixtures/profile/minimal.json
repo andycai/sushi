@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "minimal",
+  "legacy": false,
+  "entries": [
+    { "id": "host.core", "source": "builtin:host-core", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:base" },
+    { "id": "host.cli", "source": "builtin:host-cli", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:base" },
+    { "id": "policy.core", "source": "builtin:policy", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:base" }
+  ]
+}

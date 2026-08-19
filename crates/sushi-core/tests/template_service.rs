@@ -170,7 +170,11 @@ fn dynamic_plugin_template_root_disappears_after_owner_removal() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("base.html"), "<html>{{ value }}</html>").unwrap();
     let plugin_templates = tempfile::tempdir().unwrap();
-    std::fs::write(plugin_templates.path().join("page.html"), "Plugin {{ value }}").unwrap();
+    std::fs::write(
+        plugin_templates.path().join("page.html"),
+        "Plugin {{ value }}",
+    )
+    .unwrap();
 
     let registry = CapabilityRegistry::new();
     let owner = PluginInstanceId::new("notes.default").unwrap();

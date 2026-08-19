@@ -28,10 +28,16 @@ pub trait Storage: Send + Sync {
 
 /// Synchronous connection handle used inside transactions.
 pub struct StorageConn<'a> {
-    conn: &'a mut rusqlite::Connection,
+    pub(crate) conn: &'a rusqlite::Connection,
 }
 
 impl<'a> StorageConn<'a> {
+    pub fn execute_batch(&mut self, sql: &str) -> Result<(), StorageError> {
+        self.conn
+            .execute_batch(sql)
+            .map_err(|e| StorageError::QueryError(e.to_string()))
+    }
+
     pub fn execute(&mut self, sql: &str, params: Vec<Value>) -> Result<(), StorageError> {
         let params: Vec<rusqlite::types::Value> = params.into_iter().map(json_to_sqlite).collect();
         let params_ref: Vec<&dyn rusqlite::types::ToSql> = params

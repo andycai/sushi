@@ -28,9 +28,7 @@ pub fn create_sandboxed_vm() -> Result<Lua, mlua::Error> {
     // works identically in both Sushi (async) and Suxun (sync).
     globals.set(
         "await",
-        lua.create_function(|_, args: mlua::MultiValue| {
-            Ok(args)
-        })?,
+        lua.create_function(|_, args: mlua::MultiValue| Ok(args))?,
     )?;
 
     Ok(lua)

@@ -268,7 +268,7 @@ database = false
         .await
         .expect_err("web page contract entry should require admin permission");
     let message = err.to_string();
-    assert!(message.contains("web page entries"));
+    assert!(message.contains("web page, admin page, or menu entries"));
     assert!(message.contains("admin permission is disabled"));
 }
 

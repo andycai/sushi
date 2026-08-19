@@ -1,3 +1,4 @@
+use crate::storage::sqlite::SqliteStorage;
 use crate::storage::{Row, Storage};
 use serde_json::Value;
 use std::sync::Arc;
@@ -27,11 +28,23 @@ pub struct StoredPluginStateEvent {
 
 pub struct PluginStateRepository {
     storage: Arc<dyn Storage>,
+    sqlite: Option<Arc<SqliteStorage>>,
 }
 
 impl PluginStateRepository {
     pub fn new(storage: Arc<dyn Storage>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            sqlite: None,
+        }
+    }
+
+    pub fn new_sqlite(storage: Arc<SqliteStorage>) -> Self {
+        let storage_trait: Arc<dyn Storage> = storage.clone();
+        Self {
+            storage: storage_trait,
+            sqlite: Some(storage),
+        }
     }
 
     pub async fn upsert_discovered_plugin(
@@ -41,15 +54,33 @@ impl PluginStateRepository {
         source_kind: &str,
         version: &str,
     ) -> Result<StoredPluginState, String> {
+        self.upsert_profile_plugin(plugin_id, name, source_kind, version, true, false)
+            .await
+    }
+
+    pub async fn upsert_profile_plugin(
+        &self,
+        plugin_id: &str,
+        name: &str,
+        source_kind: &str,
+        version: &str,
+        default_enabled: bool,
+        required: bool,
+    ) -> Result<StoredPluginState, String> {
         self.storage
             .execute(
                 r#"
                 INSERT INTO plugin_state (plugin_id, name, source_kind, enabled, loaded, version, updated_at)
-                VALUES (?1, ?2, ?3, 1, 0, ?4, datetime('now'))
+                VALUES (?1, ?2, ?3, ?5, 0, ?4, datetime('now'))
                 ON CONFLICT(name) DO UPDATE SET
                     plugin_id = excluded.plugin_id,
                     source_kind = excluded.source_kind,
                     version = excluded.version,
+                    enabled = CASE
+                        WHEN ?6 = 1 THEN 1
+                        WHEN ?5 = 0 THEN 0
+                        ELSE plugin_state.enabled
+                    END,
                     updated_at = datetime('now')
                 "#,
                 vec![
@@ -57,6 +88,8 @@ impl PluginStateRepository {
                     Value::String(name.to_string()),
                     Value::String(source_kind.to_string()),
                     Value::String(version.to_string()),
+                    Value::Bool(default_enabled),
+                    Value::Bool(required),
                 ],
             )
             .await
@@ -118,6 +151,63 @@ impl PluginStateRepository {
 
         let actor_value = actor.unwrap_or("").trim().to_string();
         let reason_value = reason.unwrap_or("").trim().to_string();
+
+        if let Some(sqlite) = &self.sqlite {
+            let name = name.to_string();
+            let transaction_name = name.clone();
+            let next_enabled = enabled;
+            let previous_enabled = before.enabled;
+            sqlite
+                .transaction(move |connection| {
+                    connection.execute(
+                        r#"
+                        UPDATE plugin_state
+                        SET enabled = ?2,
+                            updated_by = ?3,
+                            reason = ?4,
+                            updated_at = datetime('now')
+                        WHERE name = ?1
+                        "#,
+                        vec![
+                            Value::String(transaction_name.clone()),
+                            Value::Bool(next_enabled),
+                            Value::String(actor_value.clone()),
+                            Value::String(reason_value.clone()),
+                        ],
+                    )?;
+                    connection.execute(
+                        r#"
+                        INSERT INTO plugin_state_events (
+                            plugin_id,
+                            source_kind,
+                            changed_by,
+                            previous_enabled,
+                            next_enabled,
+                            reason
+                        )
+                        SELECT plugin_id, source_kind, ?2, ?3, ?4, ?5
+                        FROM plugin_state
+                        WHERE name = ?1
+                        "#,
+                        vec![
+                            Value::String(transaction_name),
+                            Value::String(actor_value),
+                            Value::Bool(previous_enabled),
+                            Value::Bool(next_enabled),
+                            Value::String(reason_value),
+                        ],
+                    )
+                })
+                .await
+                .map_err(|error| {
+                    format!("failed to update plugin state and event for {name}: {error}")
+                })?;
+
+            return self
+                .get_by_name(&name)
+                .await?
+                .ok_or_else(|| format!("plugin state row missing after update: {name}"));
+        }
 
         self.storage
             .execute(

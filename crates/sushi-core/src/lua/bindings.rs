@@ -524,6 +524,7 @@ pub async fn inject_sushi_api(
                 let json_data: serde_json::Value = lua.from_value(data)?;
                 let envelope = serde_json::json!({
                     "__app_web_json": true,
+                    "__sushi_web_json": true,
                     "status": status,
                     "body": json_data,
                 });
@@ -543,8 +544,10 @@ pub async fn inject_sushi_api(
                     }
                     let envelope = serde_json::json!({
                         "__app_web_download": true,
+                        "__sushi_file_download": true,
                         "file_name": file_name,
-                        "content_type": mime,
+                        "content_type": mime.clone(),
+                        "mime": mime,
                         "body_hex": body_hex,
                     });
                     serde_json::to_string(&envelope)
@@ -636,23 +639,26 @@ pub async fn inject_sushi_api(
     {
         let event_bus = ctx.event.clone();
         let event_table = lua.create_table()?;
-
-        // Store Lua handlers in a table for potential future use
-        let handlers_table = lua.create_table()?;
-        sushi.set("__event_handlers", handlers_table)?;
+        let pending_events = lua.create_table()?;
+        sushi.set("__pending_events", pending_events)?;
 
         event_table.set(
             "on",
             lua.create_function(|lua, (event, callback): (String, mlua::Function)| {
-                // Store the handler for potential future use
+                if event.trim().is_empty() {
+                    return Err(mlua::Error::RuntimeError(
+                        "sushi.event.on requires a non-empty event name".to_string(),
+                    ));
+                }
+                let handler_key = next_handler_key();
                 let sushi: mlua::Table = lua.globals().get("sushi")?;
-                let handlers: mlua::Table = sushi.get("__event_handlers")?;
-                // Create or get event handler list
-                let event_handlers: mlua::Table = handlers.get(event.clone()).unwrap_or_else(|_| lua.create_table().unwrap());
-                let len = event_handlers.raw_len();
-                event_handlers.set(len + 1, callback)?;
-                handlers.set(event, event_handlers)?;
-                tracing::debug!("Lua event handler registered (note: full async event support requires architectural changes)");
+                let handlers: mlua::Table = sushi.get("__handlers")?;
+                handlers.set(&*handler_key, callback)?;
+                let pending: mlua::Table = sushi.get("__pending_events")?;
+                let entry = lua.create_table()?;
+                entry.set("event", event)?;
+                entry.set("handler_key", handler_key)?;
+                pending.set(pending.raw_len() + 1, entry)?;
                 Ok(())
             })?,
         )?;

@@ -5,6 +5,7 @@ pub mod schema {
     pub mod db;
     pub mod event;
     pub mod fs;
+    pub mod menu;
     pub mod web;
 }
 
@@ -33,6 +34,7 @@ pub enum LuaCapabilityEntry {
     Api(schema::api::ApiRouteContract),
     Admin(schema::admin::AdminPageContract),
     Cli(schema::cli::CliCommandContract),
+    Menu(schema::menu::MenuContributionContract),
     Web(schema::web::WebContract),
     Db(schema::db::DbContract),
     Event(schema::event::EventContract),

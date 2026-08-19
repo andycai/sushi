@@ -1,5 +1,6 @@
 use crate::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
 use crate::auth::policy::PolicyKey;
+use crate::storage::sqlite::SqliteStorage;
 use crate::storage::Storage;
 use serde_json::Value;
 use std::sync::Arc;
@@ -12,6 +13,141 @@ pub struct StoredPolicyKey {
 
 pub struct PolicyRepository {
     storage: Arc<dyn Storage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginPolicyBinding {
+    Http {
+        surface: String,
+        method: String,
+        path_pattern: String,
+        policy_key: String,
+    },
+    Cli {
+        command_name: String,
+        policy_key: String,
+    },
+}
+
+pub async fn replace_plugin_policy_bindings(
+    storage: &SqliteStorage,
+    plugin_name: &str,
+    bindings: &[PluginPolicyBinding],
+) -> Result<(), String> {
+    let owner_id = normalize_non_empty(plugin_name, "owner_id")?;
+    let mut normalized = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+        normalized.push(match binding {
+            PluginPolicyBinding::Http {
+                surface,
+                method,
+                path_pattern,
+                policy_key,
+            } => PluginPolicyBinding::Http {
+                surface: normalize_non_empty(surface, "surface")?.to_ascii_lowercase(),
+                method: normalize_non_empty(method, "method")?.to_ascii_uppercase(),
+                path_pattern: normalize_non_empty(path_pattern, "path_pattern")?,
+                policy_key: PolicyKey::parse(policy_key)?.key,
+            },
+            PluginPolicyBinding::Cli {
+                command_name,
+                policy_key,
+            } => PluginPolicyBinding::Cli {
+                command_name: normalize_non_empty(command_name, "command_name")?,
+                policy_key: PolicyKey::parse(policy_key)?.key,
+            },
+        });
+    }
+
+    storage
+        .transaction(move |conn| {
+            if let Err(err) = conn.execute(
+                "DELETE FROM policy_bindings WHERE owner_type = 'plugin' AND owner_id = ?1",
+                vec![Value::String(owner_id.clone())],
+            ) {
+                if normalized.is_empty()
+                    && err.to_string().contains("no such table: policy_bindings")
+                {
+                    return Ok(());
+                }
+                return Err(err);
+            }
+
+            for binding in normalized {
+                let policy_key = match &binding {
+                    PluginPolicyBinding::Http { policy_key, .. }
+                    | PluginPolicyBinding::Cli { policy_key, .. } => {
+                        PolicyKey::parse(policy_key)
+                            .map_err(crate::storage::StorageError::TransactionError)?
+                    }
+                };
+                conn.execute(
+                    r#"
+                    INSERT OR IGNORE INTO policy_keys (key, surface, resource, action, name)
+                    VALUES (?1, ?2, ?3, ?4, ?5)
+                    "#,
+                    vec![
+                        Value::String(policy_key.key.clone()),
+                        Value::String(policy_key.surface),
+                        Value::String(policy_key.resource),
+                        Value::String(policy_key.action),
+                        Value::String(policy_key.key.clone()),
+                    ],
+                )?;
+
+                match binding {
+                    PluginPolicyBinding::Http {
+                        surface,
+                        method,
+                        path_pattern,
+                        policy_key,
+                    } => conn.execute(
+                        r#"
+                        INSERT INTO policy_bindings (
+                            surface, target_type, target_ref, method, path_pattern,
+                            command_name, policy_key_id, owner_type, owner_id, is_system
+                        )
+                        SELECT ?1, 'http_route', ?2, ?3, ?4, NULL, pk.id,
+                               'plugin', ?5, 0
+                        FROM policy_keys pk
+                        WHERE pk.key = ?6
+                        "#,
+                        vec![
+                            Value::String(surface),
+                            Value::String(path_pattern.clone()),
+                            Value::String(method),
+                            Value::String(path_pattern),
+                            Value::String(owner_id.clone()),
+                            Value::String(policy_key),
+                        ],
+                    )?,
+                    PluginPolicyBinding::Cli {
+                        command_name,
+                        policy_key,
+                    } => conn.execute(
+                        r#"
+                        INSERT INTO policy_bindings (
+                            surface, target_type, target_ref, method, path_pattern,
+                            command_name, policy_key_id, owner_type, owner_id, is_system
+                        )
+                        SELECT 'cli', 'cli_command', ?1, NULL, NULL, ?2, pk.id,
+                               'plugin', ?3, 0
+                        FROM policy_keys pk
+                        WHERE pk.key = ?4
+                        "#,
+                        vec![
+                            Value::String(command_name.clone()),
+                            Value::String(command_name),
+                            Value::String(owner_id.clone()),
+                            Value::String(policy_key),
+                        ],
+                    )?,
+                }
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|err| err.to_string())
 }
 
 impl PolicyRepository {
