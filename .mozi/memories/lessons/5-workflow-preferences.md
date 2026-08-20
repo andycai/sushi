@@ -2,12 +2,12 @@
 
 *个人研发习惯和工具偏好*
 
-- **Note 合同校验：** Agent Note 使用树外 Markdown 链接、英文/双语标题或固定章节时，验证器会因链接逃逸或中文合同不匹配而失败 -> Notes 树外资料使用反引号路径，标题与固定章节使用 README 规定的纯中文精确文本。
+- **Note 合同校验：** Agent Note 使用未登记类别、树外 Markdown 链接或非中文固定标题时验证失败 -> 创建前从 README 分类闭集选择目录，树外资料使用反引号路径，标题与固定章节使用规定的中文精确文本。
 - **Clippy 基线：** 未确认项目零警告基线就直接运行 `cargo clippy -- -D warnings`，会把既有 lint 债务与本轮回归混在一起 -> 先记录普通 clippy 输出或对比基点，只有项目声明零警告门禁时才将全部 warning 升级为失败。
 - **CLI 审查隔离：** 直接运行默认配置的动态 `sushi --help` 会完整 bootstrap 并可能触碰本地数据库与插件状态 -> 审查 CLI 时使用已有测试或显式临时配置/profile，不能把 help 当作天然只读命令。
 - **Review 基点：** 分支领先远端时把 `HEAD` 当作代码审查基点，会漏掉尚未合并的已提交变更 -> 用户未指定范围时使用目标分支共同祖先，并合并 committed、staged、unstaged 与 untracked 清单。
 - **Cargo 测试过滤：** 给 `cargo test` 连续传两个测试名会被 Clap 判为多余参数 -> 使用单一公共子串过滤，或把不同测试拆成独立命令并行运行。
-- **复杂补丁分组：** 在一个 shell 调用中串联过长的多文件 heredoc，命令参数解析失败导致整批补丁未执行 -> capability 迁移按 imports/helper、注册、激活、测试与 fixture 分组，每组成功后再继续。
+- **复杂补丁分组：** 多文件 `apply_patch` 中任一精确上下文过时会让整批补丁拒绝执行 -> 按依赖、调用点、实现和测试拆成小补丁，每组先读取实时片段并成功后再继续。
 - **Capability Golden 同步：** runtime capability 注册扩展后只跑功能测试，CLI shipped-profile golden 因缺少新 owner 条目失败 -> 每次新增或迁移 capability 时同时按 `CapabilitySnapshot::inspect()` 排序更新 golden，并验证非目标 profile 的 owner 过滤。
 - **只读命令不带审批：** 普通 sandbox 只读命令同时传 `justification` 会被工具要求显式升级权限并拒绝执行 -> 非升级命令省略 `justification`、`prefix_rule` 等审批字段，只保留必要参数。
 - **格式化范围控制：** 在存在用户未提交改动的工作区运行 `cargo fmt --all`，误触了本任务无关测试文件 -> 只格式化本次修改的 Rust 文件，或先记录并复核 formatter 影响清单后再保留必要变化。

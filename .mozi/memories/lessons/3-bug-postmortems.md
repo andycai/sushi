@@ -2,13 +2,14 @@
 
 *编译报错、运行时崩溃的具体代码坑*
 
+- **TOML 缺失表：** `toml_edit` 对缺失 section 直接使用 `document[section][field]` 会生成内联表而非标准表头 -> 写入前显式插入 `Item::Table(Table::new())`，再修改叶子字段。
 - **旁路移除断言：** 测试从只改 enable intent 的 manager 旁路迁到完整 lifecycle 后仍期望注册保留并返回 `403`，实际 capability 已撤销而返回 `404` -> 删除治理旁路时同步更新测试的可见性语义，停用后的新请求应观察 owner capability 已消失。
 - **字段所有权迁移：** 先替换结构体字段而未同步生产与测试中的所有旧引用，导致 crate 停留在中间态或测试无法编译 -> 迁移字段所有权前搜索完整调用链和断言点，一次替换后再执行编译与目标测试。
 - **Helper 迁移调用点：** 将动态 CLI 的通用参数解析 helper 移入 builtin adapter 后，bootstrap-safe inspect 仍调用旧作用域符号，导致整个 CLI crate 无法编译 -> 移动共享 helper 前先搜索全部调用点，迁移后用显式模块路径并先做 crate 级编译。
 - **单补丁重复文件操作：** 同一个 `apply_patch` 中用两个 `*** Update File` 操作修改同一路径会被验证器整体拒绝 -> 每个补丁对同一路径只声明一次操作，把多个 hunk 合并到该操作下。
 - **搜索模式前导横线：** `rg` 的搜索模式以 `--dump-profile` 开头时被解析为命令选项，随后又把 `-g` 放到 `--` 后被当作路径 -> 所有 `-g` 等选项必须放在 `--` 前，使用 `rg -n -g '*.md' -- '<pattern>' <paths>` 显式分隔模式。
-- **追踪输出流：** 集成测试默认假定 `tracing_subscriber::fmt` 写 stderr，只捕获 stderr 后把实际日志误判为未发生 -> 日志回归测试应确认 subscriber writer，或同时捕获 stdout/stderr 后再按唯一探针计数。
-- **路径根所有权：** 安全路径校验先把 `PathBuf` 移入目标路径，随后又借用原根做 `canonicalize`，导致所有权编译错误 -> 需要同时使用根与派生目标时先克隆根到目标路径，或先完成根规范化再构造目标。
+- **追踪输出流：** CLI 集成测试假定 tracing 写 stderr，实际 warning 混入 stdout 导致业务输出精确匹配失败 -> 日志测试同时捕获 stdout/stderr；业务输出断言应定位稳定结果行，除非命令合同明确要求纯 stdout。
+- **路径所有权复用：** `PathBuf` 移入派生目标或 `spawn_blocking` 闭包后又用于校验/提示，导致所有权编译错误 -> 移动前为后续显示或校验克隆路径，或先完成所有借用操作再转移所有权。
 - **测试依赖先验：** 在集成测试中直接使用同工作区其他 crate 已有的 `tempfile`，误以为当前 crate 也声明了该 dev-dependency -> 新测试先检查目标 crate 的依赖，未声明时沿用现有标准库临时目录模式，除非新增依赖确有必要。
 - **存储查询参数：** 回归测试把 `Storage::query` 当作 rusqlite API 传入引用切片，又在未声明 `serde_json` 的 crate 里直接构造参数值，连续导致测试无法编译 -> 使用项目存储抽象规定的参数类型，并优先在固定测试查询中用无参数 SQL，避免为测试引入无关依赖。
 - **规则加载串行：** 初始化时把三层记忆规则放进并行工具调用，破坏了规则之间的先后依赖 -> 必须先单独读取 `GENERAL.md`，再读 `PROJECT.md`，再读 `LESSONS.md`，最后才能读取分类文件和并行探测任务。
