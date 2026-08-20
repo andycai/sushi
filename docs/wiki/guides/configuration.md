@@ -116,4 +116,25 @@ sushi --help
 
 `serve` 只通过全局 `--profile` 选择产品组合。进程收到 Ctrl-C，或 Unix 上收到 SIGTERM 时，会停止接收新连接并等待在途请求完成后退出。
 
+## CLI 配置管理
+
+`config get/set` 使用全局 `--config` 指定的文件和点号键：
+
+```bash
+# 读取当前 runtime 快照中的生效值，包括默认补全
+sushi --config config.toml config get server.port
+sushi --config config.toml config get runtime.profile
+
+# 只修改目标 TOML 字段，保留注释和其他 section
+sushi --config config.toml config set server.port 4100
+sushi --config config.toml config set runtime.profile minimal
+
+# 删除可选 profile 值，恢复 default profile 解析
+sushi --config config.toml config set runtime.profile null
+```
+
+首版支持本页“配置项说明”中的叶子字段。未知键、错误类型、越界数值或缺失配置文件都会失败且不修改文件。`jwt.secret` 不能通过 CLI 读取或设置，避免敏感值进入终端、日志、shell history 或进程参数。
+
+`set` 成功后只影响下一次启动；当前进程不会热重载配置。写入使用同目录临时文件原子替换，保留 TOML 注释、未知字段和已有文件权限。
+
 Profile 与 bundle 的完整语义见 [Profile 组合指南](profile-composition.md)。
