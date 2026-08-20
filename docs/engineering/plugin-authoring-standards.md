@@ -56,12 +56,13 @@ Do not inline large HTML strings in Lua for admin pages.
 ### 3.1 Required fields
 
 ```toml
+schema_version = 1
+
 [plugin]
 name = "my-plugin"
 version = "0.1.0"
 description = "What this plugin provides"
 entry = "init.lua"
-kind = "third_party" # or "official"
 
 [permissions]
 routes = true
@@ -75,15 +76,34 @@ database = "read" # or "write" / false
 - `name`: lowercase kebab-case, stable once released.
 - `version`: semantic versioning (`MAJOR.MINOR.PATCH`).
 - `description`: concise, behavior-oriented.
-- `kind`: must match directory category (`official` plugins under `plugins/official/`, `third_party` plugins under `plugins/third_party/`).
+- `schema_version`: required manifest contract version. Current version is `1`; missing or unsupported versions are rejected before plugin activation.
+- Plugin trust tier is derived from the host-selected source path and profile policy. `plugin.toml` has no trust-tier field.
 
 ### 3.3 Permission minimization
 
 - For `third_party` plugins: request only what is required.
 - `database = "write"` (or above) must have explicit business need.
-- For `official` plugins: runtime enforces full permissions (`routes`, `commands`, `admin`, `database = "admin"`), regardless of manifest declaration.
+- Host trust ceilings, manifest requests, profile grants, and administrator approval are intersected. A plugin cannot self-declare a higher trust tier.
+- Every enabled Lua profile entry must set `approved = true` under `[entries.grants]`. Without that explicit administrator approval, the host does not execute the plugin entrypoint or publish any capability, event subscription, background task, authentication use, or database access. A required unapproved entry fails before the database is opened.
+- Grant fields can only reduce manifest requests. Omitting `routes`, `commands`, or `admin` after approval keeps the manifest request; setting one to `false` removes it. `database` clamps the requested database level.
 - Runtime activation (`enabled` / `disabled`) is controlled by platform governance state, not by plugin self-declaration.
 - `plugin.toml` permissions are declaration-time capability ceilings and cannot force runtime enablement.
+
+Profile example:
+
+```toml
+[[entries]]
+id = "my-plugin.default"
+source = "lua:third_party/my-plugin"
+enabled = true
+required = false
+
+[entries.grants]
+approved = true
+routes = true
+commands = true
+database = "read"
+```
 
 ### 3.4 Admin asset bundles
 
@@ -113,7 +133,7 @@ Rules:
 - Register capabilities during `sushi.init()` only.
 - Keep registration idempotent and deterministic.
 - Plugins register capabilities only via `sushi.capability.register({...})`.
-- Legacy direct registration APIs are removed in this major upgrade.
+- Legacy direct registration APIs remain readable only for one compatibility window. Each used adapter (`sushi.api.route`, `sushi.admin.page`, `sushi.cli.command`, `sushi.web.page`) emits one host warning naming the plugin and migration target; shipped plugins must not depend on them.
 - Capability visibility is deny-by-default at injection time.
 
 ### 4.2 Logging and Observability
@@ -136,14 +156,22 @@ Rules:
 
 ### 4.5 数据库迁移
 
-- 只有受宿主信任的 `plugins/official/<name>` source 可以声明 migration；第三方插件即使修改 manifest 的 `kind` 也不会获得该能力。
+- 只有受宿主信任且由 profile 选择的 `plugins/official/<name>` source 可以声明 migration；第三方插件不能通过修改 manifest 元数据获得该能力。
 - migration 文件放在插件本地 `migrations/*.sql`，按文件名中的数字前缀确定全局执行顺序，例如 `010_create_notes.sql`。
-- migration 需要 manifest 的数据库写权限，以及 profile 中显式的 `[entries.grants] database = "write" | "admin"`。
+- migration 需要 manifest 的数据库写权限，以及 profile 中显式的 `[entries.grants] approved = true` 和 `database = "write" | "admin"`。
 - 历史 migration 文件发布后不可修改；runtime 会校验 SHA-256 checksum，不一致时 fail closed。
 - 单个 migration 的 SQL 与 catalog 记录在同一数据库事务中；执行失败不得留下部分 schema 或记录。
 - migration 只向前执行，不提供自动 down migration；发布回滚必须通过新的 forward migration 修复数据结构。
 
-### 4.6 Admin UI Convention
+### 4.6 Background tasks
+
+- Register owner-scoped work with `sushi.task.spawn(name, callback)` or `sushi.task.interval(name, interval_ms, callback)` during `sushi.init()`.
+- Task names must be non-empty, contain no control characters, and be unique within one plugin activation.
+- Registered tasks remain deferred until capability and VM publication succeeds. Failed activation starts no task.
+- Plugin disable/reload and host shutdown cancel owner tasks. A task that ignores cancellation is aborted after the host timeout.
+- Do not create untracked work through hidden executors or host escape hatches. Work that must survive plugin disable belongs to a host service, not a plugin task.
+
+### 4.7 Admin UI Convention
 
 - Page registration uses contract payloads through `sushi.capability.register({...})`:
   - `surface = "web"`

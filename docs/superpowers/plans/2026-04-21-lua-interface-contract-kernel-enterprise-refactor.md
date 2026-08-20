@@ -1041,11 +1041,7 @@ git add docs/wiki/guides/lua-contract-migration.md docs/wiki/lua-api/README.md d
 git commit -m "docs(lua): publish v2 contract-first api and migration guide"
 ```
 
-### Task 11: Final Verification + Graph Refresh
-
-**Files:**
-- Modify: `graphify-out/graph.json` (generated)
-- Modify: `graphify-out/GRAPH_REPORT.md` (generated)
+### Task 11: Final Verification
 
 - [ ] **Step 1: Run new contract test suites**
 
@@ -1070,15 +1066,3 @@ Expected: PASS
 
 Run: `cargo test --workspace -q`  
 Expected: PASS
-
-- [ ] **Step 4: Refresh knowledge graph**
-
-Run: `graphify update .`  
-Expected: PASS with updated graph artifacts.
-
-- [ ] **Step 5: Commit graph refresh artifacts**
-
-```bash
-git add graphify-out/graph.json graphify-out/GRAPH_REPORT.md
-git commit -m "chore(graphify): refresh graph after lua contract kernel refactor"
-```

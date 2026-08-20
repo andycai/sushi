@@ -1253,28 +1253,12 @@ git add plugins/official/cms/lua/interfaces/cli.lua plugins/official/cms/lua/boo
 git commit -m "feat(cms): add cli dispatch and finalize cms behavior coverage"
 ```
 
-### Task 9: Graph and Release Hygiene
+### Task 9: Release Hygiene
 
-**Files:**
-- Modify: `graphify-out/graph.json`
-- Modify: `graphify-out/GRAPH_REPORT.md`
-
-- [ ] **Step 1: Update graph after code changes**
-
-Run: `graphify update .`  
-Expected: `graph.json` and `GRAPH_REPORT.md` updated successfully.
-
-- [ ] **Step 2: Confirm no unstaged implementation files remain**
+- [ ] **Step 1: Confirm no unstaged implementation files remain**
 
 Run: `git status --short`  
 Expected: only expected changed files (or clean tree after commits).
-
-- [ ] **Step 3: Final commit for graph updates (if changed)**
-
-```bash
-git add graphify-out/graph.json graphify-out/GRAPH_REPORT.md
-git commit -m "chore(graphify): refresh knowledge graph after cms plugin changes"
-```
 
 ---
 

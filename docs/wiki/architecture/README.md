@@ -38,6 +38,7 @@ Sushi 是一个通用应用平台，采用模块化架构。
 | 模块 | Crate | 说明 |
 |-----|-------|------|
 | 插件系统 | `sushi-core/src/plugin/` | Plugin trait, manifest, permissions |
+| 插件运行时 | `sushi-core/src/runtime/` | Profile、owner registry、builtin factory、migration、task |
 | Lua 运行时 | `sushi-core/src/lua/` | mlua 集成, bindings, VM |
 | 认证授权 | `sushi-core/src/auth/` | JWT, Password, RBAC |
 | 数据库 | `sushi-core/src/db/` | DbGateway, migrations |
@@ -55,3 +56,5 @@ sushi/
 ├── sushi-admin/  → sushi-core, sushi-api
 └── sushi/        → sushi-core, sushi-api, sushi-admin, sushi-cli
 ```
+
+运行时的组合、激活与撤销合同见 [插件运行时](plugin-runtime.md)；插件状态转换和故障语义见 [插件生命周期指南](../guides/plugin-lifecycle.md)。

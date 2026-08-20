@@ -1286,15 +1286,9 @@ Expected: PASS
 Run: `cargo test --workspace -q`  
 Expected: PASS
 
-- [ ] **Step 4: Update graphify index after code changes**
-
-Run: `graphify update .`  
-Expected: command exits successfully and refreshes `graphify-out/GRAPH_REPORT.md`.
-
-- [ ] **Step 5: Commit docs + final verification delta**
+- [ ] **Step 4: Commit docs + final verification delta**
 
 ```bash
-git add docs/engineering/plugin-authoring-standards.md docs/wiki/architecture/plugin-system.md graphify-out/GRAPH_REPORT.md
+git add docs/engineering/plugin-authoring-standards.md docs/wiki/architecture/plugin-system.md
 git commit -m "docs(plugin): document runtime governance control model"
 ```
-

@@ -344,28 +344,20 @@ git commit -m "test(web): align template assertions for daisyui migration"
 
 ---
 
-### Task 8: Graph + Docs Sync, Final Handoff
+### Task 8: Docs Sync and Final Handoff
 
 **Files:**
 - Modify: docs if behavior/commands changed
-- Modify: `graphify-out/*` via graph refresh
 
-- [ ] **Step 1: Refresh graph after code/template modifications**
-
-Run:
-```bash
-graphify update .
-```
-
-- [ ] **Step 2: Sync docs if commands changed**
+- [ ] **Step 1: Sync docs if commands changed**
 
 Update any affected docs/guides that mention CSS build/watch commands.
 
-- [ ] **Step 3: Final commit**
+- [ ] **Step 2: Final commit**
 
 ```bash
-git add docs graphify-out
-git commit -m "docs(chore): sync docs and graph after daisyui rewrite"
+git add docs
+git commit -m "docs(chore): sync docs after daisyui rewrite"
 ```
 
 ---
@@ -377,7 +369,6 @@ git commit -m "docs(chore): sync docs and graph after daisyui rewrite"
 - Full admin + official plugin template migration: covered in Tasks 4-5.
 - Remove `admin.css` runtime dependency: covered in Task 6.
 - Regression verification gates: covered in Task 7.
-- Graph refresh requirement: covered in Task 8.
 
 ## Placeholder / Consistency Check
 

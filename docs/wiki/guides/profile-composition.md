@@ -36,6 +36,7 @@ required = false
 editor_mode = "standard"
 
 [entries.grants]
+approved = true
 database = "admin"
 ```
 
@@ -46,7 +47,7 @@ database = "admin"
 - `enabled`：是否允许该条目参与启动；`false` 会覆盖已有可选插件治理状态并跳过激活。
 - `required`：是否为系统必需条目；required 必须同时 `enabled = true`，普通 Admin/CLI toggle 会被拒绝。
 - `config`：插件私有配置，当前作为不透明 JSON/TOML 值保留给后续 RuntimePlugin contract。
-- `grants`：profile 授权配置。`database = "write" | "admin"` 已作为插件 migration 的显式门禁；普通运行时能力仍按 trust/grant 路线继续收敛。
+- `grants`：profile 授权配置。Enabled Lua 条目必须由管理员显式设置 `approved = true`；否则插件入口完全不执行，不会产生 route、command、Admin、event、task、auth 或数据库 effect。Required 未批准条目在打开数据库前失败。其余字段只能在 manifest 请求范围内收窄权限。
 
 Lua source 必须是 `official/<name>` 或 `third_party/<name>` 两级相对路径，并在插件目录中存在 `plugin.toml`。绝对路径、`..`、未知 builtin 和重复 Lua source 都会在启动前失败。
 
@@ -84,7 +85,7 @@ Overlay 是**完整条目替换**，不是 deep merge。示例中的 overlay 不
 | `admin` | 否 | 否 | 是 | 是 | 是 | CMS、File Browser、KV Store |
 | `minimal` | 否 | 否 | 否 | 否 | 是 | 无 |
 
-所有 `serve` profile 都保留稳定 `/health`。required `identity` 独占 login、refresh、me 认证 API，required `api-core` 独占 users API；`host-admin` 注册通用 Admin 能力，required `rbac-admin` 独占 users、roles、permissions 页面、表格 partial、CRUD 和角色权限分配。Host Router 仅保留稳定 transport 边界和尚未迁移的系统路由。
+所有 `serve` profile 都保留稳定 `/health`。API/Admin transport 是否挂载由 snapshot 中的 `transport:api` / `transport:admin` capability 决定，而不是由 `serve.rs` 检查 builtin key。Required `identity` 独占 login、refresh、me 认证 API，required `api-core` 独占 users API；`host-admin` 注册通用 Admin 能力，required `rbac-admin` 独占 users、roles、permissions 页面、表格 partial、CRUD 和角色权限分配。
 
 ## Profile 与数据库迁移
 
@@ -92,20 +93,20 @@ Overlay 是**完整条目替换**，不是 deep merge。示例中的 overlay 不
 
 - 平台历史 migration 使用稳定 owner 和 migration ID 写入 `plugin_migrations`。
 - 官方 Lua 插件的 SQL 必须位于 `plugins/official/<name>/migrations/*.sql`，文件名以数字顺序开头，例如 `010_add_index.sql`。
-- Lua migration 同时要求官方 source、manifest 的数据库写权限，以及 profile 的显式 `grants.database = "write" | "admin"`。
+- Lua migration 同时要求官方 source、manifest 的数据库写权限，以及 profile 的显式 `grants.approved = true` 和 `grants.database = "write" | "admin"`。
 - 未被 profile 选择或被 `enabled = false` 的插件不会执行其 migration。
 - `minimal` 不执行 Admin 菜单和官方业务插件 migration；`api` 不执行 Admin 菜单 migration。
 - migration 只向前执行；禁用插件或回滚 profile 不自动回滚数据库结构。
 - 已存在的 `_sushi_migrations` 历史记录会桥接到新 catalog，不重复执行历史 SQL；checksum 不一致会拒绝启动。
 
-## 兼容发现
+## 默认 Profile 与失败语义
 
 未显式设置 `[runtime].profile` 时：
 
 1. 若 `profiles/default.toml` 存在，严格加载 `default`。
-2. 若默认 profile 文件不存在，使用内部 `legacy-default`：注入完整 Host 基线，并按路径排序发现 `plugins/official/*` 与 `plugins/third_party/*`。
+2. 若默认 profile 文件不存在，启动失败并报告缺失路径；不会扫描插件目录构造隐式产品组合。
 
-显式 profile 解析失败时不会回退到全目录扫描，也不会创建数据库或激活插件。
+显式或默认 profile 解析失败时都不会回退到全目录扫描，也不会创建数据库、执行 migration 或激活插件。
 
 ## 检查命令
 
@@ -113,8 +114,11 @@ Overlay 是**完整条目替换**，不是 deep merge。示例中的 overlay 不
 # 只解析配置和组合，不打开数据库
 sushi inspect profile --config config.toml --profile default
 
-# 完成 bootstrap 后输出 capability key 与 owner
+# 完成 bootstrap 后输出 capability key、owner 与 registration source
 sushi inspect capabilities --config config.toml --profile default
+
+# 不执行插件代码，检查 manifest、approval、migration checksum 与恢复条件
+sushi doctor --config config.toml --profile default
 ```
 
-`inspect profile` 输出稳定 JSON，包含最终顺序、source、enabled/required、config/grants 和最后来源。`inspect capabilities` 的 capability map 按 key 排序，不输出运行期自增 registration ID。
+`inspect profile` 输出稳定 JSON，包含最终顺序、source、enabled/required、config/grants 和最后来源。`inspect capabilities` 的 capability map 按 key 排序，包含 `transport:api/admin` 并输出 `owner` 和 `source=builtin|rust|lua`，但不输出运行期自增 registration ID。`doctor` 不执行插件入口；数据库存在时只读校验 migration checksum、legacy bridge 和 forward recovery 条件，失败信息包含 entry/source 与修复建议。

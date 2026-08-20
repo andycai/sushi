@@ -1,120 +1,78 @@
 # 插件系统
 
-## 设计原则
+Sushi 将 Rust builtin 与 Lua package 都视为由 profile 选择的运行时插件。宿主只保留配置、权限强制、生命周期、迁移、运行时隔离和 transport dispatch 等可信边界。
 
-1. **Rust 和 Lua 平权** - 所有功能既可用 Rust 实现也可用 Lua 实现
-2. **沙箱隔离** - 每个 Lua 插件运行在独立的 VM 中
-3. **权限控制** - 插件必须声明权限才能访问敏感 API
-4. **声明式** - 插件通过 manifest (plugin.toml) 声明元数据和权限
-5. **运行时治理优先** - 生产环境是否激活由平台治理状态决定，而不是由插件自行决定
+## 插件来源
 
-## 插件结构
+| Source | 交付方式 | 信任来源 |
+|---|---|---|
+| `builtin:<key>` | 编译期静态链接的 `BuiltinPluginFactory` | 宿主注册的 factory key |
+| `lua:official/<name>` | `plugins/official/<name>` | 宿主管理的 official 路径 |
+| `lua:third_party/<name>` | `plugins/third_party/<name>` | 宿主管理的 third-party 路径 |
 
+插件不能在 `plugin.toml` 中自报 trust tier。未知 builtin、绝对 Lua 路径、`..`、缺失 manifest 和重复 Lua source 都在启动前失败。
+
+## Lua package 结构
+
+```text
+plugins/<tier>/<name>/
+├── plugin.toml
+├── init.lua
+├── migrations/
+├── lua/
+└── web/
+    ├── templates/
+    └── static/
 ```
-plugins/
-└── example_plugin/
-    ├── plugin.toml      # 插件清单
-    └── init.lua         # 入口文件
-```
 
-## plugin.toml 格式
+`plugin.toml` 必须包含顶层 `schema_version = 1`。旧 schema、缺失版本和未来版本均 fail closed。
+
+## 权限交集
+
+Lua 插件的有效权限是以下四层的交集：
+
+1. source/path 对应的宿主信任上限；
+2. manifest `[permissions]` 请求；
+3. profile `[entries.grants]` 的收窄字段；
+4. 管理员显式 `approved = true`。
 
 ```toml
-[plugin]
-name = "example_plugin"
-version = "0.1.0"
-description = "An example plugin"
-entry = "init.lua"        # 可选，默认 init.lua
+[[entries]]
+id = "example.default"
+source = "lua:third_party/example"
+enabled = true
+required = false
 
-[permissions]
-routes = true            # HTTP 路由注册
-commands = true          # CLI 命令注册
-admin = true             # Admin 页面扩展
-database = "write"       # 数据库权限
+[entries.grants]
+approved = true
+routes = true
+database = "read"
 ```
 
-## 权限说明
+未设置 `approved = true` 时，宿主不会执行插件入口，也不会发布 route、command、Admin、event、task、auth 或数据库等任何 effect；required 条目会在打开数据库前失败。Grant 只能降低 manifest 请求，不能提升权限。
 
-| 权限 | 类型 | 说明 |
-|-----|------|------|
-| `routes` | bool | 注册 HTTP API 路由 |
-| `commands` | bool | 注册 CLI 子命令 |
-| `admin` | bool | 扩展 Admin 管理面板 |
-| `database` | string | 数据库访问级别 |
+## 注册模型
 
-> `plugin.toml` 中的 `[permissions]` 是**能力上限声明**（ceiling），用于限制插件最多能申请哪些能力；它不等于“强制启用令”。
-> 即使 manifest 声明了 `routes = true`，平台仍可在运行时将该插件禁用，插件将不会被分发执行。
+- API route、Admin page、CLI command、menu、template root、static root 和 event subscription 进入 owner-scoped staged `CapabilityRegistry`。
+- 注册完成且冲突/权限检查通过后，runtime 原子发布 immutable `CapabilitySnapshot`。
+- Lua VM 只在 capability commit 时发布；失败 activation 不留下半注册状态。
+- 后台任务进入独立的 owner-scoped `TaskRegistry`，但与 capability 共享同一个 `PluginInstanceId` 生命周期。
+- Task 直到 capability/VM 发布成功后才启动；disable、reload 和 host shutdown 会取消对应 generation。
 
-### DatabasePermission 值
+旧 `sushi.api`、`sushi.cli`、`sushi.admin`、`sushi.web` 与 `sushi.event.on` 是写入同一 contract registry 的语法 adapter，不是第二套注册系统。新插件应优先使用 `sushi.capability.register({...})`。
 
-| 值 | 说明 |
-|----|------|
-| `false` / `None` | 无数据库访问 |
-| `true` / `"read"` | 只读查询 |
-| `"write"` | 读写（INSERT/UPDATE/DELETE） |
-| `"admin"` | 完全访问（包括 DROP/ALTER） |
+## 组合与治理
 
-## 插件生命周期
+- 产品组合只来自 profile、bundle 和 overlay；默认 profile 缺失时不会扫描目录兜底。
+- `required = true` 的系统插件不能通过普通 Admin/CLI toggle 禁用，只能修改 profile 后受控重启。
+- optional Lua 插件可通过治理接口无重启 disable/enable。
+- `plugin_state.enabled` 保存 optional 插件的治理意图；`loaded` 表示本次 activation 是否成功。
 
-```
-启动扫描
-    │
-    ▼
-解析 plugin.toml
-    │
-    ▼
-权限上限验证
-    │
-    ▼
-读取平台治理状态（plugin_state.enabled）
-    │
-    ▼
-enabled=true: 创建独立 Lua VM
-enabled=false: 跳过 init，标记未加载
-    │
-    ▼
-注入 sushi API
-    │
-    ▼
-调用 init.lua:sushi.init()
-    │
-    ▼
-收集注册的路由/命令/页面
-    │
-    ▼
-插件激活
-```
-
-## 运行时治理模型（V1）
-
-- 统一真相来源：`plugin_state.enabled`（数据库）是插件激活状态的运行时权威来源。
-- 即时生效：Admin/CLI 切换启用状态后，API/Admin/CLI 分发路径立即按新状态执行，无需重启服务。
-- 生产控制面：
-  - Admin API：`PATCH /admin/api/plugins/{plugin}/state`
-  - CLI：`sushi plugin status|enable|disable`
-- 拒绝语义：插件被禁用时，运行时会阻断分发，返回显式拒绝（例如 API 返回 `403 plugin_disabled`）。
-
-## Lua VM 隔离
-
-- 每个插件创建独立的 `Lua` 实例
-- 通过 `mlua` 沙箱限制危险操作
-- 只暴露 `sushi.*` 命名空间
-- `os.execute`, `io.*`, `require` 等被禁用
-
-## Plugin Trait (Rust)
-
-```rust
-#[async_trait]
-pub trait Plugin: Send + Sync {
-    fn name(&self) -> &str;
-    fn version(&self) -> &str;
-    async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError>;
-}
-```
-
-Rust 插件实现此 trait，Lua 插件通过 `LuaPlugin` wrapper 适配。
+详细的内核拓扑见 [插件运行时](plugin-runtime.md)，状态转换见 [插件生命周期指南](../guides/plugin-lifecycle.md)。
 
 ## 相关文档
 
+- [Profile 组合指南](../guides/profile-composition.md)
+- [插件生命周期指南](../guides/plugin-lifecycle.md)
 - [Lua API 参考](../lua-api/README.md)
-- [插件开发指南](../guides/plugin-development.md)
+- [插件编写规范](../../engineering/plugin-authoring-standards.md)

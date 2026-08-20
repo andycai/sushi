@@ -18,11 +18,13 @@ Lua 插件可调用的 Rust 接口文档。
 - [sushi.json](lua-api/sushi.json.md) - JSON 编解码接口
 - [sushi.config](lua-api/sushi.config.md) - 配置接口
 - [sushi.event](lua-api/sushi.event.md) - 事件总线接口
+- [sushi.task](lua-api/sushi.task.md) - Owner-scoped 后台任务接口
 - [sushi.auth](lua-api/sushi.auth.md) - 认证接口
 
 ### 架构文档
 - [架构总览](architecture/README.md)
 - [插件系统](architecture/plugin-system.md)
+- [插件运行时](architecture/plugin-runtime.md)
 - [认证与 RBAC](architecture/auth-rbac.md)
 - [数据库层](architecture/database.md)
 - [Admin 面板](architecture/admin-panel.md)
@@ -31,6 +33,7 @@ Lua 插件可调用的 Rust 接口文档。
 - [插件开发指南](guides/plugin-development.md)
 - [配置指南](guides/configuration.md)
 - [Profile 组合指南](guides/profile-composition.md)
+- [插件生命周期指南](guides/plugin-lifecycle.md)
 
 ---
 

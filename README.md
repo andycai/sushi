@@ -56,11 +56,12 @@ sushi/
 Plugins are written in Lua with a `plugin.toml` manifest:
 
 ```toml
+schema_version = 1
+
 [plugin]
 name = "kv-store"
 version = "0.2.0"
 entry = "init.lua"
-kind = "official"
 
 [permissions]
 routes = true
@@ -72,7 +73,7 @@ database = "admin"
 scopes = ["api.kv.*", "admin.kv.manage", "cli.kv.*"]
 ```
 
-Official plugins live in `plugins/official/`. The plugin loader is entirely Rust-based (via mlua), giving Lua plugins full access to Rust services through a permission-gated module system.
+`schema_version` is the required manifest contract version; missing or unsupported versions fail closed before activation. Trust comes from the host-selected source path and profile grants, not from plugin-declared metadata. Official plugins live in `plugins/official/`. The plugin loader is entirely Rust-based (via mlua), giving Lua plugins access to Rust services through a permission-gated module system.
 
 ## Database
 

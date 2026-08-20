@@ -553,11 +553,7 @@ git add crates/sushi-admin/tests/admin_web.rs crates/sushi-core/tests/cms_plugin
 git commit -m "test(cms): cover overview editor and command wiring contracts"
 ```
 
-### Task 8: Final Verification, Graph Update, and Release Hygiene
-
-**Files:**
-- Modify: `graphify-out/graph.json`
-- Modify: `graphify-out/GRAPH_REPORT.md`
+### Task 8: Final Verification and Release Hygiene
 
 - [ ] **Step 1: Run full regression suite**
 
@@ -573,24 +569,12 @@ Expected: PASS
 Run: `cargo test --workspace -q`  
 Expected: PASS
 
-- [ ] **Step 2: Refresh graph artifacts**
-
-Run: `graphify update .`  
-Expected: `graphify-out/graph.json` and `graphify-out/GRAPH_REPORT.md` updated.
-
-- [ ] **Step 3: Validate final tree**
+- [ ] **Step 2: Validate final tree**
 
 Run: `git status --short`  
-Expected: only intended redesign files + graph artifacts.
+Expected: only intended redesign files.
 
-- [ ] **Step 4: Commit graph refresh**
-
-```bash
-git add graphify-out/graph.json graphify-out/GRAPH_REPORT.md
-git commit -m "chore(graphify): refresh graph after cms admin workbench redesign"
-```
-
-- [ ] **Step 5: Prepare branch completion**
+- [ ] **Step 3: Prepare branch completion**
 
 ```bash
 git log --oneline -n 12

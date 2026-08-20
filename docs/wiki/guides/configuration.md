@@ -85,7 +85,7 @@ bundles_dir = "bundles"
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |-------|------|-------|------|
-| `profile` | string / null | `null` | 运行时 profile；未配置时优先加载 `default`，若默认文件不存在则使用兼容 `legacy-default` |
+| `profile` | string / null | `null` | 运行时 profile；未配置时严格加载 `default`，默认文件不存在则 fail closed |
 | `profiles_dir` | string | `"profiles"` | profile 文件目录，相对配置文件所在目录解析 |
 | `bundles_dir` | string | `"bundles"` | bundle 文件目录，相对配置文件所在目录解析 |
 
@@ -104,21 +104,16 @@ sushi serve --profile admin
 # 最小恢复模式，仅保留 /health 与 bootstrap-safe CLI
 sushi serve --profile minimal
 
-# 兼容参数，内部映射到 api/admin profile 并输出弃用提示
-sushi serve --api-only
-sushi serve --admin-only
-
 # 不打开数据库，检查最终 profile
 sushi inspect profile --profile default
 
 # 启动所选插件后检查 owner-scoped capability
 sushi inspect capabilities --profile default
 
-# 运行插件
-sushi run <plugin-name>
-
 # CLI 帮助
 sushi --help
 ```
+
+`serve` 只通过全局 `--profile` 选择产品组合。进程收到 Ctrl-C，或 Unix 上收到 SIGTERM 时，会停止接收新连接并等待在途请求完成后退出。
 
 Profile 与 bundle 的完整语义见 [Profile 组合指南](profile-composition.md)。
