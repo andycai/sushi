@@ -177,14 +177,19 @@ async fn run_with_context(
 }
 
 fn command_authorization_target(command_name: &str, args: &[String]) -> String {
-    if command_name != "plugin" {
-        return command_name.to_string();
-    }
-    match args.first().map(String::as_str) {
-        Some("list") => "plugin:list".to_string(),
-        Some("status") => "plugin:status".to_string(),
-        Some("enable") => "plugin:enable".to_string(),
-        Some("disable") => "plugin:disable".to_string(),
+    match command_name {
+        "plugin" => match args.first().map(String::as_str) {
+            Some("list") => "plugin:list".to_string(),
+            Some("status") => "plugin:status".to_string(),
+            Some("enable") => "plugin:enable".to_string(),
+            Some("disable") => "plugin:disable".to_string(),
+            _ => command_name.to_string(),
+        },
+        "config" => match args.first().map(String::as_str) {
+            Some("get") => "config:get".to_string(),
+            Some("set") => "config:set".to_string(),
+            _ => command_name.to_string(),
+        },
         _ => command_name.to_string(),
     }
 }
@@ -406,6 +411,25 @@ mod tests {
                 OsString::from("--reason"),
                 OsString::from("maintenance"),
             ]
+        );
+    }
+
+    #[test]
+    fn authorization_target_distinguishes_config_reads_and_writes() {
+        assert_eq!(
+            command_authorization_target("config", &["get".to_string(), "server.port".to_string()]),
+            "config:get"
+        );
+        assert_eq!(
+            command_authorization_target(
+                "config",
+                &[
+                    "set".to_string(),
+                    "server.port".to_string(),
+                    "4100".to_string()
+                ]
+            ),
+            "config:set"
         );
     }
 }

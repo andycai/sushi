@@ -140,7 +140,7 @@ pub(crate) async fn bootstrap_with_options(
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     }
 
-    let builtin_factories = builtin_factories_with_role(cli_role)?;
+    let builtin_factories = builtin_factories_with_role(cli_role, config_path)?;
     let mut migrations = match builtin_factories.migrations_for_entries(runtime_profile.entries()) {
         Ok(migrations) => migrations,
         Err(error) => {
@@ -372,13 +372,19 @@ async fn apply_runtime_migrations(
 }
 
 pub(crate) fn builtin_factories() -> Result<BuiltinFactoryRegistry> {
-    builtin_factories_with_role("admin")
+    builtin_factories_with_role("admin", None)
 }
 
-fn builtin_factories_with_role(role: &str) -> Result<BuiltinFactoryRegistry> {
+fn builtin_factories_with_role(
+    role: &str,
+    config_path: Option<&Path>,
+) -> Result<BuiltinFactoryRegistry> {
     let mut factories = BuiltinFactoryRegistry::new();
     factories.register(sushi_core::builtin::HostCoreFactory)?;
-    factories.register(crate::builtin::HostCliFactory::new(role))?;
+    factories.register(crate::builtin::HostCliFactory::new(
+        role,
+        config_path.unwrap_or_else(|| Path::new("config.toml")),
+    ))?;
     factories.register(sushi_core::builtin::PolicyFactory)?;
     factories.register(sushi_api::builtin::IdentityFactory)?;
     factories.register(sushi_api::builtin::ApiCoreFactory)?;

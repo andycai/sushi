@@ -1426,6 +1426,8 @@ dependencies = [
  "sushi-core",
  "tempfile",
  "tokio",
+ "toml",
+ "toml_edit",
  "tower",
  "tracing",
 ]

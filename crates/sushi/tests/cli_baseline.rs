@@ -138,6 +138,248 @@ required = true
 }
 
 #[test]
+fn config_get_reads_the_selected_config_file() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = temp.path().join("selected.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+[server]
+port = 4312
+
+[database]
+path = "{}"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "{}"
+static_dir = "{}"
+
+[runtime]
+profiles_dir = "{}"
+bundles_dir = "{}"
+"#,
+            temp.path().join("data/sushi.db").display(),
+            workspace.join("plugins").display(),
+            workspace.join("web/templates").display(),
+            workspace.join("web/static").display(),
+            workspace.join("profiles").display(),
+            workspace.join("bundles").display(),
+        ),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sushi"))
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--profile",
+            "minimal",
+            "config",
+            "get",
+            "server.port",
+        ])
+        .output()
+        .expect("run config get");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(stdout.lines().last(), Some("4312"));
+
+    let default_output = run_config_command(&config_path, ["get", "server.body_size_limit"]);
+    assert!(default_output.status.success());
+    let default_stdout = String::from_utf8(default_output.stdout).unwrap();
+    assert_eq!(default_stdout.lines().last(), Some("65536"));
+}
+
+#[test]
+fn config_set_updates_only_the_target_key() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = temp.path().join("selected.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+[server]
+# Keep this operator note.
+port = 4312
+
+[database]
+path = "{}"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "{}"
+static_dir = "{}"
+
+[runtime]
+profiles_dir = "{}"
+bundles_dir = "{}"
+
+[custom]
+enabled = true
+"#,
+            temp.path().join("data/sushi.db").display(),
+            workspace.join("plugins").display(),
+            workspace.join("web/templates").display(),
+            workspace.join("web/static").display(),
+            workspace.join("profiles").display(),
+            workspace.join("bundles").display(),
+        ),
+    )
+    .expect("write config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_sushi"))
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--profile",
+            "minimal",
+            "config",
+            "set",
+            "server.port",
+            "4410",
+        ])
+        .output()
+        .expect("run config set");
+
+    assert!(output.status.success());
+    let updated = std::fs::read_to_string(&config_path).expect("read updated config");
+    assert!(updated.contains("# Keep this operator note."));
+    assert!(updated.contains("port = 4410"));
+    assert!(updated.contains("[custom]\nenabled = true"));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.lines().last().unwrap().contains("restart"));
+}
+
+#[test]
+fn config_commands_fail_closed_for_sensitive_unknown_and_invalid_values() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = temp.path().join("selected.toml");
+    let original = format!(
+        r#"
+[server]
+port = 4312
+
+[database]
+path = "{}"
+
+[jwt]
+secret = "do-not-print-this-secret"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "{}"
+static_dir = "{}"
+
+[runtime]
+profiles_dir = "{}"
+bundles_dir = "{}"
+"#,
+        temp.path().join("data/sushi.db").display(),
+        workspace.join("plugins").display(),
+        workspace.join("web/templates").display(),
+        workspace.join("web/static").display(),
+        workspace.join("profiles").display(),
+        workspace.join("bundles").display(),
+    );
+    std::fs::write(&config_path, &original).expect("write config");
+
+    let sensitive = run_config_command(&config_path, ["get", "jwt.secret"]);
+    assert!(!sensitive.status.success());
+    let sensitive_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&sensitive.stdout),
+        String::from_utf8_lossy(&sensitive.stderr)
+    );
+    assert!(sensitive_output.contains("sensitive"));
+    assert!(!sensitive_output.contains("do-not-print-this-secret"));
+
+    let secret_update =
+        run_config_command(&config_path, ["set", "jwt.secret", "must-not-be-persisted"]);
+    assert!(!secret_update.status.success());
+    assert_eq!(std::fs::read_to_string(&config_path).unwrap(), original);
+
+    for args in [
+        ["set", "server.port", "70000"],
+        ["set", "server.unknown", "1"],
+    ] {
+        let output = run_config_command(&config_path, args);
+        assert!(!output.status.success());
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), original);
+    }
+}
+
+#[test]
+fn config_set_null_removes_runtime_profile() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = temp.path().join("selected.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+[database]
+path = "{}"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "{}"
+static_dir = "{}"
+
+[runtime]
+profile = "minimal"
+profiles_dir = "{}"
+bundles_dir = "{}"
+"#,
+            temp.path().join("data/sushi.db").display(),
+            workspace.join("plugins").display(),
+            workspace.join("web/templates").display(),
+            workspace.join("web/static").display(),
+            workspace.join("profiles").display(),
+            workspace.join("bundles").display(),
+        ),
+    )
+    .expect("write config");
+
+    let output = run_config_command(&config_path, ["set", "runtime.profile", "null"]);
+    assert!(output.status.success());
+    let updated = std::fs::read_to_string(&config_path).unwrap();
+    assert!(!updated.contains("profile ="));
+    assert!(updated.contains("profiles_dir ="));
+}
+
+fn run_config_command<const N: usize>(
+    config_path: &std::path::Path,
+    command_args: [&str; N],
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_sushi"));
+    command.args([
+        "--config",
+        config_path.to_str().unwrap(),
+        "--profile",
+        "minimal",
+        "config",
+    ]);
+    command
+        .args(command_args)
+        .output()
+        .expect("run config command")
+}
+
+#[test]
 fn version_is_bootstrap_safe_when_configuration_is_missing() {
     let temp = tempfile::tempdir().expect("create temp dir");
     let missing_config = temp.path().join("missing.toml");

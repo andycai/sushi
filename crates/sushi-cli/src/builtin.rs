@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use clap::{Args as ClapArgs, Command};
+use std::path::{Path, PathBuf};
 use sushi_core::context::{PluginContext, SushiContext};
 use sushi_core::plugin::{DatabasePermission, Permissions};
 use sushi_core::runtime::{
@@ -8,11 +9,15 @@ use sushi_core::runtime::{
 
 pub struct HostCliFactory {
     role: String,
+    config_path: PathBuf,
 }
 
 impl HostCliFactory {
-    pub fn new(role: impl Into<String>) -> Self {
-        Self { role: role.into() }
+    pub fn new(role: impl Into<String>, config_path: impl Into<PathBuf>) -> Self {
+        Self {
+            role: role.into(),
+            config_path: config_path.into(),
+        }
     }
 }
 
@@ -47,7 +52,7 @@ impl BuiltinPluginFactory for HostCliFactory {
             .await;
 
         let mut staged = ctx.plugins.stage_builtin_activation(entry.id.clone());
-        register_commands(&mut staged, ctx, &self.role);
+        register_commands(&mut staged, ctx, &self.role, &self.config_path);
         let pending = ctx
             .plugins
             .prepare_owner_activation(staged)
@@ -63,6 +68,7 @@ fn register_commands(
     staged: &mut sushi_core::runtime::StagedRegistrar,
     ctx: &SushiContext,
     role: &str,
+    config_path: &Path,
 ) {
     let runtime_ctx = ctx.clone();
     staged.register_cli(
@@ -110,12 +116,24 @@ fn register_commands(
             "host-cli",
             "builtin::config",
         )
-        .with_rust_handler(CliHandler::new(move |args| async move {
-            let parsed = parse_args::<crate::commands::config_cmd::ConfigArgs>("config", &args)?;
-            crate::commands::config_cmd::run(parsed)
-                .await
-                .map(|_| String::new())
-                .map_err(|error| error.to_string())
+        .with_rust_handler(CliHandler::new({
+            let config_path = config_path.to_path_buf();
+            let runtime_ctx = runtime_ctx.clone();
+            move |args| {
+                let config_path = config_path.clone();
+                let runtime_ctx = runtime_ctx.clone();
+                async move {
+                    let parsed =
+                        parse_args::<crate::commands::config_cmd::ConfigArgs>("config", &args)?;
+                    crate::commands::config_cmd::run_with_context(
+                        parsed,
+                        &config_path,
+                        &runtime_ctx,
+                    )
+                    .await
+                    .map_err(|error| error.to_string())
+                }
+            }
         })),
     );
 
