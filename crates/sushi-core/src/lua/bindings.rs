@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{path::Component, path::Path};
 
-use crate::context::SushiContext;
+use crate::context::PluginContext;
 use crate::db::{DbGatewayError, DbPermission};
 use crate::fs::{FileBrowserFsService, FsError};
 use crate::plugin::Permissions;
@@ -209,15 +209,26 @@ fn parse_optional_public(opts: &mlua::Table, api_name: &str) -> Result<Option<bo
     }
 }
 
+fn append_contract_entry(sushi: &mlua::Table, entry: mlua::Table) -> Result<(), mlua::Error> {
+    let registry: mlua::Table = sushi.get("__contract_registry")?;
+    registry.set(registry.raw_len() + 1, entry)
+}
+
+fn record_legacy_api_use(sushi: &mlua::Table, api: &str) -> Result<(), mlua::Error> {
+    let diagnostics: mlua::Table = sushi.get("__deprecation_diagnostics")?;
+    diagnostics.set(diagnostics.raw_len() + 1, api)
+}
+
 /// Inject the `sushi` global table into the Lua VM.
 /// Only namespaces permitted by the plugin's permissions are injected.
-pub async fn inject_sushi_api(
+pub async fn inject_plugin_api(
     lua: &Lua,
-    ctx: &SushiContext,
+    ctx: &PluginContext,
     permissions: &Permissions,
 ) -> Result<(), mlua::Error> {
     let sushi = lua.create_table()?;
     sushi.set("__contract_registry", lua.create_table()?)?;
+    sushi.set("__deprecation_diagnostics", lua.create_table()?)?;
     lua.globals().set("sushi", sushi.clone())?;
     crate::lua::injector::inject(lua, permissions.clone(), true)?;
 
@@ -229,7 +240,7 @@ pub async fn inject_sushi_api(
 
     // sushi.log -- always available
     {
-        let log_service = ctx.logs.clone();
+        let log_service = ctx.logs();
 
         let log_table = lua.create_table()?;
         log_table.set(
@@ -279,9 +290,6 @@ pub async fn inject_sushi_api(
 
     // sushi.api -- if routes permitted
     if permissions.routes {
-        let pending_routes = lua.create_table()?;
-        sushi.set("__pending_routes", pending_routes)?;
-
         let api_table = lua.create_table()?;
         api_table.set(
             "route",
@@ -289,6 +297,7 @@ pub async fn inject_sushi_api(
                 move |lua, (method, path, handler, opts): (String, String, mlua::Function, Option<mlua::Table>)| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    record_legacy_api_use(&sushi, "sushi.api.route")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
                     let (policy, is_public) = match opts {
@@ -305,20 +314,18 @@ pub async fn inject_sushi_api(
                         None => (None, false),
                     };
 
-                    let pending: mlua::Table = sushi.get("__pending_routes")?;
                     let entry = lua.create_table()?;
+                    entry.set("surface", "api")?;
                     entry.set("method", method)?;
                     entry.set("path", path)?;
-                    entry.set("handler_key", handler_key)?;
+                    entry.set("handler", handler_key)?;
                     if let Some(policy) = policy {
                         entry.set("policy", policy)?;
                     }
                     if is_public {
                         entry.set("public", true)?;
                     }
-                    let len = pending.raw_len();
-                    pending.set(len + 1, entry)?;
-                    Ok(())
+                    append_contract_entry(&sushi, entry)
                 },
             )?,
         )?;
@@ -327,9 +334,6 @@ pub async fn inject_sushi_api(
 
     // sushi.cli -- if commands permitted
     if permissions.commands {
-        let pending_commands = lua.create_table()?;
-        sushi.set("__pending_commands", pending_commands)?;
-
         let cli_table = lua.create_table()?;
         cli_table.set(
             "command",
@@ -343,6 +347,7 @@ pub async fn inject_sushi_api(
                 )| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    record_legacy_api_use(&sushi, "sushi.cli.command")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
                     let policy = match opts {
@@ -350,17 +355,15 @@ pub async fn inject_sushi_api(
                         None => None,
                     };
 
-                    let pending: mlua::Table = sushi.get("__pending_commands")?;
                     let entry = lua.create_table()?;
+                    entry.set("surface", "cli")?;
                     entry.set("name", name)?;
                     entry.set("description", desc)?;
-                    entry.set("handler_key", handler_key)?;
+                    entry.set("handler", handler_key)?;
                     if let Some(policy) = policy {
                         entry.set("policy", policy)?;
                     }
-                    let len = pending.raw_len();
-                    pending.set(len + 1, entry)?;
-                    Ok(())
+                    append_contract_entry(&sushi, entry)
                 },
             )?,
         )?;
@@ -369,9 +372,6 @@ pub async fn inject_sushi_api(
 
     // sushi.admin -- if admin permitted
     if permissions.admin {
-        let pending_pages = lua.create_table()?;
-        sushi.set("__pending_pages", pending_pages)?;
-
         let admin_table = lua.create_table()?;
         admin_table.set(
             "page",
@@ -385,6 +385,7 @@ pub async fn inject_sushi_api(
                 )| {
                     let handler_key = next_handler_key();
                     let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    record_legacy_api_use(&sushi, "sushi.admin.page")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
                     handlers.set(&*handler_key, handler)?;
                     let policy = match opts {
@@ -392,17 +393,15 @@ pub async fn inject_sushi_api(
                         None => None,
                     };
 
-                    let pending: mlua::Table = sushi.get("__pending_pages")?;
                     let entry = lua.create_table()?;
+                    entry.set("surface", "admin")?;
                     entry.set("path", path)?;
                     entry.set("title", title)?;
-                    entry.set("handler_key", handler_key)?;
+                    entry.set("handler", handler_key)?;
                     if let Some(policy) = policy {
                         entry.set("policy", policy)?;
                     }
-                    let len = pending.raw_len();
-                    pending.set(len + 1, entry)?;
-                    Ok(())
+                    append_contract_entry(&sushi, entry)
                 },
             )?,
         )?;
@@ -411,10 +410,10 @@ pub async fn inject_sushi_api(
 
     if permissions.admin || permissions.routes {
         let static_url_prefix = {
-            let cfg = ctx.config.get().await;
+            let cfg = ctx.config().get().await;
             cfg.web.static_url_prefix.clone()
         };
-        let templates = ctx.templates.clone();
+        let templates = ctx.templates();
 
         let web_table = lua.create_table()?;
 
@@ -437,6 +436,8 @@ pub async fn inject_sushi_api(
             "page",
             lua.create_function(
                 move |lua, (path, template_name, opts): (String, String, Option<mlua::Table>)| {
+                    let sushi: mlua::Table = lua.globals().get("sushi")?;
+                    record_legacy_api_use(&sushi, "sushi.web.page")?;
                     if !page_admin {
                         return Err(mlua::Error::RuntimeError(
                             "sushi.web.page requires admin permission".to_string(),
@@ -481,9 +482,7 @@ pub async fn inject_sushi_api(
                     let json_ctx = build_web_context(lua, context_table, &page_prefix)?;
                     let handler_key = next_handler_key();
 
-                    let sushi: mlua::Table = lua.globals().get("sushi")?;
                     let handlers: mlua::Table = sushi.get("__handlers")?;
-                    let pending: mlua::Table = sushi.get("__pending_pages")?;
 
                     let handler_templates = page_templates.clone();
                     let handler_template_name = template_name.clone();
@@ -502,18 +501,18 @@ pub async fn inject_sushi_api(
                     handlers.set(&*handler_key, handler)?;
 
                     let entry = lua.create_table()?;
+                    entry.set("surface", "web")?;
+                    entry.set("kind", "page")?;
                     entry.set("path", path)?;
                     entry.set("title", title)?;
-                    entry.set("handler_key", handler_key)?;
+                    entry.set("handler", handler_key)?;
                     if let Some(assets) = assets_table {
                         entry.set("assets", assets)?;
                     }
                     if let Some(policy) = policy {
                         entry.set("policy", policy)?;
                     }
-                    let len = pending.raw_len();
-                    pending.set(len + 1, entry)?;
-                    Ok(())
+                    append_contract_entry(&sushi, entry)
                 },
             )?,
         )?;
@@ -561,7 +560,12 @@ pub async fn inject_sushi_api(
 
     // sushi.db -- only when a database permission is granted
     if let Some(gateway_permission) = map_db_permission(&permissions.database) {
-        let db_gateway = ctx.db_gateway.with_permission(gateway_permission);
+        let db_gateway = ctx
+            .db()
+            .ok_or_else(|| {
+                mlua::Error::RuntimeError("database permission is required".to_string())
+            })?
+            .with_permission(gateway_permission);
 
         let db_table = lua.create_table()?;
 
@@ -625,22 +629,31 @@ pub async fn inject_sushi_api(
         sushi.set("json", json_table)?;
     }
 
-    // sushi.config -- always available (read-only stub)
+    // sushi.config -- profile entry configuration (read-only)
     {
         let config_table = lua.create_table()?;
+        let plugin_config = ctx.config_value().clone();
         config_table.set(
             "get",
-            lua.create_function(|_, _key: String| Ok(mlua::Value::Nil))?,
+            lua.create_function(move |lua, key: String| {
+                let value = plugin_config
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                if value.is_null() {
+                    Ok(mlua::Value::Nil)
+                } else {
+                    lua.to_value(&value)
+                }
+            })?,
         )?;
         sushi.set("config", config_table)?;
     }
 
     // sushi.event -- always available
     {
-        let event_bus = ctx.event.clone();
+        let event_bus = ctx.event();
         let event_table = lua.create_table()?;
-        let pending_events = lua.create_table()?;
-        sushi.set("__pending_events", pending_events)?;
 
         event_table.set(
             "on",
@@ -654,12 +667,12 @@ pub async fn inject_sushi_api(
                 let sushi: mlua::Table = lua.globals().get("sushi")?;
                 let handlers: mlua::Table = sushi.get("__handlers")?;
                 handlers.set(&*handler_key, callback)?;
-                let pending: mlua::Table = sushi.get("__pending_events")?;
                 let entry = lua.create_table()?;
+                entry.set("surface", "event")?;
+                entry.set("kind", "subscribe")?;
                 entry.set("event", event)?;
                 entry.set("handler_key", handler_key)?;
-                pending.set(pending.raw_len() + 1, entry)?;
-                Ok(())
+                append_contract_entry(&sushi, entry)
             })?,
         )?;
 
@@ -686,9 +699,85 @@ pub async fn inject_sushi_api(
         sushi.set("event", event_table)?;
     }
 
+    // sushi.task -- owner-scoped background task registration
+    {
+        let task_context = ctx.clone();
+        let task_table = lua.create_table()?;
+        task_table.set(
+            "spawn",
+            lua.create_async_function(
+                move |lua, (name, callback): (String, mlua::Function)| {
+                    let context = task_context.clone();
+                    async move {
+                        let callback = lua.create_registry_value(callback)?;
+                        let runtime = lua.clone();
+                        context
+                            .register_task(name, move |mut cancellation| async move {
+                                tokio::select! {
+                                    _ = cancellation.cancelled() => {}
+                                    result = async {
+                                        let callback = runtime.registry_value::<mlua::Function>(&callback)?;
+                                        callback.call_async::<()>(()).await
+                                    } => {
+                                        if let Err(error) = result {
+                                            tracing::error!(error = %error, "lua background task failed");
+                                        }
+                                    }
+                                }
+                            })
+                            .await
+                            .map_err(mlua::Error::RuntimeError)
+                    }
+                },
+            )?,
+        )?;
+        let interval_context = ctx.clone();
+        task_table.set(
+            "interval",
+            lua.create_async_function(
+                move |lua, (name, interval_ms, callback): (String, u64, mlua::Function)| {
+                    let context = interval_context.clone();
+                    async move {
+                        if interval_ms == 0 {
+                            return Err(mlua::Error::RuntimeError(
+                                "sushi.task.interval requires interval_ms > 0".to_string(),
+                            ));
+                        }
+                        let callback = lua.create_registry_value(callback)?;
+                        let runtime = lua.clone();
+                        context
+                            .register_task(name, move |mut cancellation| async move {
+                                let mut ticker = tokio::time::interval(
+                                    std::time::Duration::from_millis(interval_ms),
+                                );
+                                loop {
+                                    tokio::select! {
+                                        _ = cancellation.cancelled() => break,
+                                        _ = ticker.tick() => {
+                                            let result = async {
+                                                let callback = runtime.registry_value::<mlua::Function>(&callback)?;
+                                                callback.call_async::<()>(()).await
+                                            }.await;
+                                            if let Err(error) = result {
+                                                tracing::error!(error = %error, "lua interval task failed");
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            })
+                            .await
+                            .map_err(mlua::Error::RuntimeError)
+                    }
+                },
+            )?,
+        )?;
+        sushi.set("task", task_table)?;
+    }
+
     // sushi.auth -- always available
     {
-        let jwt = ctx.jwt.clone();
+        let jwt = ctx.jwt();
         let auth_table = lua.create_table()?;
         auth_table.set(
             "verify_token",
@@ -908,6 +997,7 @@ mod tests {
     use super::*;
     use crate::auth::jwt::JwtService;
     use crate::config::ConfigStore;
+    use crate::context::SushiContext;
     use crate::lua::vm::create_sandboxed_vm;
     use crate::plugin::DatabasePermission;
     use crate::plugin::Permissions;
@@ -945,6 +1035,15 @@ mod tests {
         }
     }
 
+    async fn inject_sushi_api(
+        lua: &Lua,
+        ctx: &SushiContext,
+        permissions: &Permissions,
+    ) -> Result<(), mlua::Error> {
+        let plugin_context = ctx.plugin_context(permissions);
+        inject_plugin_api(lua, &plugin_context, permissions).await
+    }
+
     #[tokio::test]
     async fn test_inject_always_available_namespaces() {
         let lua = create_sandboxed_vm().unwrap();
@@ -975,7 +1074,7 @@ mod tests {
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(sushi.contains_key("api").unwrap());
-        assert!(sushi.contains_key("__pending_routes").unwrap());
+        assert!(sushi.contains_key("__contract_registry").unwrap());
     }
 
     #[tokio::test]
@@ -989,7 +1088,7 @@ mod tests {
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(sushi.contains_key("cli").unwrap());
-        assert!(sushi.contains_key("__pending_commands").unwrap());
+        assert!(sushi.contains_key("__contract_registry").unwrap());
     }
 
     #[tokio::test]
@@ -1003,7 +1102,7 @@ mod tests {
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
         assert!(sushi.contains_key("admin").unwrap());
-        assert!(sushi.contains_key("__pending_pages").unwrap());
+        assert!(sushi.contains_key("__contract_registry").unwrap());
     }
 
     #[tokio::test]
@@ -1197,13 +1296,13 @@ mod tests {
         .unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
-        let pending: mlua::Table = sushi.get("__pending_pages").unwrap();
-        assert_eq!(pending.raw_len(), 1);
-        let entry: mlua::Table = pending.get(1).unwrap();
+        let registry: mlua::Table = sushi.get("__contract_registry").unwrap();
+        assert_eq!(registry.raw_len(), 1);
+        let entry: mlua::Table = registry.get(1).unwrap();
         assert_eq!(entry.get::<String>("path").unwrap(), "/admin/lua");
         assert_eq!(entry.get::<String>("title").unwrap(), "Lua Page");
 
-        let handler_key: String = entry.get("handler_key").unwrap();
+        let handler_key: String = entry.get("handler").unwrap();
         let handlers: mlua::Table = sushi.get("__handlers").unwrap();
         let handler: mlua::Function = handlers.get(handler_key).unwrap();
         let rendered: String = handler.call_async(()).await.unwrap();
@@ -1233,8 +1332,8 @@ mod tests {
         .unwrap();
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
-        let pending: mlua::Table = sushi.get("__pending_pages").unwrap();
-        let entry: mlua::Table = pending.get(1).unwrap();
+        let registry: mlua::Table = sushi.get("__contract_registry").unwrap();
+        let entry: mlua::Table = registry.get(1).unwrap();
         let assets: mlua::Table = entry.get("assets").unwrap();
 
         let bundles: mlua::Table = assets.get("bundles").unwrap();
@@ -1470,18 +1569,18 @@ mod tests {
             .exec()
             .unwrap();
 
-        let pending: mlua::Table = lua
+        let registry: mlua::Table = lua
             .globals()
             .get::<mlua::Table>("sushi")
             .unwrap()
-            .get("__pending_routes")
+            .get("__contract_registry")
             .unwrap();
-        assert_eq!(pending.raw_len(), 2);
+        assert_eq!(registry.raw_len(), 2);
 
-        let first: mlua::Table = pending.get(1).unwrap();
+        let first: mlua::Table = registry.get(1).unwrap();
         let method: String = first.get("method").unwrap();
         let path: String = first.get("path").unwrap();
-        let handler_key: String = first.get("handler_key").unwrap();
+        let handler_key: String = first.get("handler").unwrap();
         assert_eq!(method, "GET");
         assert_eq!(path, "/api/test");
         assert!(!first.contains_key("policy").unwrap());
@@ -1537,23 +1636,21 @@ mod tests {
 
         let sushi: mlua::Table = lua.globals().get("sushi").unwrap();
 
-        let route_pending: mlua::Table = sushi.get("__pending_routes").unwrap();
-        let route_entry: mlua::Table = route_pending.get(1).unwrap();
+        let registry: mlua::Table = sushi.get("__contract_registry").unwrap();
+        let route_entry: mlua::Table = registry.get(1).unwrap();
         assert_eq!(
             route_entry.get::<String>("policy").unwrap(),
             "api.policy.read"
         );
 
-        let command_pending: mlua::Table = sushi.get("__pending_commands").unwrap();
-        let command_entry: mlua::Table = command_pending.get(1).unwrap();
+        let command_entry: mlua::Table = registry.get(2).unwrap();
         assert_eq!(
             command_entry.get::<String>("policy").unwrap(),
             "cli.policy.run"
         );
 
-        let page_pending: mlua::Table = sushi.get("__pending_pages").unwrap();
-        let web_page_entry: mlua::Table = page_pending.get(1).unwrap();
-        let admin_page_entry: mlua::Table = page_pending.get(2).unwrap();
+        let web_page_entry: mlua::Table = registry.get(3).unwrap();
+        let admin_page_entry: mlua::Table = registry.get(4).unwrap();
         assert_eq!(
             web_page_entry.get::<String>("policy").unwrap(),
             "admin.page.web.read"
@@ -1579,13 +1676,13 @@ mod tests {
         .exec()
         .unwrap();
 
-        let pending: mlua::Table = lua
+        let registry: mlua::Table = lua
             .globals()
             .get::<mlua::Table>("sushi")
             .unwrap()
-            .get("__pending_routes")
+            .get("__contract_registry")
             .unwrap();
-        let first: mlua::Table = pending.get(1).unwrap();
+        let first: mlua::Table = registry.get(1).unwrap();
         assert_eq!(first.get::<bool>("public").unwrap(), true);
     }
 

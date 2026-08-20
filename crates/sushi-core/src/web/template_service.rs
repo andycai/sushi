@@ -59,7 +59,9 @@ impl TemplateService {
                             .snapshot_sync()
                             .template_roots()
                             .iter()
-                            .find(|registration| registration.value.plugin_id == plugin_name)
+                            .find(|registration| {
+                                registration.value.plugin_id.as_str() == plugin_name
+                            })
                             .map(|registration| registration.value.root.clone())
                     });
                 if let Some(plugin_root) = dynamic_root {
@@ -119,7 +121,10 @@ impl TemplateService {
                     .template_roots()
                     .iter()
                     .map(|registration| {
-                        (registration.value.plugin_id.clone(), registration.id.get())
+                        (
+                            registration.value.plugin_id.to_string(),
+                            registration.id.get(),
+                        )
                     })
                     .collect::<Vec<_>>()
             });
@@ -205,12 +210,48 @@ fn load_template(root: &Path, template_name: &str) -> Result<Option<String>, Min
         None => return Ok(None),
     };
 
-    match fs::read_to_string(&template_path) {
+    let canonical_root = fs::canonicalize(root).map_err(|err| {
+        MinijinjaError::new(
+            MinijinjaErrorKind::InvalidOperation,
+            format!("failed to resolve template root {}: {err}", root.display()),
+        )
+    })?;
+    let canonical_template = match fs::canonicalize(&template_path) {
+        Ok(path) if path.starts_with(&canonical_root) => path,
+        Ok(_) => return Ok(None),
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(MinijinjaError::new(
+                MinijinjaErrorKind::InvalidOperation,
+                format!(
+                    "failed to resolve template {}: {err}",
+                    template_path.display()
+                ),
+            ))
+        }
+    };
+    let metadata = fs::metadata(&canonical_template).map_err(|err| {
+        MinijinjaError::new(
+            MinijinjaErrorKind::InvalidOperation,
+            format!(
+                "failed to inspect template {}: {err}",
+                canonical_template.display()
+            ),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+
+    match fs::read_to_string(&canonical_template) {
         Ok(source) => Ok(Some(source)),
         Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
         Err(err) => Err(MinijinjaError::new(
             MinijinjaErrorKind::InvalidOperation,
-            format!("failed to read template {}: {err}", template_path.display()),
+            format!(
+                "failed to read template {}: {err}",
+                canonical_template.display()
+            ),
         )),
     }
 }

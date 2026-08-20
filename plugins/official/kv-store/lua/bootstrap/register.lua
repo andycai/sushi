@@ -36,8 +36,14 @@ function M.register(deps)
         policy = "admin.kv.manage",
     })
 
-    app.web.page("/admin/kv", "plugins/official/kv-store/kv.html", {
+    app.capability.register({
+        surface = "web",
+        kind = "page",
+        path = "/admin/kv",
         title = "KV Store",
+        handler = function()
+            return app.web.render("plugins/official/kv-store/kv.html")
+        end,
         policy = "admin.kv.manage",
         assets = { bundles = { "workspace" } },
     })
@@ -52,10 +58,34 @@ function M.register(deps)
         policy = "admin.kv.manage",
     })
 
-    app.cli.command("kv-list", "List all KV entries", deps.cli.kv_list, { policy = "cli.kv.list" })
-    app.cli.command("kv-get", "Get a KV entry by key", deps.cli.kv_get, { policy = "cli.kv.get" })
-    app.cli.command("kv-set", "Set a KV entry (key + value)", deps.cli.kv_set, { policy = "cli.kv.set" })
-    app.cli.command("kv-del", "Delete a KV entry by key", deps.cli.kv_del, { policy = "cli.kv.delete" })
+    app.capability.register({
+        surface = "cli",
+        name = "kv-list",
+        description = "List all KV entries",
+        handler = deps.cli.kv_list,
+        policy = "cli.kv.list",
+    })
+    app.capability.register({
+        surface = "cli",
+        name = "kv-get",
+        description = "Get a KV entry by key",
+        handler = deps.cli.kv_get,
+        policy = "cli.kv.get",
+    })
+    app.capability.register({
+        surface = "cli",
+        name = "kv-set",
+        description = "Set a KV entry (key + value)",
+        handler = deps.cli.kv_set,
+        policy = "cli.kv.set",
+    })
+    app.capability.register({
+        surface = "cli",
+        name = "kv-del",
+        description = "Delete a KV entry by key",
+        handler = deps.cli.kv_del,
+        policy = "cli.kv.delete",
+    })
 end
 
 return M

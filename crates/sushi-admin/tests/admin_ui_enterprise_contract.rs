@@ -44,8 +44,14 @@ fn core_admin_fragments_expose_page_header_contract() {
     ];
     for file in files {
         let source = read(file);
-        assert!(source.contains("data-admin-page-header"), "missing in {file}");
-        assert!(source.contains("data-admin-action-cluster"), "missing in {file}");
+        assert!(
+            source.contains("data-admin-page-header"),
+            "missing in {file}"
+        );
+        assert!(
+            source.contains("data-admin-action-cluster"),
+            "missing in {file}"
+        );
     }
 }
 
@@ -61,7 +67,10 @@ fn users_fragment_has_enterprise_toolbar_and_table_card() {
     ];
     for file in files {
         let source = read(file);
-        assert!(source.contains("data-admin-table-card"), "missing in {file}");
+        assert!(
+            source.contains("data-admin-table-card"),
+            "missing in {file}"
+        );
     }
 }
 

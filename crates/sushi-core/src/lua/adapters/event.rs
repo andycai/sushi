@@ -4,6 +4,7 @@ use crate::plugin::PluginError;
 pub struct EventEntry {
     pub kind: String,
     pub event: String,
+    pub handler_key: Option<String>,
 }
 
 pub fn snapshot_from_lua(raw_registry: mlua::Table) -> Result<Vec<EventEntry>, PluginError> {
@@ -49,8 +50,34 @@ pub fn snapshot_from_lua(raw_registry: mlua::Table) -> Result<Vec<EventEntry>, P
                 "contract registry event entry {index} has invalid event: {e}"
             ))
         })?;
+        let handler_key = match entry.get::<mlua::Value>("handler_key").map_err(|e| {
+            PluginError::InitFailed(format!(
+                "contract registry event entry {index} has invalid handler_key: {e}"
+            ))
+        })? {
+            mlua::Value::Nil => None,
+            mlua::Value::String(value) => Some(
+                value
+                    .to_str()
+                    .map_err(|e| {
+                        PluginError::InitFailed(format!(
+                            "contract registry event entry {index} has invalid handler_key: {e}"
+                        ))
+                    })?
+                    .to_string(),
+            ),
+            _ => {
+                return Err(PluginError::InitFailed(format!(
+                    "contract registry event entry {index} handler_key must be a string"
+                )))
+            }
+        };
 
-        entries.push(EventEntry { kind, event });
+        entries.push(EventEntry {
+            kind,
+            event,
+            handler_key,
+        });
     }
 
     Ok(entries)

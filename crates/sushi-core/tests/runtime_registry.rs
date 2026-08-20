@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use sushi_core::runtime::{
     AdminPageSpec, CapabilityRegistry, CliCommandSpec, HttpRouteSpec, HttpSurface,
     MenuContributionSpec, PluginInstanceId, RegistrationConflict, RegistrationSource,
-    StaticRootSpec, TemplateRootSpec,
+    StaticRootSpec, TemplateRootSpec, TransportSpec,
 };
 
 fn owner(value: &str) -> PluginInstanceId {
@@ -30,14 +30,41 @@ async fn staged_registrations_are_invisible_until_commit() {
 }
 
 #[tokio::test]
+async fn transport_surfaces_follow_owner_lifecycle_and_conflict_rules() {
+    let registry = CapabilityRegistry::new();
+    let api_owner = owner("transport.api");
+    let mut staged = registry.stage_with_source(api_owner.clone(), RegistrationSource::Builtin);
+    staged.register_transport(TransportSpec::new(HttpSurface::Api));
+
+    assert!(!registry.snapshot().await.has_transport(HttpSurface::Api));
+    registry.commit(staged).await.expect("commit succeeds");
+    assert!(registry.snapshot().await.has_transport(HttpSurface::Api));
+
+    let mut conflicting =
+        registry.stage_with_source(owner("transport.other"), RegistrationSource::Builtin);
+    conflicting.register_transport(TransportSpec::new(HttpSurface::Api));
+    let error = registry
+        .commit(conflicting)
+        .await
+        .expect_err("only one owner may select a transport surface");
+    assert!(matches!(error, RegistrationConflict::Transport { .. }));
+
+    registry.remove_owner(&api_owner).await;
+    assert!(!registry.snapshot().await.has_transport(HttpSurface::Api));
+}
+
+#[tokio::test]
 async fn template_roots_follow_owner_commit_and_removal() {
     let registry = CapabilityRegistry::new();
     let plugin_owner = owner("notes.default");
     let mut staged = registry.stage(plugin_owner.clone());
-    staged.register_template_root(TemplateRootSpec::new(
-        "official/notes",
-        PathBuf::from("/plugins/official/notes/web/templates"),
-    ));
+    staged.register_template_root(
+        TemplateRootSpec::new(
+            "official/notes",
+            PathBuf::from("/plugins/official/notes/web/templates"),
+        )
+        .unwrap(),
+    );
 
     assert!(registry.snapshot().await.template_roots().is_empty());
 
@@ -45,7 +72,7 @@ async fn template_roots_follow_owner_commit_and_removal() {
     let snapshot = registry.snapshot().await;
     assert_eq!(snapshot.template_roots().len(), 1);
     assert_eq!(
-        snapshot.template_roots()[0].value.plugin_id,
+        snapshot.template_roots()[0].value.plugin_id.as_str(),
         "official/notes"
     );
 
@@ -58,17 +85,23 @@ async fn static_roots_follow_owner_commit_and_removal() {
     let registry = CapabilityRegistry::new();
     let plugin_owner = owner("notes.default");
     let mut staged = registry.stage(plugin_owner.clone());
-    staged.register_static_root(StaticRootSpec::new(
-        "official/notes",
-        PathBuf::from("/plugins/official/notes/web/static"),
-    ));
+    staged.register_static_root(
+        StaticRootSpec::new(
+            "official/notes",
+            PathBuf::from("/plugins/official/notes/web/static"),
+        )
+        .unwrap(),
+    );
 
     assert!(registry.snapshot().await.static_roots().is_empty());
 
     registry.commit(staged).await.expect("commit succeeds");
     let snapshot = registry.snapshot().await;
     assert_eq!(snapshot.static_roots().len(), 1);
-    assert_eq!(snapshot.static_roots()[0].value.plugin_id, "official/notes");
+    assert_eq!(
+        snapshot.static_roots()[0].value.plugin_id.as_str(),
+        "official/notes"
+    );
 
     registry.remove_owner(&plugin_owner).await;
     assert!(registry.snapshot().await.static_roots().is_empty());
@@ -495,6 +528,58 @@ async fn builtin_route_can_take_over_reserved_host_route() {
     let snapshot = registry.snapshot().await;
     let registration = snapshot.match_http("GET", "/api/users").unwrap();
     assert_eq!(registration.source, RegistrationSource::Builtin);
+}
+
+#[tokio::test]
+async fn non_builtin_cli_command_cannot_claim_host_reserved_name() {
+    let registry = CapabilityRegistry::new();
+    let plugin_owner = owner("notes.default");
+    let mut staged = registry.stage_with_source(plugin_owner.clone(), RegistrationSource::Lua);
+    staged.register_cli(CliCommandSpec::new(
+        "serve",
+        "Shadow the host launcher",
+        "notes",
+        "handler::serve",
+    ));
+
+    let error = registry
+        .commit(staged)
+        .await
+        .expect_err("Lua plugins must not claim Host CLI names");
+    assert_eq!(
+        error,
+        RegistrationConflict::ReservedCliCommand {
+            registration_source: RegistrationSource::Lua,
+            name: "serve".to_string(),
+            owner: plugin_owner,
+        }
+    );
+}
+
+#[tokio::test]
+async fn builtin_cli_command_can_claim_host_reserved_name() {
+    let registry = CapabilityRegistry::new();
+    let mut staged = registry.stage_with_source(owner("host.cli"), RegistrationSource::Builtin);
+    staged.register_cli(CliCommandSpec::new(
+        "doctor",
+        "Diagnose the runtime",
+        "host-cli",
+        "builtin::doctor",
+    ));
+
+    registry
+        .commit(staged)
+        .await
+        .expect("Host Builtin may register its reserved CLI name");
+    assert_eq!(
+        registry
+            .snapshot()
+            .await
+            .cli_command("doctor")
+            .unwrap()
+            .source,
+        RegistrationSource::Builtin
+    );
 }
 
 #[tokio::test]

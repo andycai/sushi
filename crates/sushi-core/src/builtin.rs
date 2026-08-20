@@ -1,6 +1,73 @@
-use crate::context::SushiContext;
+use crate::context::{PluginContext, SushiContext};
 use crate::plugin::{DatabasePermission, Permissions};
-use crate::runtime::{ResolvedRuntimeEntry, RuntimePluginSource};
+use crate::runtime::{
+    historical_host_core_migrations, historical_policy_migrations, BuiltinPluginFactory,
+    MigrationError, PluginMigration, ResolvedRuntimeEntry, RuntimePluginSource,
+};
+use async_trait::async_trait;
+
+pub struct HostCoreFactory;
+
+#[async_trait]
+impl BuiltinPluginFactory for HostCoreFactory {
+    fn key(&self) -> &'static str {
+        "host-core"
+    }
+
+    fn migrations(
+        &self,
+        _entry: &ResolvedRuntimeEntry,
+    ) -> Result<Vec<PluginMigration>, MigrationError> {
+        historical_host_core_migrations()
+    }
+
+    async fn activate(
+        &self,
+        ctx: &SushiContext,
+        _plugin_ctx: &PluginContext,
+        entry: &ResolvedRuntimeEntry,
+    ) -> anyhow::Result<()> {
+        validate_builtin_entry(entry, self.key())?;
+        ctx.plugins
+            .register_builtin_profile_plugin(
+                "builtin/host-core",
+                "host-core",
+                env!("CARGO_PKG_VERSION"),
+                "Trusted runtime host boundary",
+                &Permissions::default(),
+                entry.enabled,
+                entry.required,
+            )
+            .await;
+        ctx.plugins.mark_plugin_loaded("host-core", true).await;
+        Ok(())
+    }
+}
+
+pub struct PolicyFactory;
+
+#[async_trait]
+impl BuiltinPluginFactory for PolicyFactory {
+    fn key(&self) -> &'static str {
+        "policy"
+    }
+
+    fn migrations(
+        &self,
+        _entry: &ResolvedRuntimeEntry,
+    ) -> Result<Vec<PluginMigration>, MigrationError> {
+        historical_policy_migrations()
+    }
+
+    async fn activate(
+        &self,
+        ctx: &SushiContext,
+        _plugin_ctx: &PluginContext,
+        entry: &ResolvedRuntimeEntry,
+    ) -> anyhow::Result<()> {
+        activate_policy(ctx, entry).await
+    }
+}
 
 pub async fn activate_policy(
     ctx: &SushiContext,

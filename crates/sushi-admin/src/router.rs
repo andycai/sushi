@@ -31,7 +31,7 @@ pub struct AdminAuthContext {
     pub is_admin: bool,
 }
 
-pub async fn build_admin_router(ctx: &SushiContext) -> Router {
+pub async fn build_static_router(ctx: &SushiContext) -> Router {
     let (static_dir, static_url_prefix) = {
         let cfg = ctx.config.get().await;
         (
@@ -61,9 +61,16 @@ pub async fn build_admin_router(ctx: &SushiContext) -> Router {
             get_service(ServeFile::new(format!("{static_dir}/favicon.svg"))),
         );
 
+    static_router.merge(favicon_router).with_state(ctx.clone())
+}
+
+pub async fn build_admin_router(ctx: &SushiContext) -> Router {
+    let static_url_prefix = {
+        let cfg = ctx.config.get().await;
+        crate::render::normalize_static_url_prefix(&cfg.web.static_url_prefix)
+    };
+
     let mut router: Router<SushiContext> = Router::new()
-        .merge(static_router)
-        .merge(favicon_router)
         .route("/", get(axum::response::Redirect::temporary("/admin/")))
         .route(
             "/index.html",
@@ -320,14 +327,14 @@ async fn plugin_static_asset(
     let root = match snapshot
         .static_roots()
         .iter()
-        .find(|registration| registration.value.plugin_id == plugin_id)
+        .find(|registration| registration.value.plugin_id.as_str() == plugin_id)
         .map(|registration| registration.value.root.clone())
     {
         Some(root) => root,
         None => return StatusCode::NOT_FOUND.into_response(),
     };
 
-    let mut file_path = root;
+    let mut file_path = root.clone();
     for component in std::path::Path::new(asset_path).components() {
         match component {
             std::path::Component::Normal(segment) => file_path.push(segment),
@@ -338,13 +345,45 @@ async fn plugin_static_asset(
         }
     }
 
-    let body = match tokio::fs::read(&file_path).await {
+    let canonical_root = match tokio::fs::canonicalize(&root).await {
+        Ok(root) => root,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(path = %root.display(), error = %error, "failed to resolve plugin static root");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let canonical_file = match tokio::fs::canonicalize(&file_path).await {
+        Ok(path) if path.starts_with(&canonical_root) => path,
+        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(path = %file_path.display(), error = %error, "failed to resolve plugin static asset");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    match tokio::fs::metadata(&canonical_file).await {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return StatusCode::NOT_FOUND.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(path = %canonical_file.display(), error = %error, "failed to inspect plugin static asset");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+    let body = match tokio::fs::read(&canonical_file).await {
         Ok(body) => body,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return StatusCode::NOT_FOUND.into_response()
         }
         Err(error) => {
-            tracing::warn!(path = %file_path.display(), error = %error, "failed to read plugin static asset");
+            tracing::warn!(path = %canonical_file.display(), error = %error, "failed to read plugin static asset");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -379,6 +418,10 @@ async fn admin_auth_middleware(
 
     // Allow static assets without auth
     if matches_static_prefix(&path, &state.static_url_prefix) {
+        return next.run(req).await;
+    }
+
+    if path != "/admin" && !path.starts_with("/admin/") {
         return next.run(req).await;
     }
 

@@ -6,11 +6,11 @@ use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
 use sushi_core::logs::tracing_bridge;
-use sushi_core::lua::loader::LuaPlugin;
+use sushi_core::lua::loader::{LuaPlugin, RuntimeHost};
 use sushi_core::plugin::Plugin;
 use sushi_core::runtime::{
-    historical_builtin_migrations, load_lua_migrations, MigrationRunner, ResolvedRuntimeProfile,
-    RuntimePluginSource, RuntimeProfileResolver,
+    load_lua_migrations, BuiltinFactoryRegistry, MigrationRunner, PluginMigration,
+    ResolvedRuntimeProfile, RuntimePluginSource, RuntimeProfileResolver,
 };
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::web::template_service::TemplateService;
@@ -22,6 +22,14 @@ pub async fn bootstrap(config_path: Option<&Path>) -> Result<SushiContext> {
 pub async fn resolve_runtime_profile(
     config_path: Option<&Path>,
     profile_override: Option<&str>,
+) -> Result<(ConfigStore, ResolvedRuntimeProfile)> {
+    resolve_runtime_profile_with_overlays(config_path, profile_override, &[]).await
+}
+
+pub async fn resolve_runtime_profile_with_overlays(
+    config_path: Option<&Path>,
+    profile_override: Option<&str>,
+    overlay_paths: &[PathBuf],
 ) -> Result<(ConfigStore, ResolvedRuntimeProfile)> {
     let config = match config_path {
         Some(path) if path.exists() => ConfigStore::load(path)
@@ -45,9 +53,12 @@ pub async fn resolve_runtime_profile(
             resolve_dir(config_path, &guard.plugins.directory, "plugin")?,
         )
     };
-    let resolver = RuntimeProfileResolver::new(profiles_dir, bundles_dir, plugins_dir);
+    let builtin_factories = builtin_factories()?;
+    let resolver = RuntimeProfileResolver::new(profiles_dir, bundles_dir, plugins_dir)
+        .with_builtins(builtin_factories.keys());
+    let overlay_paths = overlay_paths.to_vec();
     let profile = tokio::task::spawn_blocking(move || {
-        resolver.resolve_configured(configured_profile.as_deref())
+        resolver.resolve_configured_with_overlays(configured_profile.as_deref(), &overlay_paths)
     })
     .await
     .context("runtime profile resolver task failed")?
@@ -59,16 +70,42 @@ pub async fn bootstrap_with_profile(
     config_path: Option<&Path>,
     profile_override: Option<&str>,
 ) -> Result<SushiContext> {
-    let (config, runtime_profile) = resolve_runtime_profile(config_path, profile_override).await?;
+    bootstrap_with_profile_and_overlays(config_path, profile_override, &[]).await
+}
+
+pub async fn bootstrap_with_profile_and_overlays(
+    config_path: Option<&Path>,
+    profile_override: Option<&str>,
+    overlay_paths: &[PathBuf],
+) -> Result<SushiContext> {
+    bootstrap_with_options(config_path, profile_override, overlay_paths, "admin").await
+}
+
+pub(crate) async fn bootstrap_with_options(
+    config_path: Option<&Path>,
+    profile_override: Option<&str>,
+    overlay_paths: &[PathBuf],
+    cli_role: &str,
+) -> Result<SushiContext> {
+    let (config, runtime_profile) =
+        resolve_runtime_profile_with_overlays(config_path, profile_override, overlay_paths).await?;
     let mut resolved_lua_plugins = Vec::new();
     let mut plugin_names = BTreeSet::new();
     for entry in runtime_profile.entries() {
         let RuntimePluginSource::Lua { path_id, path, .. } = &entry.source else {
             continue;
         };
-        let plugin = LuaPlugin::load_dir(path, path_id)
+        let mut plugin = LuaPlugin::load_dir(path, path_id)
             .await
             .with_context(|| format!("failed to load profile entry {}", entry.id))?;
+        plugin.apply_profile_grants(&entry.grants);
+        if entry.enabled && entry.required && !plugin.is_approved() {
+            anyhow::bail!(
+                "required runtime entry {} source '{}' is not approved; set grants.approved = true and restart",
+                entry.id,
+                entry.source.reference()
+            );
+        }
         if !plugin_names.insert(plugin.name().to_string()) {
             anyhow::bail!(
                 "runtime profile '{}' mounts duplicate plugin name '{}'",
@@ -79,18 +116,57 @@ pub async fn bootstrap_with_profile(
         resolved_lua_plugins.push((entry.clone(), plugin));
     }
 
-    let mut migrations =
-        historical_builtin_migrations(runtime_profile.has_enabled_builtin("menu-admin"))
-            .context("failed to build builtin migration catalog")?;
+    let runtime_host = RuntimeHost::new();
     for (entry, plugin) in &resolved_lua_plugins {
-        if !entry.enabled {
+        runtime_host
+            .register_lua_source_for_instance_with_config(
+                plugin,
+                entry.id.clone(),
+                entry.required,
+                entry.config.clone(),
+            )
+            .await;
+    }
+
+    let migrating_plugins = resolved_lua_plugins
+        .iter()
+        .filter(|(entry, plugin)| entry.enabled && plugin.is_approved())
+        .map(|(_, plugin)| plugin.name().to_string())
+        .collect::<Vec<_>>();
+    for plugin_name in &migrating_plugins {
+        runtime_host
+            .begin_migration(plugin_name)
+            .await
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    }
+
+    let builtin_factories = builtin_factories_with_role(cli_role)?;
+    let mut migrations = match builtin_factories.migrations_for_entries(runtime_profile.entries()) {
+        Ok(migrations) => migrations,
+        Err(error) => {
+            for plugin_name in &migrating_plugins {
+                let _ = runtime_host
+                    .record_failure(plugin_name, error.to_string())
+                    .await;
+            }
+            return Err(error).context("failed to build builtin migration catalog");
+        }
+    };
+    for (entry, plugin) in &resolved_lua_plugins {
+        if !entry.enabled || !plugin.is_approved() {
             continue;
         }
-        migrations.extend(
-            load_lua_migrations(entry, &plugin.effective_permissions().database).with_context(
-                || format!("failed to load migrations for runtime entry {}", entry.id),
-            )?,
-        );
+        let loaded = load_lua_migrations(entry, &plugin.effective_permissions().database)
+            .with_context(|| format!("failed to load migrations for runtime entry {}", entry.id));
+        match loaded {
+            Ok(loaded) => migrations.extend(loaded),
+            Err(error) => {
+                let _ = runtime_host
+                    .record_failure(plugin.name(), error.to_string())
+                    .await;
+                return Err(error);
+            }
+        }
     }
 
     let db_path = {
@@ -102,13 +178,18 @@ pub async fn bootstrap_with_profile(
         tokio::fs::create_dir_all(parent).await.ok();
     }
 
-    let storage = SqliteStorage::new(&db_path)
-        .await
-        .context("failed to open database")?;
-    MigrationRunner::new(&storage)
-        .apply(&migrations)
-        .await
-        .context("failed to apply runtime migration catalog")?;
+    let storage = match SqliteStorage::new(&db_path).await {
+        Ok(storage) => storage,
+        Err(error) => {
+            for plugin_name in &migrating_plugins {
+                let _ = runtime_host
+                    .record_failure(plugin_name, error.to_string())
+                    .await;
+            }
+            return Err(error).context("failed to open database");
+        }
+    };
+    apply_runtime_migrations(&storage, &migrations, &runtime_host, &migrating_plugins).await?;
 
     let jwt = {
         let guard = config.get().await;
@@ -153,12 +234,13 @@ pub async fn bootstrap_with_profile(
     let templates = TemplateService::new(&templates_dir)
         .with_context(|| format!("failed to init template root {}", templates_dir.display()))?;
 
-    let ctx = SushiContext::new_with_runtime_profile(
+    let ctx = SushiContext::new_with_runtime_profile_and_host(
         config,
         storage,
         jwt,
         templates,
         runtime_profile.clone(),
+        runtime_host,
     );
     tracing_bridge::register_log_service(ctx.logs.clone());
 
@@ -167,39 +249,13 @@ pub async fn bootstrap_with_profile(
         .iter()
         .filter(|entry| entry.enabled)
     {
-        if entry.source.builtin_key() == Some("identity") {
-            sushi_api::builtin::activate_identity(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("api-core") {
-            sushi_api::builtin::activate_api_core(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("admin-shell") {
-            sushi_admin::builtin::activate_admin_shell(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("host-admin") {
-            sushi_admin::builtin::activate_host_admin(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("governance") {
-            sushi_admin::builtin::activate_governance(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("rbac-admin") {
-            sushi_admin::builtin::activate_rbac_admin(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("menu-admin") {
-            sushi_admin::builtin::activate_menu_admin(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        } else if entry.source.builtin_key() == Some("policy") {
-            sushi_core::builtin::activate_policy(&ctx, entry)
-                .await
-                .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
-        }
+        let Some(key) = entry.source.builtin_key() else {
+            continue;
+        };
+        builtin_factories
+            .activate(key, &ctx, entry)
+            .await
+            .with_context(|| format!("failed to activate runtime entry {}", entry.id))?;
     }
 
     // Load plugins
@@ -207,9 +263,6 @@ pub async fn bootstrap_with_profile(
         let plugin_name = plugin.name().to_string();
         let plugin_path_id = plugin.path_id().to_string();
         let plugin_kind = plugin.kind();
-        ctx.runtime_host
-            .register_lua_source_for_instance(&plugin, entry.id.clone(), entry.required)
-            .await;
         ctx.plugins
             .register_profile_plugin_manifest(
                 plugin.manifest(),
@@ -227,6 +280,27 @@ pub async fn bootstrap_with_profile(
                 "plugin is disabled by runtime profile; skipping init"
             );
             ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            let _ = ctx.runtime_host.mark_inactive(&plugin_name).await;
+            continue;
+        }
+        if !plugin.is_approved() {
+            let message = format!(
+                "plugin '{plugin_name}' is not approved by runtime entry '{}'; set grants.approved = true and restart",
+                entry.id
+            );
+            if entry.required {
+                anyhow::bail!(
+                    "required runtime entry {} failed approval: {message}",
+                    entry.id
+                );
+            }
+            tracing::warn!("{message}; skipping init");
+            ctx.logs.warn(&format!("{message}; skipping init")).await;
+            ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            let _ = ctx
+                .runtime_host
+                .record_failure(&plugin_name, message.clone())
+                .await;
             continue;
         }
         let enabled_before_init = match ctx.plugins.plugin_runtime_enabled(&plugin_name).await {
@@ -238,12 +312,17 @@ pub async fn bootstrap_with_profile(
                 tracing::warn!("{message}");
                 ctx.logs.warn(&message).await;
                 ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+                let _ = ctx
+                    .runtime_host
+                    .record_failure(&plugin_name, message.clone())
+                    .await;
                 continue;
             }
         };
         if !enabled_before_init && !entry.required {
             tracing::info!("plugin {plugin_name} is disabled by governance state; skipping init");
             ctx.plugins.mark_plugin_loaded(&plugin_name, false).await;
+            let _ = ctx.runtime_host.mark_inactive(&plugin_name).await;
             continue;
         }
 
@@ -267,6 +346,48 @@ pub async fn bootstrap_with_profile(
     sushi_core::builtin::refresh_policy(&ctx).await?;
 
     Ok(ctx)
+}
+
+async fn apply_runtime_migrations(
+    storage: &SqliteStorage,
+    migrations: &[PluginMigration],
+    runtime_host: &RuntimeHost,
+    migrating_plugins: &[String],
+) -> Result<()> {
+    if let Err(error) = MigrationRunner::new(storage).apply(migrations).await {
+        for plugin_name in migrating_plugins {
+            let _ = runtime_host
+                .record_failure(plugin_name, error.to_string())
+                .await;
+        }
+        return Err(anyhow::Error::new(error)).context("failed to apply runtime migration catalog");
+    }
+    for plugin_name in migrating_plugins {
+        runtime_host
+            .complete_migration(plugin_name)
+            .await
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn builtin_factories() -> Result<BuiltinFactoryRegistry> {
+    builtin_factories_with_role("admin")
+}
+
+fn builtin_factories_with_role(role: &str) -> Result<BuiltinFactoryRegistry> {
+    let mut factories = BuiltinFactoryRegistry::new();
+    factories.register(sushi_core::builtin::HostCoreFactory)?;
+    factories.register(crate::builtin::HostCliFactory::new(role))?;
+    factories.register(sushi_core::builtin::PolicyFactory)?;
+    factories.register(sushi_api::builtin::IdentityFactory)?;
+    factories.register(sushi_api::builtin::ApiCoreFactory)?;
+    factories.register(sushi_admin::builtin::AdminShellFactory)?;
+    factories.register(sushi_admin::builtin::HostAdminFactory)?;
+    factories.register(sushi_admin::builtin::GovernanceFactory)?;
+    factories.register(sushi_admin::builtin::RbacAdminFactory)?;
+    factories.register(sushi_admin::builtin::MenuAdminFactory)?;
+    Ok(factories)
 }
 
 fn resolve_templates_dir(config_path: Option<&Path>, templates_dir: &str) -> Result<PathBuf> {
@@ -300,8 +421,12 @@ fn resolve_dir(config_path: Option<&Path>, dir: &str, kind: &str) -> Result<Path
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
     use std::time::{SystemTime, UNIX_EPOCH};
+    use sushi_core::runtime::PluginLifecycleState;
     use sushi_core::storage::Storage;
+    use tower::ServiceExt;
 
     fn unique_temp_root(label: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -318,10 +443,11 @@ mod tests {
             plugin_dir.join("plugin.toml"),
             format!(
                 r#"
+schema_version = 1
+
 [plugin]
 name = "{name}"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -345,10 +471,11 @@ routes = true
             plugin_dir.join("plugin.toml"),
             format!(
                 r#"
+schema_version = 1
+
 [plugin]
 name = "{plugin_name}"
 version = "0.1.0"
-kind = "official"
 entry = "init.lua"
 
 [permissions]
@@ -411,6 +538,51 @@ bundles_dir = "bundles"
     }
 
     #[tokio::test]
+    async fn failed_runtime_migration_sets_plugin_status_to_failed() {
+        let temp_root = unique_temp_root("migration-status-failure");
+        write_test_plugin(
+            &temp_root,
+            "migration-status",
+            "sushi.init = function() end",
+        );
+        let plugin_dir = temp_root
+            .join("plugins")
+            .join("third_party")
+            .join("migration-status");
+        let plugin = LuaPlugin::load_dir(&plugin_dir, "third_party/migration-status")
+            .await
+            .unwrap();
+        let runtime_host = RuntimeHost::new();
+        runtime_host.register_lua_source(&plugin, false).await;
+        runtime_host.begin_migration(plugin.name()).await.unwrap();
+
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let migration = PluginMigration::new(
+            "third_party/migration-status",
+            "001_invalid",
+            "THIS IS NOT VALID SQL",
+        )
+        .unwrap();
+        let error = apply_runtime_migrations(
+            &storage,
+            &[migration],
+            &runtime_host,
+            &[plugin.name().to_string()],
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to apply runtime migration catalog"));
+        let status = runtime_host.status(plugin.name()).await.unwrap();
+        assert_eq!(status.state, PluginLifecycleState::Failed);
+        assert!(status.last_error.is_some());
+
+        std::fs::remove_dir_all(temp_root).ok();
+    }
+
+    #[tokio::test]
     async fn bootstrap_skips_disabled_plugin_init_side_effects() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -429,10 +601,11 @@ bundles_dir = "bundles"
         std::fs::write(
             plugin_dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "skip-probe"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -450,10 +623,51 @@ end)
         )
         .unwrap();
 
+        let profiles_dir = temp_root.join("profiles");
+        let bundles_dir = temp_root.join("bundles");
+        std::fs::create_dir_all(&profiles_dir).unwrap();
+        std::fs::create_dir_all(&bundles_dir).unwrap();
+        std::fs::write(
+            profiles_dir.join("default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"test\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            bundles_dir.join("test.toml"),
+            r#"
+schema_version = 1
+name = "test"
+
+[[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[[entries]]
+id = "policy.core"
+source = "builtin:policy"
+enabled = true
+required = true
+
+[[entries]]
+id = "skip-probe.default"
+source = "lua:third_party/skip-probe"
+enabled = true
+required = false
+
+[entries.grants]
+approved = true
+"#,
+        )
+        .unwrap();
+
         let db_path_string = db_path.to_string_lossy().to_string();
         let storage = SqliteStorage::new(&db_path_string).await.unwrap();
+        let mut migrations = sushi_core::runtime::historical_host_core_migrations().unwrap();
+        migrations.extend(sushi_core::runtime::historical_policy_migrations().unwrap());
         MigrationRunner::new(&storage)
-            .apply(&historical_builtin_migrations(true).unwrap())
+            .apply(&migrations)
             .await
             .unwrap();
         storage
@@ -476,6 +690,10 @@ path = "{}"
 [plugins]
 directory = "{}"
 
+[runtime]
+profiles_dir = "{}"
+bundles_dir = "{}"
+
 [web]
 templates_dir = "{}"
 static_dir = "{}"
@@ -483,6 +701,8 @@ static_url_prefix = "/static"
 "#,
             db_path.display(),
             plugins_dir.display(),
+            profiles_dir.display(),
+            bundles_dir.display(),
             templates_dir.display(),
             static_dir.display()
         );
@@ -568,16 +788,34 @@ schema_version = 1
 name = "test"
 
 [[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[[entries]]
+id = "policy.core"
+source = "builtin:policy"
+enabled = true
+required = true
+
+[[entries]]
 id = "probe.required"
 source = "lua:third_party/required-probe"
 enabled = true
 required = true
+
+[entries.grants]
+approved = true
 
 [[entries]]
 id = "probe.disabled"
 source = "lua:third_party/disabled-probe"
 enabled = false
 required = false
+
+[entries.grants]
+approved = true
 "#,
         )
         .unwrap();
@@ -613,6 +851,187 @@ required = false
             .await
             .unwrap_err();
         assert!(error.starts_with("required_plugin_toggle_forbidden:"));
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn unapproved_optional_plugin_never_executes_or_publishes_effects() {
+        let temp_root = unique_temp_root("unapproved-optional");
+        std::fs::create_dir_all(temp_root.join("profiles")).unwrap();
+        std::fs::create_dir_all(temp_root.join("bundles")).unwrap();
+        write_test_plugin(
+            &temp_root,
+            "unapproved-probe",
+            "error('unapproved plugin code executed')",
+        );
+        std::fs::write(
+            temp_root.join("bundles/test.toml"),
+            r#"
+schema_version = 1
+name = "test"
+
+[[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[[entries]]
+id = "policy.core"
+source = "builtin:policy"
+enabled = true
+required = true
+
+[[entries]]
+id = "probe.unapproved"
+source = "lua:third_party/unapproved-probe"
+enabled = true
+required = false
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp_root.join("profiles/default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"test\"]\n",
+        )
+        .unwrap();
+        let config_path = write_profile_config(&temp_root, &temp_root.join("data/sushi.db"));
+
+        let ctx = bootstrap(Some(&config_path)).await.unwrap();
+        let plugin = ctx
+            .plugins
+            .list_plugins()
+            .await
+            .into_iter()
+            .find(|plugin| plugin.name == "unapproved-probe")
+            .unwrap();
+        assert!(plugin.enabled);
+        assert!(!plugin.loaded);
+        assert!(ctx
+            .plugins
+            .capability_snapshot()
+            .await
+            .registration_ids_for_owner(
+                &sushi_core::runtime::PluginInstanceId::new("probe.unapproved").unwrap()
+            )
+            .is_empty());
+        assert!(ctx.runtime_host.handle("unapproved-probe").await.is_none());
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn unapproved_optional_plugin_migrations_are_excluded_from_bootstrap() {
+        let temp_root = unique_temp_root("unapproved-optional-migration");
+        std::fs::create_dir_all(temp_root.join("profiles")).unwrap();
+        std::fs::create_dir_all(temp_root.join("bundles")).unwrap();
+        write_official_profile_stub(
+            &temp_root,
+            "migration-probe",
+            "migration-probe",
+            "error('unapproved plugin code executed')",
+        );
+        let migrations_dir = temp_root.join("plugins/official/migration-probe/migrations");
+        std::fs::create_dir_all(&migrations_dir).unwrap();
+        std::fs::write(
+            migrations_dir.join("001_probe.sql"),
+            "CREATE TABLE unapproved_optional_migration_effect (id INTEGER PRIMARY KEY);",
+        )
+        .unwrap();
+        std::fs::write(
+            temp_root.join("bundles/test.toml"),
+            r#"
+schema_version = 1
+name = "test"
+
+[[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[[entries]]
+id = "policy.core"
+source = "builtin:policy"
+enabled = true
+required = true
+
+[[entries]]
+id = "probe.unapproved"
+source = "lua:official/migration-probe"
+enabled = true
+required = false
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp_root.join("profiles/default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"test\"]\n",
+        )
+        .unwrap();
+        let database_path = temp_root.join("data/sushi.db");
+        let config_path = write_profile_config(&temp_root, &database_path);
+
+        let ctx = bootstrap(Some(&config_path)).await.unwrap();
+        let rows = ctx
+            .db
+            .query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'unapproved_optional_migration_effect'",
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+        assert!(rows.is_empty());
+        ctx.shutdown().await;
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn unapproved_required_plugin_aborts_with_recovery_hint() {
+        let temp_root = unique_temp_root("unapproved-required");
+        std::fs::create_dir_all(temp_root.join("profiles")).unwrap();
+        std::fs::create_dir_all(temp_root.join("bundles")).unwrap();
+        write_test_plugin(
+            &temp_root,
+            "unapproved-required",
+            "error('must not execute')",
+        );
+        std::fs::write(
+            temp_root.join("bundles/test.toml"),
+            r#"
+schema_version = 1
+name = "test"
+
+[[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[[entries]]
+id = "probe.unapproved"
+source = "lua:third_party/unapproved-required"
+enabled = true
+required = true
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp_root.join("profiles/default.toml"),
+            "schema_version = 1\nname = \"default\"\nbundles = [\"test\"]\n",
+        )
+        .unwrap();
+        let config_path = write_profile_config(&temp_root, &temp_root.join("data/sushi.db"));
+
+        let error = match bootstrap(Some(&config_path)).await {
+            Ok(_) => panic!("required unapproved plugin must abort bootstrap"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("required runtime entry probe.unapproved source 'lua:third_party/unapproved-required' is not approved"));
+        assert!(error.contains("set grants.approved = true and restart"));
+        assert!(!temp_root.join("data/sushi.db").exists());
 
         std::fs::remove_dir_all(&temp_root).ok();
     }
@@ -654,10 +1073,25 @@ schema_version = 1
 name = "test"
 
 [[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[[entries]]
+id = "policy.core"
+source = "builtin:policy"
+enabled = true
+required = true
+
+[[entries]]
 id = "probe.broken"
 source = "lua:third_party/broken-required"
 enabled = true
 required = true
+
+[entries.grants]
+approved = true
 "#,
         )
         .unwrap();
@@ -731,6 +1165,8 @@ end
             let profile_root = temp_root.join(profile);
             let database_path = profile_root.join("data/sushi.db");
             std::fs::create_dir_all(&profile_root).unwrap();
+            std::fs::create_dir_all(profile_root.join("httpshared")).unwrap();
+            std::fs::create_dir_all(profile_root.join("temp")).unwrap();
             let config_path = profile_root.join("config.toml");
             std::fs::write(
                 &config_path,
@@ -855,21 +1291,27 @@ bundles_dir = "{}"
                 .filter(|entry| expected_admin || !entry.ends_with("owner=governance.admin"))
                 .filter(|entry| expected_admin || !entry.ends_with("owner=rbac.admin"))
                 .filter(|entry| expected_admin || !entry.ends_with("owner=menu.admin"))
+                .filter(|entry| profile != "minimal" || !entry.ends_with("owner=cms.default"))
+                .filter(|entry| profile != "minimal" || !entry.ends_with("owner=kv-store.default"))
+                .filter(|entry| {
+                    profile != "minimal" || !entry.ends_with("owner=file-browser.default")
+                })
                 .cloned()
                 .collect::<Vec<_>>();
-            if profile == "minimal" {
-                assert!(actual.is_empty());
-            } else {
-                assert_eq!(actual, expected, "profile {profile}");
-            }
+            assert_eq!(actual, expected, "profile {profile}");
             assert_eq!(
-                ctx.runtime_profile.has_enabled_builtin("identity")
-                    && ctx.runtime_profile.has_enabled_builtin("api-core"),
+                ctx.plugins
+                    .capability_snapshot()
+                    .await
+                    .has_transport(sushi_core::runtime::HttpSurface::Api),
                 expected_api,
                 "profile {profile} api surface"
             );
             assert_eq!(
-                ctx.runtime_profile.has_enabled_builtin("admin-shell"),
+                ctx.plugins
+                    .capability_snapshot()
+                    .await
+                    .has_transport(sushi_core::runtime::HttpSurface::Admin),
                 expected_admin,
                 "profile {profile} Admin Shell surface"
             );
@@ -897,6 +1339,252 @@ bundles_dir = "{}"
                 ctx.runtime_profile.has_enabled_builtin("policy"),
                 "profile {profile} policy surface"
             );
+        }
+
+        std::fs::remove_dir_all(&temp_root).ok();
+    }
+
+    #[tokio::test]
+    async fn shipped_profile_http_smoke_matrix_and_optional_lifecycle() {
+        let temp_root = unique_temp_root("profile-http-smoke");
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        write_official_profile_stub(
+            &temp_root,
+            "cms",
+            "cms",
+            r#"
+function app.init()
+    app.capability.register({ surface = "api", method = "GET", path = "/app/profile/cms", handler = function() return "cms" end, public = true })
+end
+"#,
+        );
+        write_official_profile_stub(
+            &temp_root,
+            "file-browser",
+            "file-browser",
+            r#"
+function app.init()
+    app.capability.register({ surface = "api", method = "GET", path = "/app/files", handler = function() return "files" end, public = true })
+end
+"#,
+        );
+        let file_browser_static = temp_root.join("plugins/official/file-browser/web/static");
+        std::fs::create_dir_all(&file_browser_static).unwrap();
+        std::fs::write(
+            file_browser_static.join("file_browser.css"),
+            ".file-browser { display: block; }",
+        )
+        .unwrap();
+        write_official_profile_stub(
+            &temp_root,
+            "kv-store",
+            "kv-store",
+            r#"
+function app.init()
+    app.capability.register({ surface = "api", method = "GET", path = "/api/profile/kv", handler = function() return "kv" end, public = true })
+end
+"#,
+        );
+
+        for (profile, expected_api, expected_admin) in [
+            ("default", true, true),
+            ("api", true, false),
+            ("admin", false, true),
+            ("minimal", false, false),
+        ] {
+            let profile_root = temp_root.join(format!("http-{profile}"));
+            std::fs::create_dir_all(profile_root.join("httpshared")).unwrap();
+            std::fs::create_dir_all(profile_root.join("temp")).unwrap();
+            let config_path = profile_root.join("config.toml");
+            std::fs::write(
+                &config_path,
+                format!(
+                    r#"
+[database]
+path = "{}"
+
+[plugins]
+directory = "{}"
+
+[web]
+templates_dir = "{}"
+static_dir = "{}"
+static_url_prefix = "/static"
+
+[runtime]
+profile = "{profile}"
+profiles_dir = "{}"
+bundles_dir = "{}"
+"#,
+                    profile_root.join("data/sushi.db").display(),
+                    temp_root.join("plugins").display(),
+                    repo_root.join("web/templates").display(),
+                    repo_root.join("web/static").display(),
+                    repo_root.join("profiles").display(),
+                    repo_root.join("bundles").display(),
+                ),
+            )
+            .unwrap();
+
+            let ctx = bootstrap(Some(&config_path)).await.unwrap();
+            let app = crate::commands::serve::build_router(&ctx).await;
+            let status = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/health")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status();
+            assert_eq!(status, StatusCode::OK, "profile {profile} health");
+
+            let status = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/users")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status();
+            assert_eq!(
+                status,
+                if expected_api {
+                    StatusCode::UNAUTHORIZED
+                } else {
+                    StatusCode::NOT_FOUND
+                },
+                "profile {profile} API surface"
+            );
+
+            if expected_api {
+                let viewer_token = ctx.jwt.create_access_token(2, "viewer", "viewer").unwrap();
+                let status = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .uri("/api/users")
+                            .header(header::AUTHORIZATION, format!("Bearer {viewer_token}"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .status();
+                assert_eq!(
+                    status,
+                    StatusCode::FORBIDDEN,
+                    "profile {profile} API policy"
+                );
+            }
+
+            let admin_token = ctx.jwt.create_access_token(1, "admin", "admin").unwrap();
+            let admin_status = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/admin/")
+                        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status();
+            assert_eq!(
+                admin_status,
+                if expected_admin {
+                    StatusCode::OK
+                } else {
+                    StatusCode::NOT_FOUND
+                },
+                "profile {profile} Admin surface"
+            );
+
+            let missing_status = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/admin/not-a-capability")
+                        .header(header::AUTHORIZATION, format!("Bearer {admin_token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status();
+            assert_eq!(
+                missing_status,
+                StatusCode::NOT_FOUND,
+                "profile {profile} 404"
+            );
+
+            if profile == "api" {
+                for path in [
+                    "/app/files",
+                    "/static/plugins/official/file-browser/file_browser.css",
+                    "/static/css/style.css",
+                ] {
+                    let status = app
+                        .clone()
+                        .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                        .await
+                        .unwrap()
+                        .status();
+                    assert_eq!(status, StatusCode::OK, "API profile asset {path}");
+                }
+            }
+
+            if profile == "default" {
+                let status = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .uri("/api/profile/kv")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .status();
+                assert_eq!(status, StatusCode::OK);
+                ctx.set_plugin_enabled("kv-store", false, Some("test"), Some("smoke disable"))
+                    .await
+                    .unwrap();
+                let status = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .uri("/api/profile/kv")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .status();
+                assert_eq!(status, StatusCode::NOT_FOUND);
+                ctx.set_plugin_enabled("kv-store", true, Some("test"), Some("smoke enable"))
+                    .await
+                    .unwrap();
+                let status = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/api/profile/kv")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .status();
+                assert_eq!(status, StatusCode::OK);
+            }
+
+            ctx.shutdown().await;
         }
 
         std::fs::remove_dir_all(&temp_root).ok();

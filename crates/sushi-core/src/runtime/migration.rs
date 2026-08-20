@@ -1,4 +1,4 @@
-use super::{ResolvedRuntimeEntry, RuntimePluginSource};
+use super::{PluginId, ResolvedRuntimeEntry, RuntimePluginSource};
 use crate::plugin::DatabasePermission;
 use crate::storage::sqlite::SqliteStorage;
 use crate::storage::Storage;
@@ -118,7 +118,7 @@ INSERT OR IGNORE INTO _sushi_migrations (id, name) VALUES (8, '008_plugin_govern
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginMigration {
-    plugin_id: String,
+    plugin_id: PluginId,
     migration_id: String,
     checksum: String,
     sql: String,
@@ -139,7 +139,11 @@ impl PluginMigration {
         migration_id: impl Into<String>,
         sql: impl Into<String>,
     ) -> Result<Self, MigrationError> {
-        let plugin_id = validate_identifier("plugin_id", plugin_id.into())?;
+        let plugin_id =
+            PluginId::new(plugin_id).map_err(|reason| MigrationError::InvalidDescriptor {
+                field: "plugin_id",
+                reason,
+            })?;
         let migration_id = validate_identifier("migration_id", migration_id.into())?;
         let order = migration_order(&migration_id)?;
         let sql = sql.into();
@@ -179,7 +183,7 @@ impl PluginMigration {
     }
 
     pub fn plugin_id(&self) -> &str {
-        &self.plugin_id
+        self.plugin_id.as_str()
     }
 
     pub fn migration_id(&self) -> &str {
@@ -204,16 +208,26 @@ impl PluginMigration {
     }
 }
 
-pub fn historical_builtin_migrations(
-    include_menu_admin: bool,
-) -> Result<Vec<PluginMigration>, MigrationError> {
-    let mut migrations = vec![
+pub fn historical_host_core_migrations() -> Result<Vec<PluginMigration>, MigrationError> {
+    Ok(vec![
         historical_migration(
             "builtin/host-core",
             "001_init",
             MIGRATION_001_INIT,
             Some("001_init"),
         )?,
+        historical_migration(
+            "builtin/host-core",
+            "008_plugin_governance_v1",
+            MIGRATION_008_PLUGIN_GOVERNANCE,
+            Some("008_plugin_governance_v1"),
+        )?
+        .with_legacy_recovery(LegacyRecovery::PluginGovernanceV1),
+    ])
+}
+
+pub fn historical_policy_migrations() -> Result<Vec<PluginMigration>, MigrationError> {
+    Ok(vec![
         historical_migration(
             "builtin/policy",
             "003_rbac",
@@ -226,33 +240,26 @@ pub fn historical_builtin_migrations(
             MIGRATION_006_UNIFIED_POLICY,
             Some("006_unified_policy_v2"),
         )?,
+    ])
+}
+
+pub fn historical_menu_admin_migrations() -> Result<Vec<PluginMigration>, MigrationError> {
+    Ok(vec![
+        historical_migration("builtin/menu-admin", "004_menu", MIGRATION_004_MENU, None)?
+            .with_legacy_table("menu_items")?,
         historical_migration(
-            "builtin/governance",
-            "008_plugin_governance_v1",
-            MIGRATION_008_PLUGIN_GOVERNANCE,
-            Some("008_plugin_governance_v1"),
-        )?
-        .with_legacy_recovery(LegacyRecovery::PluginGovernanceV1),
-    ];
-    if include_menu_admin {
-        migrations.push(
-            historical_migration("builtin/menu-admin", "004_menu", MIGRATION_004_MENU, None)?
-                .with_legacy_table("menu_items")?,
-        );
-        migrations.push(historical_migration(
             "builtin/menu-admin",
             "005_menus_rbac",
             MIGRATION_005_MENUS_RBAC,
             Some("005_menus_rbac"),
-        )?);
-        migrations.push(historical_migration(
+        )?,
+        historical_migration(
             "builtin/menu-admin",
             "009_menu_contributions",
             MIGRATION_009_MENU_CONTRIBUTIONS,
             None,
-        )?);
-    }
-    Ok(migrations)
+        )?,
+    ])
 }
 
 pub fn load_lua_migrations(
@@ -327,6 +334,21 @@ pub struct MigrationReport {
     pub entries: Vec<MigrationReportEntry>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationVerificationStatus {
+    Applied,
+    Pending,
+    LegacyBridge,
+    RecoveryRequired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MigrationVerificationEntry {
+    pub plugin_id: String,
+    pub migration_id: String,
+    pub status: MigrationVerificationStatus,
+}
+
 pub struct MigrationRunner<'a> {
     storage: &'a SqliteStorage,
 }
@@ -355,12 +377,77 @@ impl<'a> MigrationRunner<'a> {
         for migration in migrations {
             let status = self.apply_one(&migration).await?;
             report.entries.push(MigrationReportEntry {
-                plugin_id: migration.plugin_id,
+                plugin_id: migration.plugin_id.to_string(),
                 migration_id: migration.migration_id,
                 status,
             });
         }
         Ok(report)
+    }
+
+    pub async fn verify(
+        &self,
+        migrations: &[PluginMigration],
+    ) -> Result<Vec<MigrationVerificationEntry>, MigrationError> {
+        let mut migrations = migrations.to_vec();
+        migrations.sort_by(|left, right| {
+            (&left.order, &left.plugin_id, &left.migration_id).cmp(&(
+                &right.order,
+                &right.plugin_id,
+                &right.migration_id,
+            ))
+        });
+        validate_unique_migrations(&migrations)?;
+        let catalog_exists = self.table_exists("plugin_migrations").await?;
+        let mut entries = Vec::with_capacity(migrations.len());
+        for migration in migrations {
+            let status = if catalog_exists {
+                match self.applied_checksum(&migration).await? {
+                    Some(applied_checksum) if applied_checksum == migration.checksum => {
+                        MigrationVerificationStatus::Applied
+                    }
+                    Some(applied_checksum) => {
+                        return Err(MigrationError::ChecksumMismatch {
+                            plugin_id: migration.plugin_id.to_string(),
+                            migration_id: migration.migration_id.clone(),
+                            expected: applied_checksum,
+                            actual: migration.checksum.clone(),
+                        })
+                    }
+                    None => self.pending_verification_status(&migration).await?,
+                }
+            } else {
+                self.pending_verification_status(&migration).await?
+            };
+            entries.push(MigrationVerificationEntry {
+                plugin_id: migration.plugin_id.to_string(),
+                migration_id: migration.migration_id,
+                status,
+            });
+        }
+        Ok(entries)
+    }
+
+    async fn pending_verification_status(
+        &self,
+        migration: &PluginMigration,
+    ) -> Result<MigrationVerificationStatus, MigrationError> {
+        if let Some(legacy_name) = migration.legacy_name() {
+            if self.legacy_migration_applied(legacy_name).await? {
+                return Ok(MigrationVerificationStatus::LegacyBridge);
+            }
+        }
+        if let Some(legacy_table) = &migration.legacy_table {
+            if self.table_exists(legacy_table).await? {
+                return Ok(MigrationVerificationStatus::LegacyBridge);
+            }
+        }
+        if migration.legacy_recovery == Some(LegacyRecovery::PluginGovernanceV1)
+            && self.plugin_governance_partially_applied().await?
+        {
+            return Ok(MigrationVerificationStatus::RecoveryRequired);
+        }
+        Ok(MigrationVerificationStatus::Pending)
     }
 
     async fn ensure_catalog(&self) -> Result<(), MigrationError> {
@@ -382,7 +469,7 @@ impl<'a> MigrationRunner<'a> {
                 return Ok(MigrationStatus::AlreadyApplied);
             }
             return Err(MigrationError::ChecksumMismatch {
-                plugin_id: migration.plugin_id.clone(),
+                plugin_id: migration.plugin_id.to_string(),
                 migration_id: migration.migration_id.clone(),
                 expected: applied_checksum,
                 actual: migration.checksum.clone(),
@@ -458,7 +545,7 @@ impl<'a> MigrationRunner<'a> {
             .query(
                 "SELECT checksum FROM plugin_migrations WHERE plugin_id = ? AND migration_id = ?",
                 vec![
-                    Value::String(migration.plugin_id.clone()),
+                    Value::String(migration.plugin_id.to_string()),
                     Value::String(migration.migration_id.clone()),
                 ],
             )
@@ -644,7 +731,7 @@ fn validate_unique_migrations(migrations: &[PluginMigration]) -> Result<(), Migr
         let key = (migration.plugin_id.clone(), migration.migration_id.clone());
         if !keys.insert(key) {
             return Err(MigrationError::DuplicateMigration {
-                plugin_id: migration.plugin_id.clone(),
+                plugin_id: migration.plugin_id.to_string(),
                 migration_id: migration.migration_id.clone(),
             });
         }
@@ -671,10 +758,11 @@ fn historical_migration(
 }
 
 fn database_grant_allows_write(grants: &Value) -> bool {
-    matches!(
-        grants.get("database").and_then(Value::as_str),
-        Some("write" | "admin")
-    )
+    grants.get("approved").and_then(Value::as_bool) == Some(true)
+        && matches!(
+            grants.get("database").and_then(Value::as_str),
+            Some("write" | "admin")
+        )
 }
 
 fn load_lua_migration(plugin_id: &str, path: &Path) -> Result<PluginMigration, MigrationError> {

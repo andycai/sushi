@@ -23,7 +23,7 @@ function M.new(deps)
 
     function cli.kv_get(args)
         if not args[1] then
-            return "Usage: sushi run kv-get <key>"
+            return "Usage: sushi kv-get <key>"
         end
 
         local key = args[1]
@@ -39,7 +39,7 @@ function M.new(deps)
 
     function cli.kv_set(args)
         if not args[1] or not args[2] then
-            return "Usage: sushi run kv-set <key> <value>"
+            return "Usage: sushi kv-set <key> <value>"
         end
 
         local entry, _, msg = store.upsert(args[1], args[2])
@@ -51,7 +51,7 @@ function M.new(deps)
 
     function cli.kv_del(args)
         if not args[1] then
-            return "Usage: sushi run kv-del <key>"
+            return "Usage: sushi kv-del <key>"
         end
 
         local ok, _, msg = store.delete(args[1])

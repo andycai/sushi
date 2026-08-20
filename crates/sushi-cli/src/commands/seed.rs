@@ -4,6 +4,7 @@ use std::path::Path;
 use sushi_core::auth::model::UserRole;
 use sushi_core::auth::password;
 use sushi_core::auth::repository::UserRepository;
+use sushi_core::context::SushiContext;
 
 #[derive(Args)]
 pub struct SeedArgs {
@@ -22,6 +23,12 @@ pub struct SeedArgs {
 
 pub async fn run(args: SeedArgs, config_path: &Path, profile_override: Option<&str>) -> Result<()> {
     let ctx = crate::app::bootstrap_with_profile(Some(config_path), profile_override).await?;
+    let result = run_with_context(args, &ctx).await;
+    ctx.shutdown().await;
+    result
+}
+
+pub async fn run_with_context(args: SeedArgs, ctx: &SushiContext) -> Result<()> {
     let repo = UserRepository::new(ctx.db.clone());
     let password_hash = password::hash_password(&args.password)
         .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?;

@@ -4,7 +4,7 @@ use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
 use sushi_core::lua::loader::LuaPlugin;
-use sushi_core::plugin::Plugin;
+use sushi_core::runtime::PluginInstanceId;
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::web::template_service::TemplateService;
 
@@ -22,46 +22,22 @@ fn copy_dir_all(src: &Path, dst: &Path) {
     }
 }
 
-fn write_manifest(path: &Path, root_path: &Path) {
-    let source = format!(
-        r#"
+fn write_manifest(path: &Path) {
+    let source = r#"
+schema_version = 1
+
 [plugin]
 name = "file-browser"
 version = "0.1.0"
 description = "Public web file browser"
 entry = "init.lua"
-kind = "official"
 
 [permissions]
 routes = true
 commands = false
 admin = false
 database = false
-
-[file_browser]
-route_prefix = "/app/files"
-hide_dotfiles = true
-deny_symlink = true
-text_extensions = ["txt", "md", "json", "toml", "yaml", "yml", "lua", "rs", "js", "ts", "html", "css"]
-
-[[file_browser.roots]]
-id = "docs"
-title = "Documents"
-path = "{}"
-
-[file_browser.roots.capabilities]
-can_list = true
-can_view_text = true
-can_edit_text = true
-can_create_text = true
-can_create_dir = true
-can_rename = true
-can_delete = true
-can_upload = true
-can_download = true
-"#,
-        root_path.display()
-    );
+"#;
     std::fs::write(path, source).expect("write plugin manifest");
 }
 
@@ -102,7 +78,7 @@ async fn file_browser_public_routes_support_core_operations() {
     let docs_root = sandbox.path().join("docs-root");
     std::fs::create_dir_all(&docs_root).expect("create docs root");
     std::fs::write(docs_root.join("welcome.txt"), "hello").expect("write text fixture");
-    write_manifest(&plugin_root.join("plugin.toml"), &docs_root);
+    write_manifest(&plugin_root.join("plugin.toml"));
 
     let mut plugins = LuaPlugin::scan_dir(sandbox.path())
         .await
@@ -147,9 +123,44 @@ async fn file_browser_public_routes_support_core_operations() {
         )
         .await;
 
-    plugin.init(&ctx).await.expect("init plugin");
-    let lua_vm = plugin.into_vm().expect("extract plugin vm");
-    ctx.plugins.register_vm("file-browser", lua_vm).await;
+    ctx.runtime_host
+        .register_lua_source_for_instance_with_config(
+            &plugin,
+            PluginInstanceId::new("file-browser.test").expect("valid instance id"),
+            false,
+            serde_json::json!({
+                "file_browser": {
+                    "route_prefix": "/app/files",
+                    "hide_dotfiles": true,
+                    "deny_symlink": true,
+                    "text_extensions": [
+                        "txt", "md", "json", "toml", "yaml", "yml", "lua", "rs", "js",
+                        "ts", "html", "css"
+                    ],
+                    "roots": [{
+                        "id": "docs",
+                        "title": "Documents",
+                        "path": docs_root.to_string_lossy(),
+                        "capabilities": {
+                            "can_list": true,
+                            "can_view_text": true,
+                            "can_edit_text": true,
+                            "can_create_text": true,
+                            "can_create_dir": true,
+                            "can_rename": true,
+                            "can_delete": true,
+                            "can_upload": true,
+                            "can_download": true
+                        }
+                    }]
+                }
+            }),
+        )
+        .await;
+    ctx.runtime_host
+        .activate(&ctx, "file-browser")
+        .await
+        .expect("activate plugin from profile config");
 
     let html = dispatch(&ctx, "GET", "/app/files", "/app/files", None).await;
     assert!(html.contains("Official File Browser"));

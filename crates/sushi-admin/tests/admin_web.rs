@@ -7,7 +7,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use sushi_admin::router::build_admin_router;
+use sushi_admin::router::{build_admin_router, build_static_router};
 use sushi_core::auth::authorizer::{CompiledPolicySnapshot, HttpBinding};
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
@@ -17,8 +17,8 @@ use sushi_core::lua::vm::create_sandboxed_vm;
 use sushi_core::plugin::manager::PageResolvedAssets;
 use sushi_core::plugin::Plugin;
 use sushi_core::runtime::{
-    MenuContributionSpec, PluginInstanceId, ResolvedRuntimeEntry, RuntimePluginSource,
-    StaticRootSpec,
+    AdminPageSpec, HttpRouteSpec, MenuContributionSpec, PluginInstanceId, ResolvedRuntimeEntry,
+    RuntimePluginSource, StaticRootSpec,
 };
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::storage::Storage;
@@ -36,6 +36,66 @@ const CMS_MIGRATION_SQL: &str = include_str!("../../../migrations/007_cms.sql");
 const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
     include_str!("../../../migrations/008_plugin_governance_v1.sql");
 const PLUGIN_GOVERNANCE_MIGRATION_NAME: &str = "008_plugin_governance_v1";
+
+async fn register_test_admin_page(
+    ctx: &SushiContext,
+    page_path: &str,
+    plugin_name: &str,
+    title: &str,
+    handler_key: &str,
+    assets: PageResolvedAssets,
+) {
+    let mut staged = ctx
+        .plugins
+        .stage_owner_activation(PluginInstanceId::legacy(plugin_name));
+    staged.register_admin(
+        AdminPageSpec::new(page_path, title, plugin_name, handler_key)
+            .with_assets(assets.js, assets.css),
+    );
+    ctx.plugins
+        .capability_registry()
+        .commit(staged)
+        .await
+        .expect("test admin registration should commit");
+}
+
+async fn register_test_http_handler(
+    ctx: &SushiContext,
+    method: &str,
+    path: &str,
+    plugin_name: &str,
+    handler_key: &str,
+) -> Result<(), sushi_core::runtime::RegistrationConflict> {
+    let mut staged = ctx
+        .plugins
+        .stage_owner_activation(PluginInstanceId::legacy(plugin_name));
+    staged.register_http(HttpRouteSpec::new(method, path, plugin_name, handler_key));
+    ctx.plugins.capability_registry().commit(staged).await
+}
+
+async fn assert_test_http_handler_registered(
+    ctx: &SushiContext,
+    method: &str,
+    path: &str,
+    plugin_name: &str,
+    handler_key: &str,
+) {
+    register_test_http_handler(ctx, method, path, plugin_name, handler_key)
+        .await
+        .expect("test HTTP registration should commit");
+}
+
+async fn register_test_static_root(ctx: &SushiContext, plugin_name: &str, static_root: PathBuf) {
+    let mut staged = ctx
+        .plugins
+        .stage_owner_activation(PluginInstanceId::legacy(plugin_name));
+    staged.register_static_root(StaticRootSpec::new(plugin_name, static_root).unwrap());
+    ctx.plugins
+        .capability_registry()
+        .commit(staged)
+        .await
+        .expect("test static root registration should commit");
+}
 const LEGACY_MENU_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS menu_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +137,12 @@ fn templates_root() -> PathBuf {
 
 fn static_root() -> PathBuf {
     workspace_root().join("web").join("static")
+}
+
+async fn build_test_router(ctx: &SushiContext) -> axum::Router {
+    build_static_router(ctx)
+        .await
+        .merge(build_admin_router(ctx).await)
 }
 
 fn collect_admin_template_paths() -> Vec<PathBuf> {
@@ -698,7 +764,7 @@ async fn build_app_with_context(static_url_prefix: Option<&str>) -> (axum::Route
     sushi_admin::builtin::activate_menu_admin(&ctx, &menu_admin_runtime_entry())
         .await
         .expect("Menu Admin builtin activation succeeds");
-    (build_admin_router(&ctx).await, ctx)
+    (build_test_router(&ctx).await, ctx)
 }
 
 async fn build_app(static_url_prefix: Option<&str>) -> axum::Router {
@@ -786,7 +852,7 @@ async fn build_app_with_host_admin() -> (axum::Router, SushiContext) {
     sushi_admin::builtin::activate_host_admin(&ctx, &host_admin_runtime_entry())
         .await
         .expect("host Admin builtin activation succeeds");
-    (build_admin_router(&ctx).await, ctx)
+    (build_test_router(&ctx).await, ctx)
 }
 
 async fn build_app_with_rbac_admin() -> (axum::Router, SushiContext) {
@@ -794,7 +860,7 @@ async fn build_app_with_rbac_admin() -> (axum::Router, SushiContext) {
     sushi_admin::builtin::activate_host_admin(&ctx, &host_admin_runtime_entry())
         .await
         .expect("host Admin builtin activation succeeds");
-    (build_admin_router(&ctx).await, ctx)
+    (build_test_router(&ctx).await, ctx)
 }
 
 async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> axum::Router {
@@ -866,17 +932,15 @@ async fn build_app_with_cms_plugin_loaded(static_url_prefix: Option<&str>) -> ax
                 plugin.effective_permissions(),
             )
             .await;
-        plugin
-            .init(&ctx)
+        ctx.runtime_host.register_lua_source(&plugin, false).await;
+        ctx.runtime_host
+            .activate(&ctx, &plugin_name)
             .await
             .unwrap_or_else(|err| panic!("failed to init cms plugin: {err}"));
-        if let Some(lua) = plugin.into_vm() {
-            ctx.plugins.register_vm(&plugin_name, lua).await;
-        }
     }
 
     refresh_admin_authorizer(&ctx).await;
-    build_admin_router(&ctx).await
+    build_test_router(&ctx).await
 }
 
 async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Path) -> axum::Router {
@@ -925,11 +989,9 @@ async fn build_app_with_plugin_static(plugin_name: &str, plugin_static_dir: &Pat
 
     let ctx = SushiContext::new(config, storage, jwt, templates);
     refresh_admin_authorizer(&ctx).await;
-    ctx.plugins
-        .register_plugin_static_root(plugin_name, plugin_static_dir.to_path_buf())
-        .await;
+    register_test_static_root(&ctx, plugin_name, plugin_static_dir.to_path_buf()).await;
 
-    build_admin_router(&ctx).await
+    build_test_router(&ctx).await
 }
 
 async fn build_app_with_plugin_page_assets(
@@ -984,16 +1046,16 @@ async fn build_app_with_plugin_page_assets(
     sushi_admin::builtin::activate_admin_shell(&ctx, &admin_shell_runtime_entry())
         .await
         .expect("Admin Shell builtin activation succeeds");
-    ctx.plugins
-        .register_admin_handler_with_assets(
-            page_path,
-            "kv-store",
-            "KV Store",
-            "missing-handler",
-            assets,
-        )
-        .await;
-    build_admin_router(&ctx).await
+    register_test_admin_page(
+        &ctx,
+        page_path,
+        "kv-store",
+        "KV Store",
+        "missing-handler",
+        assets,
+    )
+    .await;
+    build_test_router(&ctx).await
 }
 
 async fn build_app_with_plugin_admin_page(page_path: &str) -> axum::Router {
@@ -1073,17 +1135,17 @@ async fn build_app_with_plugin_admin_page_and_context(
     .expect("failed to register cms admin handler");
 
     ctx.plugins.register_vm("cms", lua).await;
-    ctx.plugins
-        .register_admin_handler_with_assets(
-            page_path,
-            "cms",
-            "CMS",
-            "handler::cms_page",
-            PageResolvedAssets::default(),
-        )
-        .await;
+    register_test_admin_page(
+        &ctx,
+        page_path,
+        "cms",
+        "CMS",
+        "handler::cms_page",
+        PageResolvedAssets::default(),
+    )
+    .await;
 
-    (build_admin_router(&ctx).await, ctx)
+    (build_test_router(&ctx).await, ctx)
 }
 
 async fn build_app_with_legacy_menu_table() -> axum::Router {
@@ -1141,7 +1203,7 @@ async fn build_app_with_legacy_menu_table() -> axum::Router {
     sushi_admin::builtin::activate_menu_admin(&ctx, &menu_admin_runtime_entry())
         .await
         .expect("Menu Admin builtin activation succeeds");
-    build_admin_router(&ctx).await
+    build_test_router(&ctx).await
 }
 
 #[test]
@@ -1268,15 +1330,15 @@ async fn admin_router_discovers_and_removes_pages_after_router_build() {
         .set("handler::dynamic_admin", handler)
         .expect("failed to register handler");
     ctx.plugins.register_vm("dynamic-admin", lua).await;
-    ctx.plugins
-        .register_admin_handler_with_assets(
-            "/admin/dynamic",
-            "dynamic-admin",
-            "Dynamic Admin",
-            "handler::dynamic_admin",
-            PageResolvedAssets::default(),
-        )
-        .await;
+    register_test_admin_page(
+        &ctx,
+        "/admin/dynamic",
+        "dynamic-admin",
+        "Dynamic Admin",
+        "handler::dynamic_admin",
+        PageResolvedAssets::default(),
+    )
+    .await;
 
     let request = || {
         Request::builder()
@@ -1329,14 +1391,14 @@ async fn admin_router_discovers_and_removes_http_routes_after_router_build() {
     .exec()
     .expect("failed to register dynamic partial handler");
     ctx.plugins.register_vm("dynamic-partial", lua).await;
-    ctx.plugins
-        .register_api_handler(
-            "POST",
-            "/admin/partials/dynamic",
-            "dynamic-partial",
-            "handler::dynamic_partial",
-        )
-        .await;
+    assert_test_http_handler_registered(
+        &ctx,
+        "POST",
+        "/admin/partials/dynamic",
+        "dynamic-partial",
+        "handler::dynamic_partial",
+    )
+    .await;
 
     let unauthenticated = app
         .clone()
@@ -1413,14 +1475,16 @@ async fn host_admin_routes_take_precedence_over_dynamic_http_routes() {
         )
         .expect("failed to register shadow handler");
     ctx.plugins.register_vm("dynamic-shadow", lua).await;
-    ctx.plugins
-        .register_api_handler(
-            "GET",
-            "/admin/api/plugins",
-            "dynamic-shadow",
-            "handler::shadow",
-        )
-        .await;
+    let conflict = register_test_http_handler(
+        &ctx,
+        "GET",
+        "/admin/api/plugins",
+        "dynamic-shadow",
+        "handler::shadow",
+    )
+    .await
+    .expect_err("reserved host route must reject dynamic registration");
+    assert!(conflict.to_string().contains("reserved"));
 
     let response = app
         .oneshot(
@@ -1470,10 +1534,9 @@ async fn admin_cms_workspace_page_includes_plugin_assets() {
 }
 
 #[tokio::test]
-async fn plugin_admin_page_returns_forbidden_when_plugin_disabled() {
+async fn plugin_admin_page_is_removed_when_plugin_disabled() {
     let (app, ctx) = build_app_with_plugin_admin_page_and_context("/admin/cms").await;
-    ctx.plugins
-        .set_plugin_enabled("cms", false, Some("admin"), Some("disabled by test"))
+    ctx.set_plugin_enabled("cms", false, Some("admin"), Some("disabled by test"))
         .await
         .expect("failed to disable cms plugin");
 
@@ -1491,7 +1554,7 @@ async fn plugin_admin_page_returns_forbidden_when_plugin_disabled() {
         .await
         .expect("request failed");
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[test]
@@ -1721,10 +1784,11 @@ async fn register_test_plugin(ctx: &SushiContext, plugin_name: &str) -> PathBuf 
         plugin_dir.join("plugin.toml"),
         format!(
             r#"
+schema_version = 1
+
 [plugin]
 name = "{plugin_name}"
 version = "1.0.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -1859,6 +1923,40 @@ async fn plugin_static_assets_are_served_from_plugin_directories() {
     fs::remove_dir_all(&plugin_static_dir).expect("failed to clean plugin static tempdir");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn plugin_static_assets_reject_symlinks_outside_registered_root() {
+    use std::os::unix::fs::symlink;
+
+    let temp_root = std::env::temp_dir().join(format!(
+        "sushi-admin-plugin-static-symlink-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos()
+    ));
+    let plugin_static_dir = temp_root.join("static");
+    fs::create_dir_all(&plugin_static_dir).expect("create plugin static root");
+    let outside_file = temp_root.join("outside-secret.txt");
+    fs::write(&outside_file, "outside-static-secret").expect("write outside static file");
+    symlink(&outside_file, plugin_static_dir.join("leak.txt")).expect("create static symlink");
+
+    let app = build_app_with_plugin_static("official/probe", &plugin_static_dir).await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/plugins/official/probe/leak.txt")
+                .body(Body::empty())
+                .expect("failed to build request"),
+        )
+        .await
+        .expect("request failed");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    fs::remove_dir_all(temp_root).expect("clean plugin static tempdir");
+}
+
 #[tokio::test]
 async fn plugin_static_assets_follow_runtime_owner_lifecycle() {
     let plugin_static_dir = std::env::temp_dir().join(format!(
@@ -1895,10 +1993,9 @@ async fn plugin_static_assets_follow_runtime_owner_lifecycle() {
     let owner = PluginInstanceId::new("dynamic.default").unwrap();
     let registry = ctx.plugins.capability_registry();
     let mut staged = registry.stage(owner.clone());
-    staged.register_static_root(StaticRootSpec::new(
-        "official/dynamic",
-        plugin_static_dir.clone(),
-    ));
+    staged.register_static_root(
+        StaticRootSpec::new("official/dynamic", plugin_static_dir.clone()).unwrap(),
+    );
     registry.commit(staged).await.unwrap();
 
     let response = app
@@ -3507,10 +3604,9 @@ async fn workspace_cms_module_loads_for_authenticated_admin() {
 }
 
 #[tokio::test]
-async fn workspace_plugin_module_returns_forbidden_when_plugin_disabled() {
+async fn workspace_plugin_module_is_removed_when_plugin_disabled() {
     let (app, ctx) = build_app_with_plugin_admin_page_and_context("/admin/cms").await;
-    ctx.plugins
-        .set_plugin_enabled("cms", false, Some("admin"), Some("disabled by test"))
+    ctx.set_plugin_enabled("cms", false, Some("admin"), Some("disabled by test"))
         .await
         .expect("failed to disable cms plugin");
     let token = admin_bearer_token();
@@ -3526,7 +3622,7 @@ async fn workspace_plugin_module_returns_forbidden_when_plugin_disabled() {
         .await
         .expect("request failed");
 
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 use sushi_core::plugin::DatabasePermission;
 use sushi_core::runtime::{
-    historical_builtin_migrations, load_lua_migrations, PluginInstanceId, ResolvedRuntimeEntry,
+    historical_host_core_migrations, historical_menu_admin_migrations,
+    historical_policy_migrations, load_lua_migrations, PluginInstanceId, ResolvedRuntimeEntry,
     RuntimePluginSource,
 };
 use sushi_core::runtime::{MigrationError, MigrationRunner, MigrationStatus, PluginMigration};
@@ -11,6 +12,23 @@ use tempfile::TempDir;
 fn migration(sql: &str) -> PluginMigration {
     PluginMigration::new("official/notes", "001_create_notes", sql)
         .expect("migration descriptor is valid")
+}
+
+#[test]
+fn migration_descriptor_rejects_invalid_plugin_identity() {
+    let error = PluginMigration::new(" ", "001_invalid", "SELECT 1").unwrap_err();
+    assert!(error.to_string().contains("plugin_id"));
+}
+
+fn all_historical_builtin_migrations(
+    include_menu_admin: bool,
+) -> Result<Vec<PluginMigration>, MigrationError> {
+    let mut migrations = historical_host_core_migrations()?;
+    migrations.extend(historical_policy_migrations()?);
+    if include_menu_admin {
+        migrations.extend(historical_menu_admin_migrations()?);
+    }
+    Ok(migrations)
 }
 
 #[tokio::test]
@@ -170,7 +188,7 @@ async fn complete_historical_database_bridges_all_catalog_entries() {
         storage.run_migrations(sql).await.unwrap();
     }
 
-    let mut migrations = historical_builtin_migrations(true).unwrap();
+    let mut migrations = all_historical_builtin_migrations(true).unwrap();
     migrations.push(
         PluginMigration::new(
             "official/kv-store",
@@ -238,7 +256,7 @@ async fn historical_menu_table_without_legacy_marker_is_bridged() {
         )
         .await
         .unwrap();
-    let migration = historical_builtin_migrations(true)
+    let migration = all_historical_builtin_migrations(true)
         .unwrap()
         .into_iter()
         .find(|migration| migration.migration_id() == "004_menu")
@@ -260,7 +278,7 @@ async fn historical_menu_table_without_legacy_marker_is_bridged() {
 #[tokio::test]
 async fn partially_applied_governance_migration_is_recovered_atomically() {
     let storage = SqliteStorage::new_in_memory().await.unwrap();
-    let base = historical_builtin_migrations(false).unwrap();
+    let base = all_historical_builtin_migrations(false).unwrap();
     MigrationRunner::new(&storage)
         .apply(
             &base
@@ -340,7 +358,7 @@ fn lua_migrations_require_official_source_and_explicit_write_grant() {
     );
 
     let mut granted = entry.clone();
-    granted.grants = serde_json::json!({ "database": "write" });
+    granted.grants = serde_json::json!({ "approved": true, "database": "write" });
     let migrations = load_lua_migrations(&granted, &DatabasePermission::Admin).unwrap();
     assert_eq!(migrations.len(), 1);
     assert_eq!(migrations[0].migration_id(), "010_create_notes");

@@ -1,7 +1,7 @@
 use crate::auth::policy_repository::{replace_plugin_policy_bindings, PluginPolicyBinding};
-use crate::context::SushiContext;
+use crate::context::{PluginContext, SushiContext};
 use crate::fs::FileBrowserFsService;
-use crate::lua::bindings::{inject_sushi_api, inject_sushi_fs};
+use crate::lua::bindings::{inject_plugin_api, inject_sushi_fs};
 use crate::lua::module_loader::install_plugin_require;
 use crate::lua::vm::create_sandboxed_vm;
 use crate::plugin::manager::PageResolvedAssets;
@@ -10,7 +10,7 @@ use crate::plugin::{
 };
 use crate::runtime::{
     AdminPageSpec, CliCommandSpec, EventSubscriptionSpec, HttpRouteSpec, HttpSurface,
-    LuaRuntimeInstance, MenuContributionSpec, PluginInstanceId, PluginLifecycleState,
+    LuaRuntimeInstance, MenuContributionSpec, PluginHandle, PluginInstanceId, PluginLifecycleState,
     StagedRegistrar, StaticRootSpec, TemplateRootSpec,
 };
 use async_trait::async_trait;
@@ -18,7 +18,7 @@ use mlua::LuaSerdeExt;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 #[path = "adapters/admin.rs"]
 mod admin_adapter;
@@ -42,10 +42,12 @@ pub struct LuaPlugin {
     manifest: PluginManifest,
     kind: PluginKind,
     effective_permissions: Permissions,
+    approved: bool,
     lua: Option<mlua::Lua>,
     plugin_dir: PathBuf,
     plugin_path_id: String,
     instance_id: PluginInstanceId,
+    config: serde_json::Value,
 }
 
 #[derive(Clone)]
@@ -53,15 +55,19 @@ struct LuaPluginSource {
     manifest: PluginManifest,
     kind: PluginKind,
     effective_permissions: Permissions,
+    approved: bool,
     plugin_dir: PathBuf,
     plugin_path_id: String,
     instance_id: PluginInstanceId,
+    config: serde_json::Value,
 }
 
 #[derive(Clone, Default)]
 pub struct RuntimeHost {
     lua_sources: Arc<RwLock<HashMap<String, (LuaPluginSource, bool)>>>,
     statuses: Arc<RwLock<HashMap<String, RuntimePluginStatus>>>,
+    handles: Arc<RwLock<HashMap<String, PluginHandle>>>,
+    lifecycle_locks: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,18 +92,75 @@ impl RuntimeHost {
         instance_id: PluginInstanceId,
         required: bool,
     ) {
+        self.register_lua_source_for_instance_with_config(
+            plugin,
+            instance_id,
+            required,
+            serde_json::Value::Object(serde_json::Map::new()),
+        )
+        .await;
+    }
+
+    pub async fn register_lua_source_for_instance_with_config(
+        &self,
+        plugin: &LuaPlugin,
+        instance_id: PluginInstanceId,
+        required: bool,
+        config: serde_json::Value,
+    ) {
         let mut source = plugin.source();
         source.instance_id = instance_id;
+        source.config = config;
         self.lua_sources
             .write()
             .await
             .insert(plugin.name().to_string(), (source, required));
-        self.set_status(plugin.name(), PluginLifecycleState::Resolved, None)
+        self.set_status(plugin.name(), PluginLifecycleState::Discovered, None)
             .await;
+    }
+
+    pub async fn begin_migration(&self, plugin_name: &str) -> Result<(), PluginError> {
+        self.ensure_known_plugin(plugin_name).await?;
+        self.set_status(plugin_name, PluginLifecycleState::Migrating, None)
+            .await;
+        Ok(())
+    }
+
+    pub async fn complete_migration(&self, plugin_name: &str) -> Result<(), PluginError> {
+        self.ensure_known_plugin(plugin_name).await?;
+        self.set_status(plugin_name, PluginLifecycleState::Resolved, None)
+            .await;
+        Ok(())
+    }
+
+    pub async fn mark_inactive(&self, plugin_name: &str) -> Result<(), PluginError> {
+        self.ensure_known_plugin(plugin_name).await?;
+        self.set_status(plugin_name, PluginLifecycleState::Inactive, None)
+            .await;
+        Ok(())
+    }
+
+    pub async fn record_failure(
+        &self,
+        plugin_name: &str,
+        error: impl Into<String>,
+    ) -> Result<(), PluginError> {
+        self.ensure_known_plugin(plugin_name).await?;
+        self.set_status(
+            plugin_name,
+            PluginLifecycleState::Failed,
+            Some(error.into()),
+        )
+        .await;
+        Ok(())
     }
 
     pub async fn status(&self, plugin_name: &str) -> Option<RuntimePluginStatus> {
         self.statuses.read().await.get(plugin_name).cloned()
+    }
+
+    pub async fn handle(&self, plugin_name: &str) -> Option<PluginHandle> {
+        self.handles.read().await.get(plugin_name).cloned()
     }
 
     pub async fn is_required(&self, plugin_name: &str) -> bool {
@@ -109,8 +172,19 @@ impl RuntimeHost {
             .unwrap_or(false)
     }
 
+    pub(crate) async fn acquire_lifecycle_lock(&self, plugin_name: &str) -> OwnedMutexGuard<()> {
+        let lock = {
+            let mut locks = self.lifecycle_locks.write().await;
+            locks
+                .entry(plugin_name.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        lock.lock_owned().await
+    }
+
     pub async fn activate(&self, ctx: &SushiContext, plugin_name: &str) -> Result<(), PluginError> {
-        let _runtime_guard = ctx.plugins.acquire_plugin_runtime_lock(plugin_name).await;
+        let _runtime_guard = self.acquire_lifecycle_lock(plugin_name).await;
         self.activate_locked(ctx, plugin_name).await
     }
 
@@ -128,14 +202,48 @@ impl RuntimeHost {
             .get(plugin_name)
             .map(|(source, _)| source.clone())
             .ok_or_else(|| PluginError::NotFound(plugin_name.to_string()))?;
-        let plugin = LuaPlugin::from_source(source)?;
-        match plugin.init(ctx).await {
+        if !source.approved {
+            let error = PluginError::PermissionDenied(format!(
+                "plugin '{plugin_name}' is not approved by its runtime profile; set grants.approved = true and restart"
+            ));
+            self.set_status(
+                plugin_name,
+                PluginLifecycleState::Failed,
+                Some(error.to_string()),
+            )
+            .await;
+            return Err(error);
+        }
+        let plugin = LuaPlugin::from_source(source.clone())?;
+        let plugin_context = ctx.plugin_context_for(
+            source.instance_id.clone(),
+            source.config.clone(),
+            &source.effective_permissions,
+        );
+        match plugin.activate(&plugin_context).await {
             Ok(()) => {
+                if let Some(runtime) = ctx.plugins.lua_runtime(plugin_name).await {
+                    let snapshot = ctx.plugins.capability_snapshot().await;
+                    let registrations = snapshot.registration_ids_for_owner(&source.instance_id);
+                    let tasks = ctx.tasks.registrations_for_owner(&source.instance_id).await;
+                    self.handles.write().await.insert(
+                        plugin_name.to_string(),
+                        PluginHandle::new(
+                            source.instance_id.clone(),
+                            runtime,
+                            PluginLifecycleState::Active,
+                            registrations,
+                            tasks,
+                            plugin_context.cancellation(),
+                        ),
+                    );
+                }
                 self.set_status(plugin_name, PluginLifecycleState::Active, None)
                     .await;
                 Ok(())
             }
             Err(error) => {
+                plugin_context.cancellation().cancel();
                 ctx.plugins.mark_plugin_loaded(plugin_name, false).await;
                 self.set_status(
                     plugin_name,
@@ -153,12 +261,13 @@ impl RuntimeHost {
         ctx: &SushiContext,
         plugin_name: &str,
     ) -> Result<(), PluginError> {
-        let _runtime_guard = ctx.plugins.acquire_plugin_runtime_lock(plugin_name).await;
+        let _runtime_guard = self.acquire_lifecycle_lock(plugin_name).await;
         self.deactivate_locked(ctx, plugin_name).await
     }
 
     pub async fn reload(&self, ctx: &SushiContext, plugin_name: &str) -> Result<(), PluginError> {
-        let _runtime_guard = ctx.plugins.acquire_plugin_runtime_lock(plugin_name).await;
+        let _runtime_guard = self.acquire_lifecycle_lock(plugin_name).await;
+        let previous_handle = self.handles.read().await.get(plugin_name).cloned();
         self.set_status(plugin_name, PluginLifecycleState::Activating, None)
             .await;
         let source = self
@@ -168,14 +277,73 @@ impl RuntimeHost {
             .get(plugin_name)
             .map(|(source, _)| source.clone())
             .ok_or_else(|| PluginError::NotFound(plugin_name.to_string()))?;
-        let plugin = LuaPlugin::from_source(source)?;
-        match plugin.init(ctx).await {
+        if !source.approved {
+            let error = PluginError::PermissionDenied(format!(
+                "plugin '{plugin_name}' is not approved by its runtime profile; set grants.approved = true and restart"
+            ));
+            self.set_status(
+                plugin_name,
+                PluginLifecycleState::Failed,
+                Some(error.to_string()),
+            )
+            .await;
+            return Err(error);
+        }
+        let plugin = LuaPlugin::from_source(source.clone())?;
+        let plugin_context = ctx.plugin_context_for(
+            source.instance_id.clone(),
+            source.config.clone(),
+            &source.effective_permissions,
+        );
+        match plugin.activate(&plugin_context).await {
             Ok(()) => {
+                if let Some(runtime) = ctx.plugins.lua_runtime(plugin_name).await {
+                    let snapshot = ctx.plugins.capability_snapshot().await;
+                    let registrations = snapshot.registration_ids_for_owner(&source.instance_id);
+                    let previous_task_ids = previous_handle
+                        .as_ref()
+                        .map(|handle| {
+                            handle
+                                .tasks
+                                .iter()
+                                .map(|registration| registration.id)
+                                .collect::<HashSet<_>>()
+                        })
+                        .unwrap_or_default();
+                    let tasks = ctx
+                        .tasks
+                        .registrations_for_owner(&source.instance_id)
+                        .await
+                        .into_iter()
+                        .filter(|registration| !previous_task_ids.contains(&registration.id))
+                        .collect();
+                    self.handles.write().await.insert(
+                        plugin_name.to_string(),
+                        PluginHandle::new(
+                            source.instance_id.clone(),
+                            runtime,
+                            PluginLifecycleState::Active,
+                            registrations,
+                            tasks,
+                            plugin_context.cancellation(),
+                        ),
+                    );
+                    if let Some(previous) = previous_handle {
+                        previous.cancellation.cancel();
+                        ctx.tasks
+                            .cancel_registrations(
+                                &previous.tasks,
+                                std::time::Duration::from_secs(5),
+                            )
+                            .await;
+                    }
+                }
                 self.set_status(plugin_name, PluginLifecycleState::Active, None)
                     .await;
                 Ok(())
             }
             Err(error) => {
+                plugin_context.cancellation().cancel();
                 self.set_status(
                     plugin_name,
                     PluginLifecycleState::Active,
@@ -194,6 +362,14 @@ impl RuntimeHost {
     ) -> Result<(), PluginError> {
         self.set_status(plugin_name, PluginLifecycleState::Deactivating, None)
             .await;
+        let existing_handle = { self.handles.read().await.get(plugin_name).cloned() };
+        if let Some(handle) = existing_handle {
+            handle.cancellation.cancel();
+            self.handles.write().await.insert(
+                plugin_name.to_string(),
+                handle.with_state(PluginLifecycleState::Deactivating),
+            );
+        }
         let source_identity = self
             .lua_sources
             .read()
@@ -225,6 +401,7 @@ impl RuntimeHost {
             .await;
         let policy_result = replace_plugin_policy_bindings(&ctx.db, plugin_name, &[]).await;
         ctx.plugins.unregister_vm(plugin_name).await;
+        self.handles.write().await.remove(plugin_name);
         match policy_result {
             Ok(()) => {
                 self.set_status(plugin_name, PluginLifecycleState::Inactive, None)
@@ -257,6 +434,14 @@ impl RuntimeHost {
             RuntimePluginStatus { state, last_error },
         );
     }
+
+    async fn ensure_known_plugin(&self, plugin_name: &str) -> Result<(), PluginError> {
+        if self.lua_sources.read().await.contains_key(plugin_name) {
+            Ok(())
+        } else {
+            Err(PluginError::NotFound(plugin_name.to_string()))
+        }
+    }
 }
 
 impl LuaPlugin {
@@ -265,9 +450,11 @@ impl LuaPlugin {
             manifest: self.manifest.clone(),
             kind: self.kind,
             effective_permissions: self.effective_permissions.clone(),
+            approved: self.approved,
             plugin_dir: self.plugin_dir.clone(),
             plugin_path_id: self.plugin_path_id.clone(),
             instance_id: self.instance_id.clone(),
+            config: self.config.clone(),
         }
     }
 
@@ -282,10 +469,12 @@ impl LuaPlugin {
             manifest: source.manifest,
             kind: source.kind,
             effective_permissions: source.effective_permissions,
+            approved: source.approved,
             lua: Some(lua),
             plugin_dir: source.plugin_dir,
             plugin_path_id: source.plugin_path_id,
             instance_id: source.instance_id,
+            config: source.config,
         })
     }
 }
@@ -336,25 +525,13 @@ impl LuaPlugin {
                 .map_err(|error| {
                     PluginError::ManifestError(format!("read {}: {error}", manifest_path.display()))
                 })?;
-        let (manifest, manifest_kind) = PluginManifest::parse_with_kind(&manifest_content)
-            .map_err(|error| {
-                PluginError::ManifestError(format!("parse {}: {error}", manifest_path.display()))
-            })?;
-        validate_file_browser_config(&manifest).map_err(|message| {
-            PluginError::ManifestError(format!(
-                "plugin '{}' file_browser config invalid: {message}",
-                manifest.plugin.name
-            ))
+        let manifest: PluginManifest = toml::from_str(&manifest_content).map_err(|error| {
+            PluginError::ManifestError(format!("parse {}: {error}", manifest_path.display()))
         })?;
-        if manifest_kind != expected_kind {
-            return Err(PluginError::ManifestError(format!(
-                "plugin '{}' kind '{}' does not match '{}' directory",
-                manifest.plugin.name,
-                manifest_kind.tier_name(),
-                expected_kind.tier_name()
-            )));
-        }
-        let effective_permissions = manifest_kind.effective_permissions(&manifest.permissions);
+        manifest.validate_schema().map_err(|message| {
+            PluginError::ManifestError(format!("validate {}: {message}", manifest_path.display()))
+        })?;
+        let effective_permissions = expected_kind.effective_permissions(&manifest.permissions);
         let lua = create_sandboxed_vm().map_err(|error| {
             PluginError::LuaError(format!("create VM for {}: {error}", manifest.plugin.name))
         })?;
@@ -362,12 +539,14 @@ impl LuaPlugin {
             .map_err(PluginError::ManifestError)?;
         Ok(Self {
             manifest,
-            kind: manifest_kind,
+            kind: expected_kind,
             effective_permissions,
+            approved: true,
             lua: Some(lua),
             plugin_dir: plugin_dir.to_path_buf(),
             plugin_path_id: plugin_path_id.to_string(),
             instance_id,
+            config: serde_json::Value::Object(serde_json::Map::new()),
         })
     }
 
@@ -426,32 +605,18 @@ impl LuaPlugin {
                                 manifest_path.display()
                             ))
                         })?;
-                let (manifest, manifest_kind) = PluginManifest::parse_with_kind(&manifest_content)
-                    .map_err(|e| {
-                        PluginError::ManifestError(format!(
-                            "parse {}: {e}",
-                            manifest_path.display()
-                        ))
-                    })?;
-
-                validate_file_browser_config(&manifest).map_err(|message| {
+                let manifest: PluginManifest = toml::from_str(&manifest_content).map_err(|e| {
+                    PluginError::ManifestError(format!("parse {}: {e}", manifest_path.display()))
+                })?;
+                manifest.validate_schema().map_err(|message| {
                     PluginError::ManifestError(format!(
-                        "plugin '{}' file_browser config invalid: {message}",
-                        manifest.plugin.name
+                        "validate {}: {message}",
+                        manifest_path.display()
                     ))
                 })?;
 
-                if manifest_kind != expected_kind {
-                    return Err(PluginError::ManifestError(format!(
-                        "plugin '{}' kind '{}' does not match '{}' directory",
-                        manifest.plugin.name,
-                        manifest_kind.tier_name(),
-                        expected_kind.tier_name()
-                    )));
-                }
-
                 let effective_permissions =
-                    manifest_kind.effective_permissions(&manifest.permissions);
+                    expected_kind.effective_permissions(&manifest.permissions);
                 let plugin_dir_name = plugin_entry.file_name().to_string_lossy().to_string();
                 let plugin_path_id = format!("{}/{}", expected_kind.tier_name(), plugin_dir_name);
 
@@ -461,8 +626,9 @@ impl LuaPlugin {
 
                 plugins.push(Self {
                     manifest,
-                    kind: manifest_kind,
+                    kind: expected_kind,
                     effective_permissions,
+                    approved: true,
                     lua: Some(lua),
                     plugin_dir: plugin_path,
                     plugin_path_id,
@@ -472,6 +638,7 @@ impl LuaPlugin {
                         plugin_dir_name
                     ))
                     .map_err(PluginError::ManifestError)?,
+                    config: serde_json::Value::Object(serde_json::Map::new()),
                 });
             }
         }
@@ -503,6 +670,15 @@ impl LuaPlugin {
         &self.effective_permissions
     }
 
+    pub fn is_approved(&self) -> bool {
+        self.approved
+    }
+
+    pub fn apply_profile_grants(&mut self, grants: &serde_json::Value) {
+        self.approved = grants.get("approved").and_then(serde_json::Value::as_bool) == Some(true);
+        self.effective_permissions = self.effective_permissions.clamp_to_grants(grants);
+    }
+
     pub fn web_templates_dir(&self) -> PathBuf {
         self.plugin_dir.join("web").join("templates")
     }
@@ -518,8 +694,10 @@ impl LuaPlugin {
     }
 }
 
-fn validate_file_browser_config(manifest: &PluginManifest) -> Result<(), String> {
-    let Some(config) = &manifest.file_browser else {
+fn validate_optional_file_browser_config(
+    config: Option<&PluginFileBrowserConfig>,
+) -> Result<(), String> {
+    let Some(config) = config else {
         return Ok(());
     };
 
@@ -527,6 +705,16 @@ fn validate_file_browser_config(manifest: &PluginManifest) -> Result<(), String>
     validate_text_extensions(config)?;
     validate_roots(config)?;
     Ok(())
+}
+
+fn resolve_file_browser_config(
+    entry_config: &serde_json::Value,
+) -> Result<Option<PluginFileBrowserConfig>, serde_json::Error> {
+    match entry_config.get("file_browser") {
+        Some(value) if !value.is_null() => serde_json::from_value(value.clone()).map(Some),
+        Some(_) => Ok(None),
+        None => Ok(None),
+    }
 }
 
 fn validate_route_prefix(config: &PluginFileBrowserConfig) -> Result<(), String> {
@@ -636,87 +824,6 @@ fn normalize_static_url_prefix(raw: &str) -> String {
     }
 
     prefix
-}
-
-fn parse_optional_string_array(
-    entry: &mlua::Table,
-    field: &str,
-) -> Result<Vec<String>, PluginError> {
-    match entry
-        .get::<mlua::Value>(field)
-        .map_err(|e| PluginError::InitFailed(format!("invalid page assets.{field}: {e}")))?
-    {
-        mlua::Value::Nil => Ok(Vec::new()),
-        mlua::Value::Table(values) => {
-            let len = values.raw_len();
-            let mut entries = 0usize;
-            for pair in values.pairs::<mlua::Value, mlua::Value>() {
-                let (key, _) = pair.map_err(|e| {
-                    PluginError::InitFailed(format!("invalid page assets.{field} keys: {e}"))
-                })?;
-                entries += 1;
-                match key {
-                    mlua::Value::Integer(index) if index >= 1 && (index as usize) <= len => {}
-                    _ => {
-                        return Err(PluginError::InitFailed(format!(
-                            "page assets.{field} must be an array of strings"
-                        )))
-                    }
-                }
-            }
-            if entries != len {
-                return Err(PluginError::InitFailed(format!(
-                    "page assets.{field} must be an array of strings"
-                )));
-            }
-
-            let mut out = Vec::with_capacity(len);
-            for index in 1..=len {
-                let value = values.get::<mlua::Value>(index).map_err(|e| {
-                    PluginError::InitFailed(format!(
-                        "invalid page assets.{field}[{index}] value: {e}"
-                    ))
-                })?;
-                let item = match value {
-                    mlua::Value::String(item) => item
-                        .to_str()
-                        .map_err(|e| {
-                            PluginError::InitFailed(format!(
-                                "invalid utf-8 in page assets.{field}[{index}]: {e}"
-                            ))
-                        })?
-                        .to_string(),
-                    _ => {
-                        return Err(PluginError::InitFailed(format!(
-                            "page assets.{field} entries must be strings"
-                        )))
-                    }
-                };
-                out.push(item);
-            }
-            Ok(out)
-        }
-        _ => Err(PluginError::InitFailed(format!(
-            "page assets.{field} must be an array of strings"
-        ))),
-    }
-}
-
-fn parse_page_assets_entry(
-    entry: &mlua::Table,
-) -> Result<(Vec<String>, Vec<String>, Vec<String>), PluginError> {
-    let assets_value = entry
-        .get::<mlua::Value>("assets")
-        .map_err(|e| PluginError::InitFailed(format!("invalid page assets field: {e}")))?;
-    let mlua::Value::Table(assets) = assets_value else {
-        return Ok((Vec::new(), Vec::new(), Vec::new()));
-    };
-
-    let bundles = parse_optional_string_array(&assets, "bundles")?;
-    let js = parse_optional_string_array(&assets, "js")?;
-    let css = parse_optional_string_array(&assets, "css")?;
-
-    Ok((bundles, js, css))
 }
 
 fn validate_resolvable_relative_path(path: &str, field: &str) -> Result<(), PluginError> {
@@ -913,22 +1020,6 @@ fn stage_menu_contribution(
     Ok(())
 }
 
-fn parse_entry_policy(
-    entry: &mlua::Table,
-    entry_name: &str,
-) -> Result<Option<String>, PluginError> {
-    entry
-        .get::<Option<String>>("policy")
-        .map_err(|e| PluginError::InitFailed(format!("invalid {entry_name} policy value: {e}")))
-}
-
-fn parse_entry_public(entry: &mlua::Table, entry_name: &str) -> Result<bool, PluginError> {
-    entry
-        .get::<Option<bool>>("public")
-        .map_err(|e| PluginError::InitFailed(format!("invalid {entry_name} public flag: {e}")))
-        .map(|value| value.unwrap_or(false))
-}
-
 fn stage_api_route_binding(
     staged: &mut StagedRegistrar,
     policy_bindings: &mut Vec<PluginPolicyBinding>,
@@ -1115,7 +1206,7 @@ impl Plugin for LuaPlugin {
         &self.manifest.plugin.version
     }
 
-    async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
+    async fn activate(&self, ctx: &PluginContext) -> Result<(), PluginError> {
         // Take the Lua VM out of self (init should only be called once)
         let lua = self.lua.as_ref().ok_or_else(|| {
             PluginError::InitFailed(format!(
@@ -1125,13 +1216,24 @@ impl Plugin for LuaPlugin {
         })?;
 
         let file_browser_root_dir = {
-            let cfg = ctx.config.get().await;
+            let cfg = ctx.config().get().await;
             cfg.file_browser.root_dir.clone()
         };
 
-        let file_browser_fs = self
-            .manifest
-            .file_browser
+        let file_browser_config = resolve_file_browser_config(ctx.config_value()).map_err(|e| {
+            PluginError::InitFailed(format!(
+                "{}: invalid profile file_browser config: {e}",
+                self.manifest.plugin.name
+            ))
+        })?;
+        validate_optional_file_browser_config(file_browser_config.as_ref()).map_err(|e| {
+            PluginError::InitFailed(format!(
+                "{}: file_browser config invalid: {e}",
+                self.manifest.plugin.name
+            ))
+        })?;
+
+        let file_browser_fs = file_browser_config
             .as_ref()
             .map(|manifest| {
                 FileBrowserFsService::from_manifest_with_root_base(
@@ -1148,7 +1250,7 @@ impl Plugin for LuaPlugin {
             })?;
 
         // Inject sushi.* API into the Lua VM
-        inject_sushi_api(lua, ctx, &self.effective_permissions)
+        inject_plugin_api(lua, ctx, &self.effective_permissions)
             .await
             .map_err(|e| PluginError::LuaError(format!("inject API: {e}")))?;
         if let Some(service) = file_browser_fs {
@@ -1198,36 +1300,55 @@ impl Plugin for LuaPlugin {
         }
 
         let plugin_name = &self.manifest.plugin.name;
+        if let Ok(diagnostics) = app.get::<mlua::Table>("__deprecation_diagnostics") {
+            let mut legacy_apis = diagnostics
+                .sequence_values::<String>()
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| {
+                    PluginError::InitFailed(format!(
+                        "plugin '{plugin_name}' produced invalid deprecation diagnostics: {error}"
+                    ))
+                })?;
+            legacy_apis.sort();
+            legacy_apis.dedup();
+            for api in legacy_apis {
+                let message = format!(
+                    "plugin '{plugin_name}' uses deprecated Lua registration API '{api}'; migrate to sushi.capability.register"
+                );
+                tracing::warn!(plugin = plugin_name, deprecated_api = api, "{message}");
+                ctx.logs().warn(&message).await;
+            }
+        }
         let allowed_policy_scopes = &self.manifest.policies.scopes;
         let owner = self.instance_id.clone();
         let runtime = Arc::new(LuaRuntimeInstance::new(plugin_name, lua.clone()));
-        let mut staged = ctx.plugins.stage_lua_activation(owner);
+        let mut staged = ctx.plugin_manager().stage_lua_activation(owner);
         let mut policy_bindings = Vec::new();
         let static_prefix = {
-            let cfg = ctx.config.get().await;
+            let cfg = ctx.config().get().await;
             normalize_static_url_prefix(&cfg.web.static_url_prefix)
         };
         let plugin_static_root = self.web_static_dir();
         let plugin_template_root = self.web_templates_dir();
         if plugin_template_root.is_dir() {
-            staged.register_template_root(TemplateRootSpec::new(
-                &self.plugin_path_id,
-                plugin_template_root,
-            ));
+            staged.register_template_root(
+                TemplateRootSpec::new(&self.plugin_path_id, plugin_template_root)
+                    .map_err(PluginError::InitFailed)?,
+            );
         }
         if plugin_static_root.is_dir() {
-            staged.register_static_root(StaticRootSpec::new(
-                &self.plugin_path_id,
-                plugin_static_root.clone(),
-            ));
+            staged.register_static_root(
+                StaticRootSpec::new(&self.plugin_path_id, plugin_static_root.clone())
+                    .map_err(PluginError::InitFailed)?,
+            );
         }
 
         if let Ok(raw_registry) = app.get::<mlua::Table>("__contract_registry") {
             let admin_pages = admin_adapter::snapshot_from_lua(lua, raw_registry.clone())?;
             let cli_commands = cli_adapter::snapshot_from_lua(lua, raw_registry.clone())?;
+            let event_entries = event_adapter::snapshot_from_lua(raw_registry.clone())?;
             let menu_contributions = menu_adapter::snapshot_from_lua(raw_registry.clone())?;
             let _ = db_adapter::snapshot_from_lua(raw_registry.clone())?;
-            let _ = event_adapter::snapshot_from_lua(raw_registry.clone())?;
             let _ = fs_adapter::snapshot_from_lua(raw_registry.clone())?;
             let web_pages = web_adapter::snapshot_from_lua(lua, raw_registry.clone())?;
             let snapshot = api_adapter::snapshot_from_lua(lua, raw_registry)?;
@@ -1340,152 +1461,37 @@ impl Plugin for LuaPlugin {
                     contribution,
                 )?;
             }
-        }
 
-        if let Ok(pending) = app.get::<mlua::Table>("__pending_routes") {
-            if pending.raw_len() > 0 {
-                tracing::warn!(
-                    plugin = plugin_name,
-                    surface = "api",
-                    registrations = pending.raw_len(),
-                    "legacy Lua registration API is deprecated; use app.capability.register"
-                );
-            }
-            if !self.effective_permissions.routes && pending.raw_len() > 0 {
-                return Err(PluginError::PermissionDenied(format!(
-                    "plugin '{plugin_name}' registered routes without routes permission"
-                )));
-            }
-            for i in 1..=pending.raw_len() {
-                if let Ok(entry) = pending.get::<mlua::Table>(i) {
-                    let method: String = entry.get("method").unwrap_or_default();
-                    let path: String = entry.get("path").unwrap_or_default();
-                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    let policy_key = parse_entry_policy(&entry, "route entry")?;
-                    let is_public = parse_entry_public(&entry, "route entry")?;
-                    stage_api_route_binding(
-                        &mut staged,
-                        &mut policy_bindings,
-                        &runtime,
-                        plugin_name,
-                        allowed_policy_scopes,
-                        &method,
-                        &path,
-                        &handler_key,
-                        policy_key.as_deref(),
-                        is_public,
-                    )?;
-                }
-            }
-        }
-
-        if let Ok(pending) = app.get::<mlua::Table>("__pending_commands") {
-            if pending.raw_len() > 0 {
-                tracing::warn!(
-                    plugin = plugin_name,
-                    surface = "cli",
-                    registrations = pending.raw_len(),
-                    "legacy Lua registration API is deprecated; use app.capability.register"
-                );
-            }
-            if !self.effective_permissions.commands && pending.raw_len() > 0 {
-                return Err(PluginError::PermissionDenied(format!(
-                    "plugin '{plugin_name}' registered commands without commands permission"
-                )));
-            }
-            for i in 1..=pending.raw_len() {
-                if let Ok(entry) = pending.get::<mlua::Table>(i) {
-                    let name: String = entry.get("name").unwrap_or_default();
-                    let description: String = entry.get("description").unwrap_or_default();
-                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    let policy_key = parse_entry_policy(&entry, "command entry")?;
-                    stage_cli_command_binding(
-                        &mut staged,
-                        &mut policy_bindings,
-                        &runtime,
-                        plugin_name,
-                        allowed_policy_scopes,
-                        &name,
-                        &description,
-                        &handler_key,
-                        policy_key.as_deref(),
-                    )?;
-                }
-            }
-        }
-
-        if let Ok(pending) = app.get::<mlua::Table>("__pending_pages") {
-            if pending.raw_len() > 0 {
-                tracing::warn!(
-                    plugin = plugin_name,
-                    surface = "admin",
-                    registrations = pending.raw_len(),
-                    "legacy Lua registration API is deprecated; use app.capability.register"
-                );
-            }
-            if !self.effective_permissions.admin && pending.raw_len() > 0 {
-                return Err(PluginError::PermissionDenied(format!(
-                    "plugin '{plugin_name}' registered admin pages without admin permission"
-                )));
-            }
-            for i in 1..=pending.raw_len() {
-                if let Ok(entry) = pending.get::<mlua::Table>(i) {
-                    let path: String = entry.get("path").unwrap_or_default();
-                    let title: String = entry.get("title").unwrap_or_default();
-                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    let policy_key = parse_entry_policy(&entry, "page entry")?;
-                    let (bundle_names, page_js, page_css) = parse_page_assets_entry(&entry)?;
-                    let assets = resolve_page_assets(
-                        &self.plugin_path_id,
-                        &self.manifest,
-                        &bundle_names,
-                        &page_js,
-                        &page_css,
-                        &plugin_static_root,
-                        &static_prefix,
-                    )?;
-                    stage_admin_page_binding(
-                        &mut staged,
-                        &mut policy_bindings,
-                        &runtime,
-                        plugin_name,
-                        allowed_policy_scopes,
-                        &path,
-                        &title,
-                        &handler_key,
-                        assets,
-                        policy_key.as_deref(),
-                    )?;
-                }
-            }
-        }
-
-        if let Ok(pending) = app.get::<mlua::Table>("__pending_events") {
-            for i in 1..=pending.raw_len() {
-                if let Ok(entry) = pending.get::<mlua::Table>(i) {
-                    let event: String = entry.get("event").unwrap_or_default();
-                    let handler_key: String = entry.get("handler_key").unwrap_or_default();
-                    stage_event_subscription(&mut staged, &runtime, &event, &handler_key)?;
+            for entry in event_entries {
+                if entry.kind == "subscribe" {
+                    let handler_key = entry.handler_key.ok_or_else(|| {
+                        PluginError::InitFailed(format!(
+                            "event subscription '{}' requires handler_key",
+                            entry.event
+                        ))
+                    })?;
+                    stage_event_subscription(&mut staged, &runtime, &entry.event, &handler_key)?;
                 }
             }
         }
 
         drop(app);
         let pending = ctx
-            .plugins
+            .plugin_manager()
             .prepare_owner_activation(staged)
             .await
             .map_err(|err| PluginError::InitFailed(err.to_string()))?;
-        replace_plugin_policy_bindings(&ctx.db, plugin_name, &policy_bindings)
+        replace_plugin_policy_bindings(ctx.storage(), plugin_name, &policy_bindings)
             .await
             .map_err(|err| {
                 PluginError::InitFailed(format!(
                     "failed to persist policy bindings for plugin {plugin_name}: {err}"
                 ))
             })?;
-        ctx.plugins
+        ctx.plugin_manager()
             .publish_lua_activation(plugin_name, pending, runtime)
             .await;
+        ctx.start_registered_tasks().await;
 
         tracing::info!(
             "plugin loaded: {} v{}",
@@ -1493,6 +1499,18 @@ impl Plugin for LuaPlugin {
             self.manifest.plugin.version
         );
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl LuaPlugin {
+    async fn activate_for_test(&self, ctx: &SushiContext) -> Result<(), PluginError> {
+        let plugin_context = ctx.plugin_context_for(
+            self.instance_id.clone(),
+            self.config.clone(),
+            &self.effective_permissions,
+        );
+        self.activate(&plugin_context).await
     }
 }
 
@@ -1536,6 +1554,44 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn runtime_host_exposes_discovery_migration_and_failure_states() {
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = create_plugin_dir(temp.path(), "official", "lifecycle_probe");
+        let plugin = LuaPlugin::load_dir(&plugin_dir, "official/lifecycle_probe")
+            .await
+            .unwrap();
+        let host = RuntimeHost::new();
+
+        host.register_lua_source(&plugin, false).await;
+        assert_eq!(
+            host.status("lifecycle_probe").await.unwrap().state,
+            PluginLifecycleState::Discovered
+        );
+
+        host.begin_migration("lifecycle_probe").await.unwrap();
+        assert_eq!(
+            host.status("lifecycle_probe").await.unwrap().state,
+            PluginLifecycleState::Migrating
+        );
+
+        host.complete_migration("lifecycle_probe").await.unwrap();
+        assert_eq!(
+            host.status("lifecycle_probe").await.unwrap().state,
+            PluginLifecycleState::Resolved
+        );
+
+        host.record_failure("lifecycle_probe", "migration checksum mismatch")
+            .await
+            .unwrap();
+        let status = host.status("lifecycle_probe").await.unwrap();
+        assert_eq!(status.state, PluginLifecycleState::Failed);
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("migration checksum mismatch")
+        );
+    }
+
     fn resolve_page_assets_for_test(
         plugin_path_id: &str,
         manifest: &PluginManifest,
@@ -1555,16 +1611,17 @@ mod tests {
         )
     }
 
-    fn create_plugin_dir(parent: &Path, category: &str, name: &str, kind: &str) -> PathBuf {
+    fn create_plugin_dir(parent: &Path, category: &str, name: &str) -> PathBuf {
         let dir = parent.join(category).join(name);
         std::fs::create_dir_all(&dir).unwrap();
 
         let manifest_content = format!(
             r#"
+schema_version = 1
+
 [plugin]
 name = "{name}"
 version = "0.1.0"
-kind = "{kind}"
 entry = "init.lua"
 
 [permissions]
@@ -1581,19 +1638,6 @@ end)
 "#;
         std::fs::write(dir.join("init.lua"), init_lua).unwrap();
 
-        dir
-    }
-
-    fn create_plugin_dir_with_manifest(
-        parent: &Path,
-        category: &str,
-        name: &str,
-        manifest_content: &str,
-    ) -> PathBuf {
-        let dir = parent.join(category).join(name);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("plugin.toml"), manifest_content).unwrap();
-        std::fs::write(dir.join("init.lua"), "sushi.log.info('hello')").unwrap();
         dir
     }
 
@@ -1655,7 +1699,8 @@ end)
         let plugin_path = repo_root.join("plugins/official/kv-store/plugin.toml");
         let source = std::fs::read_to_string(plugin_path).unwrap();
 
-        assert!(source.contains("kind = \"official\""));
+        assert!(source.contains("schema_version = 1"));
+        assert!(!source.contains("kind ="));
         assert!(source.contains("[admin.assets.bundles.workspace]"));
         assert!(source.contains("js = [\"kv.js\"]"));
     }
@@ -1782,16 +1827,17 @@ end)
         assert!(!source.contains("sushi.api.route("));
         assert!(source.contains("definition.surface = \"api\""));
         assert!(source.contains("definition.public = true"));
-        assert_contains_method_path_route(&source, "GET", "/app/files");
-        assert_contains_method_path_route(&source, "GET", "/app/files/list/*");
-        assert_contains_method_path_route(&source, "GET", "/app/files/open/*");
-        assert_contains_method_path_route(&source, "POST", "/app/files/save/*");
-        assert_contains_method_path_route(&source, "POST", "/app/files/create-text");
-        assert_contains_method_path_route(&source, "POST", "/app/files/create-dir");
-        assert_contains_method_path_route(&source, "POST", "/app/files/rename");
-        assert_contains_method_path_route(&source, "POST", "/app/files/delete");
-        assert_contains_method_path_route(&source, "POST", "/app/files/upload/*");
-        assert_contains_method_path_route(&source, "GET", "/app/files/download/*");
+        assert!(source.contains("local prefix = tostring(config.route_prefix or \"/app/files\")"));
+        assert!(source.contains("local function route(suffix)"));
+        assert!(source.contains("route(\"/list/*\")"));
+        assert!(source.contains("route(\"/open/*\")"));
+        assert!(source.contains("route(\"/save/*\")"));
+        assert!(source.contains("route(\"/create-text\")"));
+        assert!(source.contains("route(\"/create-dir\")"));
+        assert!(source.contains("route(\"/rename\")"));
+        assert!(source.contains("route(\"/delete\")"));
+        assert!(source.contains("route(\"/upload/*\")"));
+        assert!(source.contains("route(\"/download/*\")"));
     }
 
     #[test]
@@ -1907,7 +1953,7 @@ end)
     #[tokio::test]
     async fn test_scan_dir_finds_plugins() {
         let tmp = TempDir::new().unwrap();
-        create_plugin_dir(tmp.path(), "official", "my_plugin", "official");
+        create_plugin_dir(tmp.path(), "official", "my_plugin");
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         assert_eq!(plugins.len(), 1);
@@ -1931,8 +1977,8 @@ end)
     #[tokio::test]
     async fn test_scan_dir_tiered_discovery_success() {
         let tmp = TempDir::new().unwrap();
-        create_plugin_dir(tmp.path(), "official", "kv_store", "official");
-        create_plugin_dir(tmp.path(), "third_party", "notes", "third_party");
+        create_plugin_dir(tmp.path(), "official", "kv_store");
+        create_plugin_dir(tmp.path(), "third_party", "notes");
 
         let mut plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         plugins.sort_by(|left, right| left.path_id().cmp(right.path_id()));
@@ -1942,7 +1988,7 @@ end)
         assert_eq!(plugins[0].kind(), PluginKind::Official);
         assert_eq!(
             plugins[0].effective_permissions().database,
-            crate::plugin::DatabasePermission::Admin
+            crate::plugin::DatabasePermission::None
         );
         assert_eq!(plugins[1].path_id(), "third_party/notes");
         assert_eq!(plugins[1].kind(), PluginKind::ThirdParty);
@@ -1953,19 +1999,46 @@ end)
     }
 
     #[tokio::test]
+    async fn test_scan_dir_rejects_missing_manifest_schema_version() {
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("third_party").join("legacy_schema");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.toml"),
+            r#"
+[plugin]
+name = "legacy_schema"
+version = "0.1.0"
+entry = "init.lua"
+"#,
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("init.lua"), "").unwrap();
+
+        let error = match LuaPlugin::scan_dir(tmp.path()).await {
+            Ok(_) => panic!("missing manifest schema version must be rejected"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(message.contains("missing required schema_version 1"));
+        assert!(message.contains("schema_version = 1"));
+    }
+
+    #[tokio::test]
     async fn test_scan_dir_rejects_legacy_flat_plugin_directory() {
         let tmp = TempDir::new().unwrap();
-        create_plugin_dir(tmp.path(), "official", "modern", "official");
+        create_plugin_dir(tmp.path(), "official", "modern");
 
         let legacy = tmp.path().join("legacy_flat");
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(
             legacy.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "legacy_flat"
 version = "0.1.0"
-kind = "third_party"
 "#,
         )
         .unwrap();
@@ -1977,169 +2050,75 @@ kind = "third_party"
         assert!(err.contains("legacy_flat"));
     }
 
-    #[tokio::test]
-    async fn test_scan_dir_rejects_invalid_file_browser_config() {
-        let tmp = TempDir::new().unwrap();
-        create_plugin_dir_with_manifest(
-            tmp.path(),
-            "official",
-            "bad_browser",
-            r#"
-[plugin]
-name = "bad_browser"
-version = "0.1.0"
-kind = "official"
+    #[test]
+    fn profile_file_browser_config_rejects_invalid_route_prefix() {
+        let config = resolve_file_browser_config(&serde_json::json!({
+            "file_browser": { "route_prefix": "admin/files" }
+        }))
+        .unwrap();
 
-[file_browser]
-route_prefix = "admin/files"
-"#,
-        );
+        let error = validate_optional_file_browser_config(config.as_ref()).unwrap_err();
+        assert!(error.contains("route_prefix"));
+    }
 
-        let result = LuaPlugin::scan_dir(tmp.path()).await;
-        assert!(result.is_err());
-        let err = result.err().unwrap().to_string();
-        assert!(err.contains("file_browser config invalid"));
-        assert!(err.contains("route_prefix"));
+    #[test]
+    fn profile_file_browser_config_accepts_relative_root_paths() {
+        let config = resolve_file_browser_config(&serde_json::json!({
+            "file_browser": {
+                "route_prefix": "/app/files",
+                "roots": [{ "id": "docs", "path": "docs" }]
+            }
+        }))
+        .unwrap();
+
+        validate_optional_file_browser_config(config.as_ref()).unwrap();
+    }
+
+    #[test]
+    fn profile_file_browser_config_rejects_whitespace_values() {
+        for (config, expected) in [
+            (
+                serde_json::json!({ "file_browser": { "route_prefix": " /app/files" } }),
+                "route_prefix",
+            ),
+            (
+                serde_json::json!({
+                    "file_browser": {
+                        "route_prefix": "/app/files",
+                        "roots": [{ "id": "docs ", "path": "docs" }]
+                    }
+                }),
+                "root id",
+            ),
+            (
+                serde_json::json!({
+                    "file_browser": {
+                        "route_prefix": "/app/files",
+                        "roots": [{ "id": "docs", "path": " docs" }]
+                    }
+                }),
+                "root path",
+            ),
+        ] {
+            let config = resolve_file_browser_config(&config).unwrap();
+            let error = validate_optional_file_browser_config(config.as_ref()).unwrap_err();
+            assert!(error.contains(expected), "unexpected error: {error}");
+        }
     }
 
     #[tokio::test]
-    async fn test_scan_dir_accepts_relative_file_browser_root_paths() {
-        let tmp = TempDir::new().unwrap();
-        create_plugin_dir_with_manifest(
-            tmp.path(),
-            "official",
-            "relative_browser",
-            r#"
-[plugin]
-name = "relative_browser"
-version = "0.1.0"
-kind = "official"
-
-[file_browser]
-route_prefix = "/app/files"
-
-[[file_browser.roots]]
-id = "docs"
-path = "docs"
-"#,
-        );
-
-        let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
-        assert_eq!(plugins.len(), 1);
-        assert_eq!(plugins[0].name(), "relative_browser");
-    }
-
-    #[tokio::test]
-    async fn test_scan_dir_rejects_whitespace_file_browser_values() {
-        let tmp = TempDir::new().unwrap();
-        let root_dir = tmp.path().join("fb_root");
-        std::fs::create_dir_all(&root_dir).unwrap();
-
-        create_plugin_dir_with_manifest(
-            tmp.path(),
-            "official",
-            "bad_whitespace_route",
-            &format!(
-                r#"
-[plugin]
-name = "bad_whitespace_route"
-version = "0.1.0"
-kind = "official"
-
-[file_browser]
-route_prefix = " /app/files"
-
-[[file_browser.roots]]
-id = "docs"
-path = "{}"
-"#,
-                root_dir.display()
-            ),
-        );
-
-        let route_result = LuaPlugin::scan_dir(tmp.path()).await;
-        assert!(route_result.is_err());
-        let route_err = route_result.err().unwrap().to_string();
-        assert!(route_err.contains("file_browser config invalid"));
-        assert!(route_err.contains("route_prefix"));
-
-        let tmp = TempDir::new().unwrap();
-        let root_dir = tmp.path().join("fb_root");
-        std::fs::create_dir_all(&root_dir).unwrap();
-
-        create_plugin_dir_with_manifest(
-            tmp.path(),
-            "official",
-            "bad_whitespace_id",
-            &format!(
-                r#"
-[plugin]
-name = "bad_whitespace_id"
-version = "0.1.0"
-kind = "official"
-
-[file_browser]
-route_prefix = "/app/files"
-
-[[file_browser.roots]]
-id = "docs "
-path = "{}"
-"#,
-                root_dir.display()
-            ),
-        );
-
-        let id_result = LuaPlugin::scan_dir(tmp.path()).await;
-        assert!(id_result.is_err());
-        let id_err = id_result.err().unwrap().to_string();
-        assert!(id_err.contains("file_browser config invalid"));
-        assert!(id_err.contains("root id"));
-
-        let tmp = TempDir::new().unwrap();
-        let root_dir = tmp.path().join("fb_root");
-        std::fs::create_dir_all(&root_dir).unwrap();
-
-        create_plugin_dir_with_manifest(
-            tmp.path(),
-            "official",
-            "bad_whitespace_path",
-            &format!(
-                r#"
-[plugin]
-name = "bad_whitespace_path"
-version = "0.1.0"
-kind = "official"
-
-[file_browser]
-route_prefix = "/app/files"
-
-[[file_browser.roots]]
-id = "docs"
-path = " {}"
-"#,
-                root_dir.display()
-            ),
-        );
-
-        let path_result = LuaPlugin::scan_dir(tmp.path()).await;
-        assert!(path_result.is_err());
-        let path_err = path_result.err().unwrap().to_string();
-        assert!(path_err.contains("file_browser config invalid"));
-        assert!(path_err.contains("root path"));
-    }
-
-    #[tokio::test]
-    async fn test_scan_dir_rejects_kind_category_mismatch() {
+    async fn test_scan_dir_uses_host_path_tier_for_trust() {
         let tmp = TempDir::new().unwrap();
         let plugin_dir = tmp.path().join("official").join("mismatch");
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(
             plugin_dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "mismatch"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 "#,
         )
@@ -2147,22 +2126,20 @@ entry = "init.lua"
         std::fs::write(plugin_dir.join("init.lua"), "sushi.log.info('hi')").unwrap();
 
         let result = LuaPlugin::scan_dir(tmp.path()).await;
-        assert!(result.is_err());
-        let err = result.err().unwrap().to_string();
-        assert!(err.contains("does not match"));
-        assert!(err.contains("official"));
+        let plugins = result.expect("host path tier determines trust");
+        assert_eq!(plugins[0].kind(), PluginKind::Official);
     }
 
     #[tokio::test]
     async fn test_lua_plugin_init_executes_entry_script() {
         let tmp = TempDir::new().unwrap();
-        create_plugin_dir(tmp.path(), "third_party", "test_plugin", "third_party");
+        create_plugin_dir(tmp.path(), "third_party", "test_plugin");
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         let ctx = test_context().await;
 
         // init() should succeed without error
-        plugins[0].init(&ctx).await.unwrap();
+        plugins[0].activate_for_test(&ctx).await.unwrap();
     }
 
     #[tokio::test]
@@ -2174,10 +2151,11 @@ entry = "init.lua"
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "init_fn_plugin"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 "#,
         )
@@ -2196,7 +2174,7 @@ end
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         let ctx = test_context().await;
 
-        plugins[0].init(&ctx).await.unwrap();
+        plugins[0].activate_for_test(&ctx).await.unwrap();
     }
 
     #[tokio::test]
@@ -2224,6 +2202,7 @@ end
             .unwrap();
 
         let manifest = PluginManifest {
+            schema_version: PluginManifest::CURRENT_SCHEMA_VERSION,
             plugin: crate::plugin::PluginMeta {
                 name: "notes".to_string(),
                 version: "0.1.0".to_string(),
@@ -2233,7 +2212,6 @@ end
             permissions: crate::plugin::Permissions::default(),
             policies: crate::plugin::PluginPoliciesConfig::default(),
             admin: None,
-            file_browser: None,
         };
 
         ctx.plugins
@@ -2245,8 +2223,7 @@ end
             )
             .await;
 
-        ctx.plugins
-            .set_plugin_enabled("notes", false, Some("admin"), Some("seed"))
+        ctx.set_plugin_enabled("notes", false, Some("admin"), Some("seed"))
             .await
             .unwrap();
 
@@ -2271,10 +2248,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "policy_mismatch"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -2300,7 +2278,7 @@ end
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
         let ctx = test_context().await;
-        let err = plugins[0].init(&ctx).await.unwrap_err();
+        let err = plugins[0].activate_for_test(&ctx).await.unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("policy_mismatch"));
         assert!(msg.contains("admin.users.read"));
@@ -2316,10 +2294,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "contract_case"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -2367,7 +2346,10 @@ end
             .await
             .unwrap();
 
-        plugins[0].init(&ctx).await.expect("plugin initializes");
+        plugins[0]
+            .activate_for_test(&ctx)
+            .await
+            .expect("plugin initializes");
 
         assert_eq!(
             ctx.plugins
@@ -2387,10 +2369,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "contract_menu"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -2438,7 +2421,10 @@ end
             .await
             .unwrap();
 
-        plugins[0].init(&ctx).await.expect("plugin initializes");
+        plugins[0]
+            .activate_for_test(&ctx)
+            .await
+            .expect("plugin initializes");
 
         let snapshot = ctx.plugins.capability_snapshot().await;
         let contribution = snapshot
@@ -2469,10 +2455,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "contract_web_assets"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -2530,7 +2517,10 @@ end
             .await
             .unwrap();
 
-        plugins[0].init(&ctx).await.expect("plugin initializes");
+        plugins[0]
+            .activate_for_test(&ctx)
+            .await
+            .expect("plugin initializes");
 
         let assets = ctx
             .plugins
@@ -2557,10 +2547,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "policy_capture"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -2614,7 +2605,7 @@ end
             ))
             .await
             .unwrap();
-        plugins[0].init(&ctx).await.unwrap();
+        plugins[0].activate_for_test(&ctx).await.unwrap();
 
         assert_eq!(
             ctx.plugins
@@ -2825,10 +2816,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "policy_capture"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -2878,7 +2870,7 @@ end
             ))
             .await
             .unwrap();
-        plugins[0].init(&ctx).await.unwrap();
+        plugins[0].activate_for_test(&ctx).await.unwrap();
 
         std::fs::write(
             dir.join("init.lua"),
@@ -2901,7 +2893,7 @@ end
         .unwrap();
 
         let plugins = LuaPlugin::scan_dir(tmp.path()).await.unwrap();
-        plugins[0].init(&ctx).await.unwrap();
+        plugins[0].activate_for_test(&ctx).await.unwrap();
 
         assert_eq!(
             ctx.plugins.api_route_policy("GET", "/api/notes").await,
@@ -2964,10 +2956,11 @@ end
 
         let manifest: PluginManifest = toml::from_str(
             r#"
+schema_version = 1
+
 [plugin]
 name = "asset_plugin"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3007,10 +3000,11 @@ js = ["kv.js"]
 
         let manifest: PluginManifest = toml::from_str(
             r#"
+schema_version = 1
+
 [plugin]
 name = "asset_plugin"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3042,10 +3036,11 @@ js = ["missing.js"]
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "failed_activation"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3064,6 +3059,9 @@ scopes = ["api.failed.read"]
             dir.join("init.lua"),
             r#"
 sushi.init = function()
+    sushi.task.spawn("never-started", function()
+        sushi.config.get("task_started")
+    end)
     sushi.event.on("activation.failed", function() end)
     sushi.api.route("GET", "/api/failed", function()
         return "never published"
@@ -3093,7 +3091,7 @@ end
             .await
             .unwrap();
 
-        let err = plugins[0].init(&ctx).await.unwrap_err();
+        let err = plugins[0].activate_for_test(&ctx).await.unwrap_err();
         assert!(err.to_string().contains("api.rejected.read"));
         assert!(ctx
             .plugins
@@ -3111,6 +3109,7 @@ end
             .await
             .is_none());
         assert!(!ctx.plugins.has_vm("failed_activation").await);
+        assert_eq!(ctx.tasks.active_count(&plugins[0].instance_id).await, 0);
 
         let policy_rows = ctx
             .db
@@ -3131,10 +3130,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "event_listener"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3156,7 +3156,7 @@ end
 
         let plugin = LuaPlugin::scan_dir(tmp.path()).await.unwrap().remove(0);
         let ctx = test_context().await;
-        plugin.init(&ctx).await.unwrap();
+        plugin.activate_for_test(&ctx).await.unwrap();
         assert_eq!(
             ctx.plugins
                 .capability_snapshot()
@@ -3194,10 +3194,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "runtime_toggle"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3209,6 +3210,9 @@ routes = true
             dir.join("init.lua"),
             r#"
 sushi.init = function()
+    sushi.task.interval("runtime-loop", 5, function()
+        task_ticks = (task_ticks or 0) + 1
+    end)
     sushi.api.route("GET", "/api/runtime-toggle", function()
         return "active"
     end)
@@ -3256,6 +3260,19 @@ end
             .await
             .unwrap();
 
+        let handle = ctx
+            .runtime_host
+            .handle("runtime_toggle")
+            .await
+            .expect("active plugin should expose a lifecycle handle");
+        assert_eq!(handle.state, PluginLifecycleState::Active);
+        assert!(!handle.registrations.is_empty());
+        assert_eq!(handle.tasks.len(), 1);
+        assert!(!handle.cancellation.is_cancelled());
+        tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+        let runtime = ctx.plugins.lua_runtime("runtime_toggle").await.unwrap();
+        assert!(runtime.lua().globals().get::<u64>("task_ticks").unwrap() > 0);
+
         assert_eq!(
             ctx.plugins
                 .call_api_handler("GET", "/api/runtime-toggle", None)
@@ -3299,6 +3316,8 @@ end
         assert!(!disabled.enabled);
         assert!(!disabled.loaded);
         assert!(!ctx.plugins.has_vm("runtime_toggle").await);
+        assert!(ctx.runtime_host.handle("runtime_toggle").await.is_none());
+        assert_eq!(ctx.tasks.active_count(&handle.owner).await, 0);
         let snapshot = ctx.plugins.capability_snapshot().await;
         assert!(snapshot.http_routes().is_empty());
         assert!(snapshot.template_roots().is_empty());
@@ -3334,10 +3353,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "required_toggle"
 version = "0.1.0"
-kind = "official"
 entry = "init.lua"
 "#,
         )
@@ -3392,10 +3412,11 @@ entry = "init.lua"
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "broken_enable"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 "#,
         )
@@ -3432,8 +3453,7 @@ entry = "init.lua"
             )
             .await;
         ctx.runtime_host.register_lua_source(&plugin, false).await;
-        ctx.plugins
-            .set_plugin_enabled("broken_enable", false, Some("seed"), Some("disabled"))
+        ctx.set_plugin_enabled("broken_enable", false, Some("seed"), Some("disabled"))
             .await
             .unwrap();
 
@@ -3461,10 +3481,11 @@ entry = "init.lua"
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "reload_safe"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3547,6 +3568,81 @@ end)
     }
 
     #[tokio::test]
+    async fn successful_reload_replaces_previous_generation_tasks() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("third_party").join("reload_tasks");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+schema_version = 1
+
+[plugin]
+name = "reload_tasks"
+version = "0.1.0"
+entry = "init.lua"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+function sushi.init()
+    sushi.task.interval("runtime-loop", 1000, function() end)
+end
+"#,
+        )
+        .unwrap();
+        let plugin = LuaPlugin::scan_dir(tmp.path()).await.unwrap().remove(0);
+        let ctx = test_context().await;
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/001_init.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!("../../../../migrations/003_rbac.sql"))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/006_unified_policy_v2.sql"
+            ))
+            .await
+            .unwrap();
+        ctx.db
+            .run_migrations(include_str!(
+                "../../../../migrations/008_plugin_governance_v1.sql"
+            ))
+            .await
+            .unwrap();
+        ctx.plugins
+            .register_plugin_manifest_with_permissions_and_identity(
+                plugin.manifest(),
+                plugin.effective_permissions(),
+                plugin.path_id(),
+                plugin.kind(),
+            )
+            .await;
+        ctx.runtime_host.register_lua_source(&plugin, false).await;
+        ctx.runtime_host
+            .activate(&ctx, "reload_tasks")
+            .await
+            .unwrap();
+        let before = ctx.runtime_host.handle("reload_tasks").await.unwrap();
+        assert_eq!(before.tasks.len(), 1);
+
+        ctx.runtime_host.reload(&ctx, "reload_tasks").await.unwrap();
+
+        let after = ctx.runtime_host.handle("reload_tasks").await.unwrap();
+        assert_eq!(after.tasks.len(), 1);
+        assert_ne!(after.tasks[0].id, before.tasks[0].id);
+        assert_eq!(ctx.tasks.active_count(&after.owner).await, 1);
+        ctx.tasks
+            .cancel_owner(&after.owner, std::time::Duration::from_secs(1))
+            .await;
+    }
+
+    #[tokio::test]
     async fn conflicting_activation_preserves_previous_snapshot_and_vm() {
         let tmp = TempDir::new().unwrap();
         for (name, body) in [("first", "first"), ("second", "second")] {
@@ -3556,10 +3652,11 @@ end)
                 dir.join("plugin.toml"),
                 format!(
                     r#"
+schema_version = 1
+
 [plugin]
 name = "{name}"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3614,7 +3711,7 @@ end
             .await
             .unwrap();
 
-        first.init(&ctx).await.unwrap();
+        first.activate_for_test(&ctx).await.unwrap();
         let before = ctx.plugins.capability_snapshot().await;
         assert_eq!(
             ctx.plugins
@@ -3625,7 +3722,7 @@ end
             "first"
         );
 
-        let err = second.init(&ctx).await.unwrap_err();
+        let err = second.activate_for_test(&ctx).await.unwrap_err();
         assert!(err.to_string().contains("HTTP route conflict"));
         let after = ctx.plugins.capability_snapshot().await;
         assert_eq!(after.as_ref(), before.as_ref());
@@ -3643,7 +3740,10 @@ end
 
     #[tokio::test]
     async fn contract_and_legacy_registration_produce_equivalent_capabilities() {
-        async fn load(source: &str, name: &str) -> crate::runtime::CapabilitySnapshot {
+        async fn load(
+            source: &str,
+            name: &str,
+        ) -> (crate::runtime::CapabilitySnapshot, Vec<String>) {
             let tmp = TempDir::new().unwrap();
             let dir = tmp.path().join("third_party").join(name);
             std::fs::create_dir_all(&dir).unwrap();
@@ -3651,10 +3751,11 @@ end
                 dir.join("plugin.toml"),
                 format!(
                     r#"
+schema_version = 1
+
 [plugin]
 name = "{name}"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3686,11 +3787,19 @@ scopes = ["api.notes.read", "admin.notes.read", "cli.notes.run"]
                 ))
                 .await
                 .unwrap();
-            plugins[0].init(&ctx).await.unwrap();
-            ctx.plugins.capability_snapshot().await.as_ref().clone()
+            plugins[0].activate_for_test(&ctx).await.unwrap();
+            let snapshot = ctx.plugins.capability_snapshot().await.as_ref().clone();
+            let logs = ctx
+                .logs
+                .list(100)
+                .await
+                .into_iter()
+                .map(|entry| entry.message)
+                .collect();
+            (snapshot, logs)
         }
 
-        let legacy = load(
+        let (legacy, legacy_logs) = load(
             r#"
 sushi.init = function()
     sushi.api.route("GET", "/api/notes", function() return "api" end, {
@@ -3702,12 +3811,15 @@ sushi.init = function()
     sushi.cli.command("notes-run", "Run notes", function() return "cli" end, {
         policy = "cli.notes.run"
     })
+    sushi.web.page("/admin/legacy-notes", "plugins/third_party/legacy_contract/notes.html", {
+        title = "Legacy Notes"
+    })
 end
 "#,
             "legacy_contract",
         )
         .await;
-        let contract = load(
+        let (contract, contract_logs) = load(
             r#"
 sushi.init = function()
     sushi.capability.register({
@@ -3737,6 +3849,25 @@ end
         )
         .await;
 
+        for api in [
+            "sushi.api.route",
+            "sushi.admin.page",
+            "sushi.cli.command",
+            "sushi.web.page",
+        ] {
+            assert_eq!(
+                legacy_logs
+                    .iter()
+                    .filter(|message| message.contains(api))
+                    .count(),
+                1,
+                "expected one diagnostic for {api}: {legacy_logs:?}"
+            );
+        }
+        assert!(contract_logs
+            .iter()
+            .all(|message| !message.contains("deprecated Lua registration API")));
+
         let legacy_route = &legacy.http_routes()[0].value;
         let contract_route = &contract.http_routes()[0].value;
         assert_eq!(
@@ -3754,8 +3885,18 @@ end
             )
         );
 
-        let legacy_page = &legacy.admin_pages()[0].value;
-        let contract_page = &contract.admin_pages()[0].value;
+        let legacy_page = &legacy
+            .admin_pages()
+            .iter()
+            .find(|registration| registration.value.path == "/admin/notes")
+            .unwrap()
+            .value;
+        let contract_page = &contract
+            .admin_pages()
+            .iter()
+            .find(|registration| registration.value.path == "/admin/notes")
+            .unwrap()
+            .value;
         assert_eq!(
             (
                 &legacy_page.path,
@@ -3797,10 +3938,11 @@ end
         std::fs::write(
             dir.join("plugin.toml"),
             r#"
+schema_version = 1
+
 [plugin]
 name = "policy_reload"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -3846,7 +3988,7 @@ end
             .unwrap();
 
         let first = LuaPlugin::scan_dir(tmp.path()).await.unwrap().remove(0);
-        first.init(&ctx).await.unwrap();
+        first.activate_for_test(&ctx).await.unwrap();
         let before = ctx.plugins.capability_snapshot().await;
 
         ctx.db
@@ -3876,7 +4018,7 @@ end
         .unwrap();
 
         let second = LuaPlugin::scan_dir(tmp.path()).await.unwrap().remove(0);
-        let err = second.init(&ctx).await.unwrap_err();
+        let err = second.activate_for_test(&ctx).await.unwrap_err();
         assert!(err.to_string().contains("policy insert rejected"));
         assert_eq!(
             ctx.plugins.capability_snapshot().await.as_ref(),

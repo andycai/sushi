@@ -15,6 +15,7 @@ tower-http = { workspace = true }
 rust-embed = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 mime_guess = "2"
 
 [dev-dependencies]

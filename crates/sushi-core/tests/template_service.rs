@@ -164,6 +164,31 @@ fn render_plugin_template_from_tiered_plugin_template_root() {
     assert_eq!(html, "<html>Plugin Workspace</html>");
 }
 
+#[cfg(unix)]
+#[test]
+fn plugin_template_root_rejects_symlinks_outside_registered_root() {
+    use std::os::unix::fs::symlink;
+
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("base.html"), "base").unwrap();
+    let plugin_parent = tempfile::tempdir().unwrap();
+    let plugin_root = plugin_parent.path().join("templates");
+    std::fs::create_dir_all(&plugin_root).unwrap();
+    let outside_template = plugin_parent.path().join("outside.html");
+    std::fs::write(&outside_template, "outside secret").unwrap();
+    symlink(&outside_template, plugin_root.join("leak.html")).unwrap();
+
+    let service = TemplateService::new_with_plugin_roots(
+        root.path(),
+        vec![("official/probe".to_string(), plugin_root)],
+    )
+    .unwrap();
+
+    assert!(service
+        .render("plugins/official/probe/leak.html", serde_json::json!({}))
+        .is_err());
+}
+
 #[test]
 fn dynamic_plugin_template_root_disappears_after_owner_removal() {
     let runtime = Runtime::new().unwrap();
@@ -179,10 +204,9 @@ fn dynamic_plugin_template_root_disappears_after_owner_removal() {
     let registry = CapabilityRegistry::new();
     let owner = PluginInstanceId::new("notes.default").unwrap();
     let mut staged = registry.stage(owner.clone());
-    staged.register_template_root(TemplateRootSpec::new(
-        "official/notes",
-        plugin_templates.path().to_path_buf(),
-    ));
+    staged.register_template_root(
+        TemplateRootSpec::new("official/notes", plugin_templates.path().to_path_buf()).unwrap(),
+    );
     runtime.block_on(registry.commit(staged)).unwrap();
 
     let service = TemplateService::new_with_registry(root.path(), registry.clone()).unwrap();

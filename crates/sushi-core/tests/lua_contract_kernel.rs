@@ -1,12 +1,12 @@
 use sushi_core::auth::jwt::JwtService;
 use sushi_core::config::{ConfigStore, SushiConfig};
 use sushi_core::context::SushiContext;
-use sushi_core::lua::bindings::inject_sushi_api;
+use sushi_core::lua::bindings::inject_plugin_api;
 use sushi_core::lua::contract::{ContractSchemaVersion, LuaCapabilityContract};
 use sushi_core::lua::loader::LuaPlugin;
 use sushi_core::lua::permission::engine::{CapabilityKind, PermissionDecisionEngine};
 use sushi_core::lua::vm::create_sandboxed_vm;
-use sushi_core::plugin::{DatabasePermission, Permissions, Plugin};
+use sushi_core::plugin::{DatabasePermission, Permissions, Plugin, PluginError};
 use sushi_core::storage::sqlite::SqliteStorage;
 use sushi_core::web::template_service::TemplateService;
 
@@ -18,6 +18,11 @@ async fn make_test_context() -> (SushiContext, tempfile::TempDir) {
     let templates = TemplateService::new(templates_dir.path()).unwrap();
     let ctx = SushiContext::new(config, db, jwt, templates);
     (ctx, templates_dir)
+}
+
+async fn activate_plugin(plugin: &LuaPlugin, ctx: &SushiContext) -> Result<(), PluginError> {
+    ctx.runtime_host.register_lua_source(plugin, false).await;
+    ctx.runtime_host.activate(ctx, plugin.name()).await
 }
 
 async fn create_contract_test_plugin_with_manifest(
@@ -49,10 +54,11 @@ async fn create_contract_test_plugin_with_manifest(
         plugin_dir.join("plugin.toml"),
         format!(
             r#"
+schema_version = 1
+
 [plugin]
 name = "contract_case"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 {permissions_toml}{policies_toml}
@@ -203,7 +209,9 @@ end
 "#;
 
     let (plugin, ctx, _plugin_root, _templates_dir) = create_contract_test_plugin(source).await;
-    plugin.init(&ctx).await.expect("plugin initializes");
+    activate_plugin(&plugin, &ctx)
+        .await
+        .expect("plugin initializes");
 
     assert!(
         ctx.plugins
@@ -234,8 +242,7 @@ database = false
     )
     .await;
 
-    let err = plugin
-        .init(&ctx)
+    let err = activate_plugin(&plugin, &ctx)
         .await
         .expect_err("api contract entry should require routes permission");
     let message = err.to_string();
@@ -263,8 +270,7 @@ database = false
     )
     .await;
 
-    let err = plugin
-        .init(&ctx)
+    let err = activate_plugin(&plugin, &ctx)
         .await
         .expect_err("web page contract entry should require admin permission");
     let message = err.to_string();
@@ -277,7 +283,9 @@ async fn unauthorized_api_namespace_is_not_injected() {
     let lua = create_sandboxed_vm().unwrap();
     let (ctx, _templates_dir) = make_test_context().await;
 
-    inject_sushi_api(&lua, &ctx, &Permissions::default())
+    let permissions = Permissions::default();
+    let plugin_context = ctx.plugin_context(&permissions);
+    inject_plugin_api(&lua, &plugin_context, &permissions)
         .await
         .expect("lua bindings should inject into sandbox vm");
 

@@ -1366,6 +1366,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "rusqlite",
  "sushi-admin",
  "sushi-api",
  "sushi-cli",
@@ -1381,6 +1382,7 @@ name = "sushi-admin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "mime_guess",
  "rust-embed",
@@ -1400,6 +1402,7 @@ name = "sushi-api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "serde",
  "serde_json",
@@ -1415,12 +1418,15 @@ name = "sushi-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "clap",
  "sushi-admin",
  "sushi-api",
  "sushi-core",
+ "tempfile",
  "tokio",
+ "tower",
  "tracing",
 ]
 

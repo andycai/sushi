@@ -7,29 +7,39 @@ use sushi_core::logs::LogService;
 use sushi_core::plugin::manager::PluginManager;
 use sushi_core::runtime::{HttpRequest, HttpResponse, HttpSurface};
 
-/// Build the stable Host API router. Product API capabilities dispatch through the snapshot fallback.
-pub fn build_app(_ctx: &SushiContext) -> Router {
-    Router::new()
-}
-
-/// Plugin API route handler state.
 #[derive(Clone)]
-pub struct PluginApiState {
-    pub plugins: PluginManager,
-    pub auth_state: AuthState,
-    pub logs: Arc<LogService>,
-    pub body_size_limit: usize,
+struct ApiRouterState {
+    plugins: PluginManager,
+    auth_state: AuthState,
+    logs: Arc<LogService>,
+    body_size_limit: usize,
 }
 
-/// Build a stable fallback router that reads the current capability snapshot per request.
-pub async fn build_plugin_api_routes(_ctx: &SushiContext) -> Router<PluginApiState> {
-    Router::new().fallback(plugin_api_dispatch)
+/// Build the stable API router backed by the current capability snapshot.
+pub async fn build_router(ctx: &SushiContext) -> Router {
+    let body_size_limit = {
+        let config = ctx.config.get().await;
+        config.server.body_size_limit
+    };
+
+    api_router(ApiRouterState {
+        plugins: ctx.plugins.clone(),
+        auth_state: ctx.auth_state(),
+        logs: Arc::clone(&ctx.logs),
+        body_size_limit,
+    })
+}
+
+fn api_router(state: ApiRouterState) -> Router {
+    Router::new()
+        .fallback(plugin_api_dispatch)
+        .with_state(state)
 }
 
 /// Generic plugin API handler — reads method+path+body from the request
 /// and dispatches to the appropriate Lua handler.
 async fn plugin_api_dispatch(
-    axum::extract::State(state): axum::extract::State<PluginApiState>,
+    axum::extract::State(state): axum::extract::State<ApiRouterState>,
     req: axum::extract::Request,
 ) -> impl axum::response::IntoResponse {
     let method = req.method().to_string();
@@ -236,7 +246,9 @@ mod tests {
     use sushi_core::config::{ConfigStore, SushiConfig};
     use sushi_core::context::SushiContext;
     use sushi_core::lua::vm::create_sandboxed_vm;
-    use sushi_core::runtime::{PluginInstanceId, ResolvedRuntimeEntry, RuntimePluginSource};
+    use sushi_core::runtime::{
+        HttpRouteSpec, PluginInstanceId, ResolvedRuntimeEntry, RuntimePluginSource,
+    };
     use sushi_core::storage::sqlite::SqliteStorage;
     use sushi_core::storage::Storage;
     use sushi_core::web::template_service::TemplateService;
@@ -250,6 +262,28 @@ mod tests {
     const PLUGIN_GOVERNANCE_MIGRATION_SQL: &str =
         include_str!("../../../migrations/008_plugin_governance_v1.sql");
     const PLUGIN_GOVERNANCE_MIGRATION_NAME: &str = "008_plugin_governance_v1";
+
+    async fn register_test_api_handler(
+        manager: &PluginManager,
+        method: &str,
+        path: &str,
+        plugin_name: &str,
+        handler_key: &str,
+        policy_key: Option<&str>,
+        is_public: bool,
+    ) {
+        let mut staged = manager.stage_owner_activation(PluginInstanceId::legacy(plugin_name));
+        staged.register_http(
+            HttpRouteSpec::new(method, path, plugin_name, handler_key)
+                .with_policy(policy_key.map(ToOwned::to_owned))
+                .with_public(is_public),
+        );
+        manager
+            .capability_registry()
+            .commit(staged)
+            .await
+            .expect("test API registration should commit");
+    }
 
     fn api_http_bindings() -> Vec<HttpBinding> {
         vec![
@@ -425,8 +459,8 @@ mod tests {
             .expect("API core builtin activation succeeds");
     }
 
-    async fn plugin_api_router(ctx: &SushiContext) -> Router {
-        build_plugin_api_routes(ctx)
+    async fn test_api_router(ctx: &SushiContext) -> Router {
+        build_test_plugin_api_routes(ctx)
             .await
             .with_state(PluginApiState {
                 plugins: ctx.plugins.clone(),
@@ -434,6 +468,12 @@ mod tests {
                 logs: Arc::clone(&ctx.logs),
                 body_size_limit: 1024,
             })
+    }
+
+    type PluginApiState = ApiRouterState;
+
+    async fn build_test_plugin_api_routes(_ctx: &SushiContext) -> Router<ApiRouterState> {
+        Router::new().fallback(plugin_api_dispatch)
     }
 
     fn static_users_router(ctx: &SushiContext) -> Router {
@@ -479,16 +519,16 @@ mod tests {
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/test",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "GET",
+            "/api/test",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
         let state = PluginApiState {
             plugins: manager,
@@ -529,16 +569,16 @@ mod tests {
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/admin/partials/kv/table",
-                "plugin",
-                handler_key,
-                Some("admin.kv.manage"),
-                false,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "GET",
+            "/admin/partials/kv/table",
+            "plugin",
+            handler_key,
+            Some("admin.kv.manage"),
+            false,
+        )
+        .await;
 
         let auth_state = auth_state_with_snapshot(vec![], vec![]);
         let token = auth_state
@@ -616,16 +656,16 @@ mod tests {
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/test",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "GET",
+            "/api/test",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
         let state = PluginApiState {
             plugins: manager,
@@ -668,16 +708,16 @@ mod tests {
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/test",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "GET",
+            "/api/test",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
         let state = PluginApiState {
             plugins: manager,
@@ -723,16 +763,16 @@ end
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/app/files/list/docs",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "GET",
+            "/app/files/list/docs",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
         let state = PluginApiState {
             plugins: manager,
@@ -776,16 +816,16 @@ end
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "POST",
-                "/api/upload",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "POST",
+            "/api/upload",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
         let state = PluginApiState {
             plugins: manager,
@@ -825,16 +865,16 @@ end
 
         let manager = PluginManager::new();
         manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/test",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &manager,
+            "GET",
+            "/api/test",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
         let logs = Arc::new(LogService::new());
         let state = PluginApiState {
@@ -869,7 +909,7 @@ end
     }
 
     #[tokio::test]
-    async fn test_plugin_api_dispatch_returns_forbidden_when_plugin_disabled() {
+    async fn test_plugin_api_dispatch_removes_route_when_plugin_disabled() {
         let lua = create_sandboxed_vm().unwrap();
         let sushi = lua.create_table().unwrap();
         let handlers = lua.create_table().unwrap();
@@ -882,27 +922,26 @@ end
             .unwrap();
         handlers.set(handler_key, handler).unwrap();
 
-        let manager = PluginManager::new();
-        manager.register_vm("plugin", lua).await;
-        manager
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/test",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
-        manager
-            .set_plugin_enabled("plugin", false, Some("admin"), Some("test"))
+        let ctx = test_context().await;
+        ctx.plugins.register_vm("plugin", lua).await;
+        register_test_api_handler(
+            &ctx.plugins,
+            "GET",
+            "/api/test",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
+        ctx.set_plugin_enabled("plugin", false, Some("admin"), Some("test"))
             .await
             .unwrap();
 
         let state = PluginApiState {
-            plugins: manager,
-            auth_state: test_auth_state(),
-            logs: Arc::new(LogService::new()),
+            plugins: ctx.plugins.clone(),
+            auth_state: ctx.auth_state(),
+            logs: Arc::clone(&ctx.logs),
             body_size_limit: 1024,
         };
 
@@ -913,26 +952,15 @@ end
             .unwrap();
 
         let response = plugin_api_dispatch(State(state), req).await.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
-        assert_eq!(
-            response.headers().get(axum::http::header::CONTENT_TYPE),
-            Some(&axum::http::HeaderValue::from_static("application/json"))
-        );
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
         let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
-        let body: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(
-            body,
-            serde_json::json!({
-                "error": "plugin_disabled",
-                "message": "plugin 'plugin' is disabled",
-            })
-        );
+        assert_eq!(bytes.as_ref(), b"not found");
     }
 
     #[tokio::test]
-    async fn build_app_no_longer_claims_auth_routes() {
+    async fn unified_router_dispatches_missing_auth_route_as_not_found() {
         let ctx = test_context().await;
-        let app = build_app(&ctx);
+        let app = build_router(&ctx).await;
 
         let response = app
             .oneshot(
@@ -952,9 +980,9 @@ end
     }
 
     #[tokio::test]
-    async fn build_app_no_longer_claims_users_route() {
+    async fn unified_router_dispatches_missing_users_route_as_not_found() {
         let ctx = test_context().await;
-        let app = build_app(&ctx);
+        let app = build_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")
@@ -979,7 +1007,7 @@ end
     async fn production_api_router_dispatches_users_through_builtin() {
         let ctx = test_context().await;
         activate_api_builtins(&ctx).await;
-        let app = build_app(&ctx).merge(plugin_api_router(&ctx).await);
+        let app = build_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")
@@ -1007,7 +1035,7 @@ end
     async fn production_api_router_dispatches_auth_through_builtin() {
         let ctx = test_context().await;
         activate_api_builtins(&ctx).await;
-        let app = build_app(&ctx).merge(plugin_api_router(&ctx).await);
+        let app = build_router(&ctx).await;
 
         let response = app
             .oneshot(
@@ -1036,7 +1064,7 @@ end
     async fn users_builtin_accepts_cookie_token() {
         let ctx = test_context().await;
         activate_api_builtins(&ctx).await;
-        let app = plugin_api_router(&ctx).await;
+        let app = test_api_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")
@@ -1075,7 +1103,7 @@ end
         };
 
         let static_response = static_users_router(&ctx).oneshot(request()).await.unwrap();
-        let builtin_response = plugin_api_router(&ctx)
+        let builtin_response = test_api_router(&ctx)
             .await
             .oneshot(request())
             .await
@@ -1111,7 +1139,7 @@ end
         };
 
         let static_response = static_auth_router(&ctx).oneshot(request()).await.unwrap();
-        let builtin_response = plugin_api_router(&ctx)
+        let builtin_response = test_api_router(&ctx)
             .await
             .oneshot(request())
             .await
@@ -1135,7 +1163,7 @@ end
     async fn auth_builtin_me_requires_access_token_and_returns_claims() {
         let ctx = test_context().await;
         activate_api_builtins(&ctx).await;
-        let app = plugin_api_router(&ctx).await;
+        let app = test_api_router(&ctx).await;
         let missing_credentials = app
             .clone()
             .oneshot(
@@ -1192,7 +1220,7 @@ end
         };
 
         let static_response = static_auth_router(&ctx).oneshot(request()).await.unwrap();
-        let builtin_response = plugin_api_router(&ctx)
+        let builtin_response = test_api_router(&ctx)
             .await
             .oneshot(request())
             .await
@@ -1216,7 +1244,7 @@ end
     async fn auth_builtin_maps_invalid_json_to_bad_request() {
         let ctx = test_context().await;
         activate_api_builtins(&ctx).await;
-        let app = plugin_api_router(&ctx).await;
+        let app = test_api_router(&ctx).await;
 
         for path in ["/api/auth/login", "/api/auth/refresh"] {
             let response = app
@@ -1254,7 +1282,7 @@ end
             .jwt
             .create_access_token(1, "admin", "admin")
             .expect("failed to create test access token");
-        let app = plugin_api_router(&ctx).await;
+        let app = test_api_router(&ctx).await;
         let requests = [
             Request::builder()
                 .method("GET")
@@ -1342,18 +1370,18 @@ end
         handlers.set(handler_key, handler).unwrap();
 
         ctx.plugins.register_vm("plugin", lua).await;
-        ctx.plugins
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/plugin/public",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &ctx.plugins,
+            "GET",
+            "/api/plugin/public",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
-        let app = build_plugin_api_routes(&ctx)
+        let app = build_test_plugin_api_routes(&ctx)
             .await
             .with_state(PluginApiState {
                 plugins: ctx.plugins.clone(),
@@ -1379,7 +1407,7 @@ end
     #[tokio::test]
     async fn plugin_router_discovers_routes_registered_after_router_build() {
         let ctx = test_context().await;
-        let app = build_plugin_api_routes(&ctx)
+        let app = build_test_plugin_api_routes(&ctx)
             .await
             .with_state(PluginApiState {
                 plugins: ctx.plugins.clone(),
@@ -1398,16 +1426,16 @@ end
             .unwrap();
         handlers.set("h_dynamic", handler).unwrap();
         ctx.plugins.register_vm("plugin", lua).await;
-        ctx.plugins
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/api/plugin/dynamic",
-                "plugin",
-                "h_dynamic",
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &ctx.plugins,
+            "GET",
+            "/api/plugin/dynamic",
+            "plugin",
+            "h_dynamic",
+            None,
+            true,
+        )
+        .await;
 
         let response = app
             .oneshot(
@@ -1441,11 +1469,18 @@ end
         handlers.set(handler_key, handler).unwrap();
 
         ctx.plugins.register_vm("plugin", lua).await;
-        ctx.plugins
-            .register_api_handler("GET", "/api/plugin/private", "plugin", handler_key)
-            .await;
+        register_test_api_handler(
+            &ctx.plugins,
+            "GET",
+            "/api/plugin/private",
+            "plugin",
+            handler_key,
+            None,
+            false,
+        )
+        .await;
 
-        let app = build_plugin_api_routes(&ctx)
+        let app = build_test_plugin_api_routes(&ctx)
             .await
             .with_state(PluginApiState {
                 plugins: ctx.plugins.clone(),
@@ -1489,18 +1524,18 @@ end
         handlers.set(handler_key, handler).unwrap();
 
         ctx.plugins.register_vm("plugin", lua).await;
-        ctx.plugins
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/app/files/download/docs",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &ctx.plugins,
+            "GET",
+            "/app/files/download/docs",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
-        let app = build_plugin_api_routes(&ctx)
+        let app = build_test_plugin_api_routes(&ctx)
             .await
             .with_state(PluginApiState {
                 plugins: ctx.plugins.clone(),
@@ -1558,18 +1593,18 @@ end
         handlers.set(handler_key, handler).unwrap();
 
         ctx.plugins.register_vm("plugin", lua).await;
-        ctx.plugins
-            .register_api_handler_with_policy_and_public(
-                "GET",
-                "/app/files",
-                "plugin",
-                handler_key,
-                None,
-                true,
-            )
-            .await;
+        register_test_api_handler(
+            &ctx.plugins,
+            "GET",
+            "/app/files",
+            "plugin",
+            handler_key,
+            None,
+            true,
+        )
+        .await;
 
-        let app = build_plugin_api_routes(&ctx)
+        let app = build_test_plugin_api_routes(&ctx)
             .await
             .with_state(PluginApiState {
                 plugins: ctx.plugins.clone(),
@@ -1615,7 +1650,7 @@ end
             .expect("failed to insert custom role");
 
         activate_api_builtins(&ctx).await;
-        let app = plugin_api_router(&ctx).await;
+        let app = test_api_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")
@@ -1650,7 +1685,7 @@ end
     async fn test_create_user_rejects_unknown_role() {
         let ctx = test_context().await;
         activate_api_builtins(&ctx).await;
-        let app = plugin_api_router(&ctx).await;
+        let app = test_api_router(&ctx).await;
         let token = ctx
             .jwt
             .create_access_token(1, "admin", "admin")

@@ -8,6 +8,7 @@ enabled = true
 required = false
 
 [entries.grants]
+approved = true
 database = "admin"
 
 [[entries]]
@@ -16,6 +17,58 @@ source = "lua:official/file-browser"
 enabled = true
 required = false
 
+[entries.grants]
+approved = true
+
+[entries.config.file_browser]
+route_prefix = "/app/files"
+hide_dotfiles = true
+deny_symlink = true
+text_extensions = [
+  "txt", "md", "markdown", "mdx", "rst", "adoc", "org", "tex", "bib",
+  "json", "jsonl", "ndjson", "toml", "yaml", "yml", "ini", "conf", "cfg",
+  "config", "env", "properties", "editorconfig", "gitignore", "gitattributes",
+  "gitmodules", "csv", "tsv", "log", "lock", "diff", "patch", "lua", "rs",
+  "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts", "py", "rb", "php",
+  "java", "kt", "kts", "go", "c", "h", "cc", "hh", "cpp", "hpp", "cxx",
+  "hxx", "cs", "meta", "swift", "scala", "sql", "ps1", "bat", "cmd", "zsh",
+  "bash", "fish", "css", "scss", "sass", "less", "html", "htm", "vue", "svelte",
+  "astro", "xml", "svg", "graphql", "gql", "proto", "pem", "pub", "crt", "cer",
+  "key", "asc", "sh"
+]
+
+[[entries.config.file_browser.roots]]
+id = "docs"
+title = "Documents"
+path = "httpshared"
+
+[entries.config.file_browser.roots.capabilities]
+can_list = true
+can_view_text = true
+can_edit_text = true
+can_create_text = true
+can_create_dir = true
+can_rename = true
+can_delete = true
+can_upload = true
+can_download = true
+
+[[entries.config.file_browser.roots]]
+id = "temp"
+title = "Temporary Documents"
+path = "temp"
+
+[entries.config.file_browser.roots.capabilities]
+can_list = true
+can_view_text = true
+can_edit_text = true
+can_create_text = true
+can_create_dir = true
+can_rename = true
+can_delete = true
+can_upload = true
+can_download = true
+
 [[entries]]
 id = "kv-store.default"
 source = "lua:official/kv-store"
@@ -23,4 +76,5 @@ enabled = true
 required = false
 
 [entries.grants]
+approved = true
 database = "admin"

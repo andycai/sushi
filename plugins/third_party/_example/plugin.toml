@@ -1,8 +1,9 @@
+schema_version = 1
+
 [plugin]
 name = "example_plugin"
 version = "0.1.0"
 description = "An example plugin demonstrating Sushi plugin API"
-kind = "third_party"
 
 [permissions]
 routes = true

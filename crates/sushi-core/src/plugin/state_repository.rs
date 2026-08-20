@@ -1,3 +1,4 @@
+use crate::runtime::PluginId;
 use crate::storage::sqlite::SqliteStorage;
 use crate::storage::{Row, Storage};
 use serde_json::Value;
@@ -5,7 +6,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 pub struct StoredPluginState {
-    pub plugin_id: String,
+    pub plugin_id: PluginId,
     pub name: String,
     pub source_kind: String,
     pub enabled: bool,
@@ -18,7 +19,7 @@ pub struct StoredPluginState {
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 pub struct StoredPluginStateEvent {
-    pub plugin_id: String,
+    pub plugin_id: PluginId,
     pub source_kind: String,
     pub changed_by: String,
     pub previous_enabled: Option<bool>,
@@ -288,7 +289,7 @@ impl PluginStateRepository {
 
 fn row_to_state(row: Row) -> Result<StoredPluginState, String> {
     Ok(StoredPluginState {
-        plugin_id: required_string(&row, "plugin_state", "plugin_id")?,
+        plugin_id: required_plugin_id(&row, "plugin_state", "plugin_id")?,
         name: required_string(&row, "plugin_state", "name")?,
         source_kind: string_or_default(&row, "source_kind", "third_party"),
         enabled: bool_or_default(&row, "enabled", true),
@@ -302,7 +303,7 @@ fn row_to_state(row: Row) -> Result<StoredPluginState, String> {
 
 fn row_to_event(row: Row) -> Result<StoredPluginStateEvent, String> {
     Ok(StoredPluginStateEvent {
-        plugin_id: required_string(&row, "plugin_state_events", "plugin_id")?,
+        plugin_id: required_plugin_id(&row, "plugin_state_events", "plugin_id")?,
         source_kind: string_or_default(&row, "source_kind", "third_party"),
         changed_by: string_or_default(&row, "changed_by", ""),
         previous_enabled: optional_bool(&row, "previous_enabled"),
@@ -316,6 +317,11 @@ fn required_string(row: &Row, scope: &str, key: &str) -> Result<String, String> 
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .ok_or_else(|| format!("missing or invalid {scope}.{key}"))
+}
+
+fn required_plugin_id(row: &Row, scope: &str, key: &str) -> Result<PluginId, String> {
+    let value = required_string(row, scope, key)?;
+    PluginId::new(value).map_err(|reason| format!("invalid {scope}.{key}: {reason}"))
 }
 
 fn string_or_default(row: &Row, key: &str, default: &str) -> String {
@@ -443,7 +449,7 @@ mod tests {
             .await
             .unwrap()
             .expect("expected audit event");
-        assert_eq!(latest_event.plugin_id, "official/kv-store");
+        assert_eq!(latest_event.plugin_id.as_str(), "official/kv-store");
         assert_eq!(latest_event.source_kind, "official");
         assert_eq!(latest_event.changed_by, "admin");
         assert_eq!(latest_event.previous_enabled, Some(true));

@@ -11,14 +11,6 @@ pub struct ServeArgs {
     /// Port to bind (overrides config)
     #[arg(short, long)]
     pub port: Option<u16>,
-
-    /// Only start API server
-    #[arg(long)]
-    pub api_only: bool,
-
-    /// Only start Admin server
-    #[arg(long)]
-    pub admin_only: bool,
 }
 
 pub async fn run(
@@ -26,19 +18,16 @@ pub async fn run(
     config_path: &Path,
     explicit_profile: Option<&str>,
 ) -> Result<()> {
-    let profile_override =
-        resolve_profile_override(explicit_profile, args.api_only, args.admin_only)?;
-    if args.api_only {
-        tracing::warn!("--api-only is deprecated; use --profile api");
-    } else if args.admin_only {
-        tracing::warn!("--admin-only is deprecated; use --profile admin");
-    }
-    let ctx =
-        crate::app::bootstrap_with_profile(Some(config_path), profile_override.as_deref()).await?;
-    let include_api = ctx.runtime_profile.has_enabled_builtin("identity")
-        || ctx.runtime_profile.has_enabled_builtin("api-core");
-    let include_admin = ctx.runtime_profile.has_enabled_builtin("host-admin");
+    let ctx = crate::app::bootstrap_with_profile(Some(config_path), explicit_profile).await?;
+    let result = run_with_context(args, &ctx).await;
+    ctx.shutdown().await;
+    result
+}
 
+pub async fn run_with_context(
+    args: ServeArgs,
+    ctx: &sushi_core::context::SushiContext,
+) -> Result<()> {
     let (host, port) = {
         let cfg = ctx.config.get().await;
         (
@@ -48,91 +37,147 @@ pub async fn run(
     };
     tracing::info!("starting sushi server on {}:{}", host, port);
 
-    // Build the plugin API router (always needed unless admin_only)
-    let body_size_limit = {
-        let cfg = ctx.config.get().await;
-        cfg.server.body_size_limit
-    };
-
-    let plugin_api_state = sushi_api::router::PluginApiState {
-        plugins: ctx.plugins.clone(),
-        auth_state: ctx.auth_state(),
-        logs: ctx.logs.clone(),
-        body_size_limit,
-    };
-
-    let mut app = axum::Router::new().route("/health", axum::routing::get(|| async { "ok" }));
-    if include_api {
-        let plugin_api_router = sushi_api::router::build_plugin_api_routes(&ctx)
-            .await
-            .with_state(plugin_api_state);
-        app = app
-            .merge(sushi_api::router::build_app(&ctx))
-            .merge(plugin_api_router);
-    }
-    if include_admin {
-        app = app.merge(sushi_admin::router::build_admin_router(&ctx).await);
-    }
+    let app = build_router(&ctx).await;
 
     let addr = format!("{}:{}", host, port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .context(format!("failed to bind to {addr}"))?;
     tracing::info!("sushi listening on {addr}");
-    axum::serve(listener, app).await.context("server error")?;
+    serve_with_shutdown(listener, app, &ctx, shutdown_signal()).await?;
 
     Ok(())
 }
 
-fn resolve_profile_override(
-    explicit_profile: Option<&str>,
-    api_only: bool,
-    admin_only: bool,
-) -> Result<Option<String>> {
-    if api_only && admin_only {
-        anyhow::bail!("--api-only and --admin-only cannot be used together");
+async fn serve_with_shutdown<F>(
+    listener: tokio::net::TcpListener,
+    app: axum::Router,
+    ctx: &sushi_core::context::SushiContext,
+    shutdown: F,
+) -> Result<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let server_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await;
+    ctx.shutdown().await;
+    server_result.context("server error")
+}
+
+pub async fn build_router(ctx: &sushi_core::context::SushiContext) -> axum::Router {
+    let snapshot = ctx.plugins.capability_snapshot().await;
+    let mut app = axum::Router::new()
+        .route("/health", axum::routing::get(|| async { "ok" }))
+        .merge(sushi_admin::router::build_static_router(ctx).await);
+    if snapshot.has_transport(sushi_core::runtime::HttpSurface::Api) {
+        app = app.merge(sushi_api::router::build_router(ctx).await);
     }
-    if api_only {
-        return Ok(Some("api".to_string()));
+    if snapshot.has_transport(sushi_core::runtime::HttpSurface::Admin) {
+        app = app.merge(sushi_admin::router::build_admin_router(ctx).await);
     }
-    if admin_only {
-        return Ok(Some("admin".to_string()));
+    app
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C signal handler");
+            std::future::pending::<()>().await;
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to install SIGTERM signal handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received Ctrl-C; starting graceful shutdown"),
+        _ = terminate => tracing::info!("received SIGTERM; starting graceful shutdown"),
     }
-    Ok(explicit_profile.map(str::to_string))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_profile_override;
+    use super::*;
+    use sushi_core::auth::jwt::JwtService;
+    use sushi_core::config::{ConfigStore, SushiConfig};
+    use sushi_core::context::SushiContext;
+    use sushi_core::storage::sqlite::SqliteStorage;
+    use sushi_core::web::template_service::TemplateService;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    #[test]
-    fn legacy_surface_flags_map_to_profiles() {
-        assert_eq!(
-            resolve_profile_override(None, true, false)
-                .unwrap()
-                .as_deref(),
-            Some("api")
+    #[tokio::test]
+    async fn graceful_shutdown_waits_for_in_flight_http_before_task_cleanup() {
+        let templates_dir = tempfile::tempdir().unwrap();
+        let ctx = SushiContext::new(
+            ConfigStore::new(SushiConfig::default()),
+            SqliteStorage::new_in_memory().await.unwrap(),
+            JwtService::new("test-secret-key-at-least-32-chars-long!", 3600, 604800),
+            TemplateService::new(templates_dir.path()).unwrap(),
         );
-        assert_eq!(
-            resolve_profile_override(None, false, true)
-                .unwrap()
-                .as_deref(),
-            Some("admin")
+        let entered = std::sync::Arc::new(tokio::sync::Notify::new());
+        let release = std::sync::Arc::new(tokio::sync::Notify::new());
+        let app = axum::Router::new().route(
+            "/slow",
+            axum::routing::get({
+                let entered = std::sync::Arc::clone(&entered);
+                let release = std::sync::Arc::clone(&release);
+                move || {
+                    let entered = std::sync::Arc::clone(&entered);
+                    let release = std::sync::Arc::clone(&release);
+                    async move {
+                        entered.notify_one();
+                        release.notified().await;
+                        "done"
+                    }
+                }
+            }),
         );
-    }
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn({
+            let ctx = ctx.clone();
+            async move {
+                serve_with_shutdown(listener, app, &ctx, async move {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+            }
+        });
+        let request = tokio::spawn(async move {
+            let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+            stream
+                .write_all(b"GET /slow HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).await.unwrap();
+            response
+        });
 
-    #[test]
-    fn legacy_surface_flags_override_explicit_profile() {
-        assert_eq!(
-            resolve_profile_override(Some("minimal"), true, false)
-                .unwrap()
-                .as_deref(),
-            Some("api")
-        );
-    }
+        entered.notified().await;
+        shutdown_tx.send(()).unwrap();
+        assert!(!server.is_finished());
+        release.notify_one();
 
-    #[test]
-    fn conflicting_legacy_surface_flags_are_rejected() {
-        assert!(resolve_profile_override(None, true, true).is_err());
+        let response = request.await.unwrap();
+        assert!(String::from_utf8_lossy(&response).contains("200 OK"));
+        server.await.unwrap().unwrap();
     }
 }

@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use clap::{Args, Subcommand};
 use std::path::Path;
+use sushi_core::context::SushiContext;
 use sushi_core::plugin::manager::PluginInfo;
 
 #[derive(Args)]
@@ -43,11 +44,14 @@ pub async fn run(
     profile_override: Option<&str>,
 ) -> Result<()> {
     let ctx = crate::app::bootstrap_with_profile(Some(config_path), profile_override).await?;
+    let result = run_with_context(args, role, &ctx).await;
+    ctx.shutdown().await;
+    result
+}
 
+pub async fn run_with_context(args: PluginArgs, role: &str, ctx: &SushiContext) -> Result<()> {
     match args.command {
         PluginCommand::List => {
-            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:list")
-                .await?;
             let routes = ctx.plugins.list_api_routes().await;
             let cmds = ctx.plugins.list_cli_commands().await;
             let pages = ctx.plugins.list_admin_pages().await;
@@ -66,9 +70,6 @@ pub async fn run(
             }
         }
         PluginCommand::Status { plugin } => {
-            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:status")
-                .await?;
-
             let targets =
                 select_status_targets(ctx.plugins.list_plugins().await, plugin.as_deref())?;
             for item in targets {
@@ -79,9 +80,6 @@ pub async fn run(
             }
         }
         PluginCommand::Enable { plugin, reason } => {
-            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:enable")
-                .await?;
-
             let state = ctx
                 .set_plugin_enabled(&plugin, true, Some(role), reason.as_deref())
                 .await
@@ -89,9 +87,6 @@ pub async fn run(
             println!("enabled {} (loaded={})", state.name, state.loaded);
         }
         PluginCommand::Disable { plugin, reason } => {
-            crate::commands::authorization::ensure_command_authorized(&ctx, role, "plugin:disable")
-                .await?;
-
             let state = ctx
                 .set_plugin_enabled(&plugin, false, Some(role), reason.as_deref())
                 .await

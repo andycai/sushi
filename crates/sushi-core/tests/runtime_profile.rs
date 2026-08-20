@@ -77,6 +77,74 @@ mode = "profile"
 }
 
 #[test]
+fn cli_overlay_files_apply_in_order_and_track_the_last_source() {
+    let temp = TempDir::new().unwrap();
+    fs::create_dir_all(temp.path().join("profiles")).unwrap();
+    fs::create_dir_all(temp.path().join("bundles")).unwrap();
+    fs::create_dir_all(temp.path().join("plugins")).unwrap();
+    fs::write(
+        temp.path().join("bundles/base.toml"),
+        r#"
+schema_version = 1
+name = "base"
+
+[[entries]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+"#,
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("profiles/default.toml"),
+        "schema_version = 1\nname = \"default\"\nbundles = [\"base\"]\n",
+    )
+    .unwrap();
+    let first = temp.path().join("first-overlay.toml");
+    fs::write(
+        &first,
+        r#"
+schema_version = 1
+
+[[overlays]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[overlays.config]
+mode = "first"
+"#,
+    )
+    .unwrap();
+    let second = temp.path().join("second-overlay.toml");
+    fs::write(
+        &second,
+        r#"
+schema_version = 1
+
+[[overlays]]
+id = "host.core"
+source = "builtin:host-core"
+enabled = true
+required = true
+
+[overlays.config]
+mode = "second"
+"#,
+    )
+    .unwrap();
+
+    let profile = resolver(&temp)
+        .resolve_with_overlays("default", &[first, second.clone()])
+        .unwrap();
+    let entry = &profile.entries()[0];
+    assert_eq!(entry.config, json!({"mode": "second"}));
+    assert_eq!(entry.origin, format!("cli-overlay:{}", second.display()));
+}
+
+#[test]
 fn duplicate_bundle_entry_ids_are_rejected() {
     let temp = TempDir::new().unwrap();
     fs::create_dir_all(temp.path().join("profiles")).unwrap();
@@ -367,70 +435,14 @@ required = true
 }
 
 #[test]
-fn missing_implicit_default_uses_sorted_legacy_discovery() {
+fn missing_implicit_default_fails_closed() {
     let temp = TempDir::new().unwrap();
     create_plugin(&temp.path().join("plugins"), "third_party", "zeta");
     create_plugin(&temp.path().join("plugins"), "official", "beta");
     create_plugin(&temp.path().join("plugins"), "official", "alpha");
 
-    let profile = resolver(&temp).resolve_configured(None).unwrap();
-    assert!(profile.is_legacy());
-    assert_eq!(
-        profile
-            .entries()
-            .iter()
-            .map(|entry| entry.source.reference().to_string())
-            .collect::<Vec<_>>(),
-        vec![
-            "builtin:host-core",
-            "builtin:host-cli",
-            "builtin:policy",
-            "builtin:identity",
-            "builtin:api-core",
-            "builtin:admin-shell",
-            "builtin:host-admin",
-            "builtin:governance",
-            "builtin:rbac-admin",
-            "builtin:menu-admin",
-            "lua:official/alpha",
-            "lua:official/beta",
-            "lua:third_party/zeta",
-        ]
-    );
-    assert!(profile.entries().iter().all(|entry| entry.enabled));
-    assert!(profile.entries().iter().all(|entry| match entry.source {
-        RuntimePluginSource::Builtin { .. } => entry.required,
-        RuntimePluginSource::Lua { .. } => !entry.required,
-    }));
-    let official_grants = profile
-        .entries()
-        .iter()
-        .filter(|entry| {
-            matches!(
-                &entry.source,
-                RuntimePluginSource::Lua { path_id, .. } if path_id.starts_with("official/")
-            )
-        })
-        .map(|entry| entry.grants.clone())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        official_grants,
-        vec![
-            json!({ "database": "admin" }),
-            json!({ "database": "admin" })
-        ]
-    );
-    let third_party = profile
-        .entries()
-        .iter()
-        .find(|entry| {
-            matches!(
-                &entry.source,
-                RuntimePluginSource::Lua { path_id, .. } if path_id.starts_with("third_party/")
-            )
-        })
-        .unwrap();
-    assert_eq!(third_party.grants, json!({}));
+    let error = resolver(&temp).resolve_configured(None).unwrap_err();
+    assert!(matches!(error, ProfileError::ProfileNotFound { .. }));
 }
 
 #[test]

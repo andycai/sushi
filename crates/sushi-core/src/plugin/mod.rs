@@ -1,12 +1,14 @@
 pub mod manager;
+mod repository;
 pub mod state_repository;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
-use crate::context::SushiContext;
+use crate::context::PluginContext;
 
 /// Error type for plugin operations.
 #[derive(Error, Debug)]
@@ -33,11 +35,11 @@ pub enum PluginError {
 /// Plugin manifest parsed from plugin.toml.
 #[derive(Debug, Clone)]
 pub struct PluginManifest {
+    pub schema_version: u32,
     pub plugin: PluginMeta,
     pub permissions: Permissions,
     pub policies: PluginPoliciesConfig,
     pub admin: Option<PluginAdminConfig>,
-    pub file_browser: Option<PluginFileBrowserConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -56,6 +58,10 @@ impl PluginKind {
     }
 
     pub fn effective_permissions(self, declared: &Permissions) -> Permissions {
+        declared.clamp_to(&self.host_ceiling())
+    }
+
+    pub fn host_ceiling(self) -> Permissions {
         match self {
             Self::Official => Permissions {
                 routes: true,
@@ -63,7 +69,12 @@ impl PluginKind {
                 admin: true,
                 database: DatabasePermission::Admin,
             },
-            Self::ThirdParty => declared.clone(),
+            Self::ThirdParty => Permissions {
+                routes: true,
+                commands: true,
+                admin: true,
+                database: DatabasePermission::Write,
+            },
         }
     }
 }
@@ -143,6 +154,7 @@ pub struct PluginFileBrowserCapabilities {
 impl Default for PluginManifest {
     fn default() -> Self {
         Self {
+            schema_version: PluginManifest::CURRENT_SCHEMA_VERSION,
             plugin: PluginMeta {
                 name: String::new(),
                 version: String::new(),
@@ -152,7 +164,6 @@ impl Default for PluginManifest {
             permissions: Permissions::default(),
             policies: PluginPoliciesConfig::default(),
             admin: None,
-            file_browser: None,
         }
     }
 }
@@ -169,6 +180,8 @@ pub struct PluginMeta {
 
 #[derive(Debug, Deserialize)]
 struct PluginManifestRaw {
+    #[serde(default)]
+    schema_version: u32,
     plugin: PluginMetaRaw,
     #[serde(default)]
     permissions: Permissions,
@@ -176,8 +189,6 @@ struct PluginManifestRaw {
     policies: PluginPoliciesConfig,
     #[serde(default)]
     admin: Option<PluginAdminConfig>,
-    #[serde(default)]
-    file_browser: Option<PluginFileBrowserConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,38 +199,53 @@ struct PluginMetaRaw {
     description: String,
     #[serde(default = "default_entry")]
     entry: String,
-    kind: PluginKind,
 }
 
 impl PluginManifest {
-    fn from_raw(raw: PluginManifestRaw) -> (Self, PluginKind) {
-        (
-            Self {
-                plugin: PluginMeta {
-                    name: raw.plugin.name,
-                    version: raw.plugin.version,
-                    description: raw.plugin.description,
-                    entry: raw.plugin.entry,
-                },
-                permissions: raw.permissions,
-                policies: raw.policies,
-                admin: raw.admin,
-                file_browser: raw.file_browser,
+    pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+    fn from_raw(raw: PluginManifestRaw) -> Self {
+        Self {
+            schema_version: raw.schema_version,
+            plugin: PluginMeta {
+                name: raw.plugin.name,
+                version: raw.plugin.version,
+                description: raw.plugin.description,
+                entry: raw.plugin.entry,
             },
-            raw.plugin.kind,
-        )
+            permissions: raw.permissions,
+            policies: raw.policies,
+            admin: raw.admin,
+        }
     }
 
-    pub fn parse_with_kind(input: &str) -> Result<(Self, PluginKind), toml::de::Error> {
-        let raw: PluginManifestRaw = toml::from_str(input)?;
-        Ok(Self::from_raw(raw))
+    pub fn validate_schema(&self) -> Result<(), String> {
+        match self.schema_version {
+            0 => Err(format!(
+                "plugin '{}' is missing required schema_version {}; add `schema_version = {}`",
+                self.plugin.name,
+                Self::CURRENT_SCHEMA_VERSION,
+                Self::CURRENT_SCHEMA_VERSION
+            )),
+            Self::CURRENT_SCHEMA_VERSION => Ok(()),
+            version if version > Self::CURRENT_SCHEMA_VERSION => Err(format!(
+                "plugin '{}' uses unsupported manifest schema_version {}; maximum supported version is {}",
+                self.plugin.name,
+                version,
+                Self::CURRENT_SCHEMA_VERSION
+            )),
+            version => Err(format!(
+                "plugin '{}' uses invalid manifest schema_version {}",
+                self.plugin.name, version
+            )),
+        }
     }
 }
 
 impl<'de> serde::Deserialize<'de> for PluginManifest {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = PluginManifestRaw::deserialize(deserializer)?;
-        Ok(Self::from_raw(raw).0)
+        Ok(Self::from_raw(raw))
     }
 }
 
@@ -246,6 +272,73 @@ pub struct Permissions {
     pub admin: bool,
     #[serde(default)]
     pub database: DatabasePermission,
+}
+
+impl Permissions {
+    pub fn clamp_to(&self, ceiling: &Permissions) -> Permissions {
+        Permissions {
+            routes: self.routes && ceiling.routes,
+            commands: self.commands && ceiling.commands,
+            admin: self.admin && ceiling.admin,
+            database: self.database.clone().min(ceiling.database.clone()),
+        }
+    }
+
+    pub fn clamp_to_grants(&self, grants: &Value) -> Permissions {
+        if grants.get("approved").and_then(Value::as_bool) != Some(true) {
+            return Permissions::default();
+        }
+        let mut result = self.clone();
+        if let Some(value) = grants.get("routes").and_then(Value::as_bool) {
+            result.routes &= value;
+        }
+        if let Some(value) = grants.get("commands").and_then(Value::as_bool) {
+            result.commands &= value;
+        }
+        if let Some(value) = grants.get("admin").and_then(Value::as_bool) {
+            result.admin &= value;
+        }
+        if let Some(value) = grants.get("database") {
+            if let Some(grant) = parse_database_grant(value) {
+                result.database = result.database.min(grant);
+            }
+        }
+        result
+    }
+}
+
+impl DatabasePermission {
+    fn rank(&self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::ReadOnly => 1,
+            Self::Write => 2,
+            Self::Admin => 3,
+        }
+    }
+
+    fn min(self, other: Self) -> Self {
+        if self.rank() <= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+}
+
+fn parse_database_grant(value: &Value) -> Option<DatabasePermission> {
+    match value {
+        Value::Bool(false) => Some(DatabasePermission::None),
+        Value::Bool(true) => Some(DatabasePermission::ReadOnly),
+        Value::String(value) => match value.as_str() {
+            "none" | "false" => Some(DatabasePermission::None),
+            "read" | "readonly" | "true" => Some(DatabasePermission::ReadOnly),
+            "write" => Some(DatabasePermission::Write),
+            "admin" => Some(DatabasePermission::Admin),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -304,8 +397,8 @@ pub trait Plugin: Send + Sync {
     fn name(&self) -> &str;
     fn version(&self) -> &str;
 
-    /// Initialise the plugin with access to the global SushiContext.
-    async fn init(&self, _ctx: &SushiContext) -> Result<(), PluginError> {
+    /// Activate the plugin with a capability-scoped context.
+    async fn activate(&self, _ctx: &PluginContext) -> Result<(), PluginError> {
         Ok(())
     }
 }
@@ -315,13 +408,13 @@ pub trait Plugin: Send + Sync {
 pub struct FnPlugin {
     name: String,
     version: String,
-    init_fn: Box<dyn Fn(&SushiContext) -> Result<(), PluginError> + Send + Sync>,
+    init_fn: Box<dyn Fn(&PluginContext) -> Result<(), PluginError> + Send + Sync>,
 }
 
 impl FnPlugin {
     pub fn new<F>(name: impl Into<String>, version: impl Into<String>, init_fn: F) -> Self
     where
-        F: Fn(&SushiContext) -> Result<(), PluginError> + Send + Sync + 'static,
+        F: Fn(&PluginContext) -> Result<(), PluginError> + Send + Sync + 'static,
     {
         Self {
             name: name.into(),
@@ -340,7 +433,7 @@ impl Plugin for FnPlugin {
         &self.version
     }
 
-    async fn init(&self, ctx: &SushiContext) -> Result<(), PluginError> {
+    async fn activate(&self, ctx: &PluginContext) -> Result<(), PluginError> {
         (self.init_fn)(ctx)
     }
 }
@@ -350,12 +443,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn official_permissions_do_not_escalate_declared_capabilities() {
+        let declared = Permissions {
+            routes: true,
+            commands: false,
+            admin: false,
+            database: DatabasePermission::ReadOnly,
+        };
+
+        assert_eq!(
+            PluginKind::Official.effective_permissions(&declared),
+            declared
+        );
+    }
+
+    #[test]
+    fn third_party_permissions_are_capped_at_write_database_access() {
+        let declared = Permissions {
+            routes: true,
+            commands: true,
+            admin: true,
+            database: DatabasePermission::Admin,
+        };
+
+        let effective = PluginKind::ThirdParty.effective_permissions(&declared);
+        assert_eq!(effective.database, DatabasePermission::Write);
+        assert!(effective.routes && effective.commands && effective.admin);
+    }
+
+    #[test]
+    fn profile_grants_can_only_reduce_requested_permissions() {
+        let requested = Permissions {
+            routes: true,
+            commands: true,
+            admin: true,
+            database: DatabasePermission::Admin,
+        };
+
+        let effective = requested.clamp_to_grants(&serde_json::json!({
+            "approved": true,
+            "routes": false,
+            "admin": false,
+            "database": "read"
+        }));
+
+        assert!(!effective.routes);
+        assert!(effective.commands);
+        assert!(!effective.admin);
+        assert_eq!(effective.database, DatabasePermission::ReadOnly);
+    }
+
+    #[test]
+    fn profile_grants_require_explicit_administrator_approval() {
+        let requested = Permissions {
+            routes: true,
+            commands: true,
+            admin: true,
+            database: DatabasePermission::Admin,
+        };
+
+        assert_eq!(
+            requested.clamp_to_grants(&serde_json::json!({ "database": "admin" })),
+            Permissions::default()
+        );
+    }
+
+    #[test]
     fn test_parse_plugin_manifest() {
         let toml_str = r#"
 [plugin]
 name = "test_plugin"
 version = "0.1.0"
-kind = "official"
 description = "A test plugin"
 entry = "init.lua"
 
@@ -373,6 +531,45 @@ database = "write"
         assert!(manifest.permissions.commands);
         assert!(!manifest.permissions.admin);
         assert_eq!(manifest.permissions.database, DatabasePermission::Write);
+        assert_eq!(manifest.schema_version, 0);
+        assert!(manifest.validate_schema().is_err());
+    }
+
+    #[test]
+    fn manifest_schema_rejects_future_versions() {
+        let toml_str = r#"
+schema_version = 2
+
+[plugin]
+name = "future_plugin"
+version = "0.1.0"
+"#;
+
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        let error = manifest
+            .validate_schema()
+            .expect_err("future manifest schemas must fail closed");
+        assert!(error.contains("unsupported manifest schema_version 2"));
+    }
+
+    #[test]
+    fn manifest_schema_accepts_current_version() {
+        let toml_str = r#"
+schema_version = 1
+
+[plugin]
+name = "current_plugin"
+version = "0.1.0"
+"#;
+
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            manifest.schema_version,
+            PluginManifest::CURRENT_SCHEMA_VERSION
+        );
+        manifest
+            .validate_schema()
+            .expect("current schema is supported");
     }
 
     #[test]
@@ -388,7 +585,6 @@ database = "write"
         assert_eq!(manifest.permissions.database, DatabasePermission::None);
         assert!(manifest.policies.scopes.is_empty());
         assert!(manifest.admin.is_none());
-        assert!(manifest.file_browser.is_none());
     }
 
     #[test]
@@ -397,7 +593,6 @@ database = "write"
 [plugin]
 name = "test"
 version = "0.1.0"
-kind = "third_party"
 
 [permissions]
 database = true
@@ -412,7 +607,6 @@ database = true
 [plugin]
 name = "test"
 version = "0.1.0"
-kind = "third_party"
 
 [permissions]
 database = false
@@ -427,7 +621,6 @@ database = false
 [plugin]
 name = "admin_assets"
 version = "0.1.0"
-kind = "third_party"
 entry = "init.lua"
 
 [permissions]
@@ -463,7 +656,6 @@ css = ["pages/workspace.css"]
 [plugin]
 name = "policy_scopes"
 version = "0.1.0"
-kind = "third_party"
 
 [policies]
 scopes = ["admin.users", "api.reports"]
@@ -477,29 +669,28 @@ scopes = ["admin.users", "api.reports"]
     }
 
     #[test]
-    fn test_parse_plugin_manifest_kind() {
+    fn manifest_unknown_metadata_is_ignored() {
         let toml_str = r#"
 [plugin]
 name = "official_plugin"
 version = "0.1.0"
-kind = "official"
+host_trust = "official"
 "#;
 
-        let (manifest, kind) = PluginManifest::parse_with_kind(toml_str).unwrap();
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
         assert_eq!(manifest.plugin.name, "official_plugin");
-        assert_eq!(kind, PluginKind::Official);
     }
 
     #[test]
-    fn test_parse_plugin_manifest_requires_kind() {
+    fn manifest_has_no_trust_tier_field() {
         let toml_str = r#"
 [plugin]
-name = "missing_kind"
+name = "host_selected_tier"
 version = "0.1.0"
 "#;
 
-        let result = PluginManifest::parse_with_kind(toml_str);
-        assert!(result.is_err());
+        let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.plugin.name, "host_selected_tier");
     }
 
     #[test]
@@ -512,27 +703,18 @@ version = "0.1.0"
         };
 
         let official = PluginKind::Official.effective_permissions(&declared);
-        assert_eq!(
-            official,
-            Permissions {
-                routes: true,
-                commands: true,
-                admin: true,
-                database: DatabasePermission::Admin,
-            }
-        );
+        assert_eq!(official, declared);
 
         let third_party = PluginKind::ThirdParty.effective_permissions(&declared);
         assert_eq!(third_party, declared);
     }
 
     #[test]
-    fn parse_file_browser_config_from_manifest() {
+    fn product_specific_manifest_config_is_ignored() {
         let toml_str = r#"
 [plugin]
 name = "file_browser_plugin"
 version = "0.1.0"
-kind = "official"
 
 [file_browser]
 route_prefix = "/app/files"
@@ -568,28 +750,6 @@ can_download = true
 "#;
 
         let manifest: PluginManifest = toml::from_str(toml_str).unwrap();
-        let cfg = manifest.file_browser.expect("expected file_browser config");
-        assert_eq!(cfg.route_prefix, "/app/files");
-        assert!(cfg.hide_dotfiles);
-        assert!(cfg.deny_symlink);
-        assert_eq!(
-            cfg.text_extensions,
-            vec!["txt".to_string(), "md".to_string(), "json".to_string()]
-        );
-        assert_eq!(cfg.roots.len(), 2);
-        assert_eq!(cfg.roots[0].id, "workspace");
-        assert_eq!(cfg.roots[0].title, "Workspace");
-        assert_eq!(cfg.roots[0].path, "/tmp");
-        assert!(cfg.roots[0].capabilities.can_list);
-        assert!(cfg.roots[0].capabilities.can_edit_text);
-        assert!(cfg.roots[0].capabilities.can_upload);
-        assert!(!cfg.roots[0].capabilities.can_download);
-        assert_eq!(cfg.roots[1].id, "logs");
-        assert_eq!(cfg.roots[1].title, "Logs");
-        assert_eq!(cfg.roots[1].path, "/var/log");
-        assert!(cfg.roots[1].capabilities.can_list);
-        assert!(cfg.roots[1].capabilities.can_view_text);
-        assert!(!cfg.roots[1].capabilities.can_edit_text);
-        assert!(cfg.roots[1].capabilities.can_download);
+        assert_eq!(manifest.plugin.name, "file_browser_plugin");
     }
 }

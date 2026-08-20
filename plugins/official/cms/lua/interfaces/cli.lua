@@ -1,7 +1,7 @@
 local M = {}
 
 local function usage()
-    return "Usage: sushi run cms <page|post|category> <list|get|create|update|delete> [args]"
+    return "Usage: sushi cms <page|post|category> <list|get|create|update|delete> [args]"
 end
 
 local function normalize_rows(rows)

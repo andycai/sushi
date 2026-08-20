@@ -8,7 +8,6 @@ use thiserror::Error;
 
 const SCHEMA_VERSION: u32 = 1;
 const DEFAULT_PROFILE: &str = "default";
-const LEGACY_PROFILE: &str = "legacy-default";
 const DEFAULT_BUILTINS: [&str; 10] = [
     "host-core",
     "host-cli",
@@ -97,12 +96,6 @@ pub enum ProfileError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("failed to inspect legacy plugin directory {path}: {source}")]
-    LegacyDiscovery {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("failed to serialize resolved profile: {0}")]
     Dump(#[from] serde_json::Error),
 }
@@ -164,7 +157,6 @@ pub struct ResolvedRuntimeEntry {
 pub struct ResolvedRuntimeProfile {
     name: String,
     entries: Vec<ResolvedRuntimeEntry>,
-    legacy: bool,
 }
 
 impl ResolvedRuntimeProfile {
@@ -174,10 +166,6 @@ impl ResolvedRuntimeProfile {
 
     pub fn entries(&self) -> &[ResolvedRuntimeEntry] {
         &self.entries
-    }
-
-    pub fn is_legacy(&self) -> bool {
-        self.legacy
     }
 
     pub fn has_enabled_builtin(&self, key: &str) -> bool {
@@ -194,7 +182,6 @@ impl ResolvedRuntimeProfile {
         let dump = ProfileDump {
             schema_version: SCHEMA_VERSION,
             name: &self.name,
-            legacy: self.legacy,
             entries: self
                 .entries
                 .iter()
@@ -212,11 +199,10 @@ impl ResolvedRuntimeProfile {
         Ok(serde_json::to_string_pretty(&dump)?)
     }
 
-    pub fn legacy_empty() -> Self {
+    pub fn empty_for_host() -> Self {
         Self {
-            name: LEGACY_PROFILE.to_string(),
+            name: "embedded".to_string(),
             entries: Vec::new(),
-            legacy: true,
         }
     }
 }
@@ -225,7 +211,6 @@ impl ResolvedRuntimeProfile {
 struct ProfileDump<'a> {
     schema_version: u32,
     name: &'a str,
-    legacy: bool,
     entries: Vec<ProfileEntryDump<'a>>,
 }
 
@@ -271,17 +256,38 @@ impl RuntimeProfileResolver {
         &self,
         configured_profile: Option<&str>,
     ) -> Result<ResolvedRuntimeProfile, ProfileError> {
+        self.resolve_configured_with_overlays(configured_profile, &[])
+    }
+
+    pub fn resolve_configured_with_overlays(
+        &self,
+        configured_profile: Option<&str>,
+        overlay_paths: &[PathBuf],
+    ) -> Result<ResolvedRuntimeProfile, ProfileError> {
         match configured_profile
             .map(str::trim)
             .filter(|name| !name.is_empty())
         {
-            Some(name) => self.resolve(name),
-            None if self.profile_path(DEFAULT_PROFILE).is_file() => self.resolve(DEFAULT_PROFILE),
-            None => self.resolve_legacy_default(),
+            Some(name) => self.resolve_with_overlays(name, overlay_paths),
+            None if self.profile_path(DEFAULT_PROFILE).is_file() => {
+                self.resolve_with_overlays(DEFAULT_PROFILE, overlay_paths)
+            }
+            None => Err(ProfileError::ProfileNotFound {
+                name: DEFAULT_PROFILE.to_string(),
+                path: self.profile_path(DEFAULT_PROFILE),
+            }),
         }
     }
 
     pub fn resolve(&self, profile_name: &str) -> Result<ResolvedRuntimeProfile, ProfileError> {
+        self.resolve_with_overlays(profile_name, &[])
+    }
+
+    pub fn resolve_with_overlays(
+        &self,
+        profile_name: &str,
+        overlay_paths: &[PathBuf],
+    ) -> Result<ResolvedRuntimeProfile, ProfileError> {
         validate_document_name("profile", profile_name)?;
         let profile_path = self.profile_path(profile_name);
         if !profile_path.is_file() {
@@ -332,26 +338,37 @@ impl RuntimeProfileResolver {
         let overlay_origin = format!("profile:{}", profile.name);
         let mut overlay_ids = BTreeSet::new();
         for raw_overlay in profile.overlays {
-            let id = PluginInstanceId::new(raw_overlay.id.clone())
-                .map_err(|reason| ProfileError::InvalidEntryId {
-                    id: raw_overlay.id.clone(),
-                    reason,
-                })?
-                .as_str()
-                .to_string();
-            if !overlay_ids.insert(id.clone()) {
-                return Err(ProfileError::DuplicateEntryId {
-                    id,
-                    first_origin: overlay_origin.clone(),
-                    second_origin: overlay_origin.clone(),
+            self.apply_overlay(
+                raw_overlay,
+                &overlay_origin,
+                &mut overlay_ids,
+                &indexes,
+                &mut entries,
+                &mut origins,
+            )?;
+        }
+
+        for overlay_path in overlay_paths {
+            let overlay_document: CliOverlayDocument = read_document("CLI overlay", overlay_path)?;
+            if overlay_document.schema_version != SCHEMA_VERSION {
+                return Err(ProfileError::UnsupportedSchema {
+                    kind: "CLI overlay",
+                    name: overlay_path.display().to_string(),
+                    actual: overlay_document.schema_version,
                 });
             }
-            let Some(index) = indexes.get(&id).copied() else {
-                return Err(ProfileError::UnknownOverlayTarget { id });
-            };
-            let overlay = self.resolve_entry(raw_overlay, &overlay_origin)?;
-            entries[index] = overlay;
-            origins.insert(id, overlay_origin.clone());
+            let origin = format!("cli-overlay:{}", overlay_path.display());
+            let mut overlay_ids = BTreeSet::new();
+            for raw_overlay in overlay_document.overlays {
+                self.apply_overlay(
+                    raw_overlay,
+                    &origin,
+                    &mut overlay_ids,
+                    &indexes,
+                    &mut entries,
+                    &mut origins,
+                )?;
+            }
         }
 
         validate_unique_lua_sources(&entries)?;
@@ -359,87 +376,39 @@ impl RuntimeProfileResolver {
         Ok(ResolvedRuntimeProfile {
             name: profile.name,
             entries,
-            legacy: false,
         })
     }
 
-    fn resolve_legacy_default(&self) -> Result<ResolvedRuntimeProfile, ProfileError> {
-        let mut entries = Vec::new();
-        for (id, key) in [
-            ("host.core", "host-core"),
-            ("host.cli", "host-cli"),
-            ("policy.core", "policy"),
-            ("identity.core", "identity"),
-            ("api.core", "api-core"),
-            ("admin.shell", "admin-shell"),
-            ("host.admin", "host-admin"),
-            ("governance.admin", "governance"),
-            ("rbac.admin", "rbac-admin"),
-            ("menu.admin", "menu-admin"),
-        ] {
-            entries.push(self.resolve_entry(
-                EntryDocument {
-                    id: id.to_string(),
-                    source: format!("builtin:{key}"),
-                    enabled: true,
-                    required: true,
-                    config: toml::Value::Table(Default::default()),
-                    grants: toml::Value::Table(Default::default()),
-                },
-                "legacy-default",
-            )?);
+    fn apply_overlay(
+        &self,
+        raw_overlay: EntryDocument,
+        origin: &str,
+        overlay_ids: &mut BTreeSet<String>,
+        indexes: &BTreeMap<String, usize>,
+        entries: &mut [ResolvedRuntimeEntry],
+        origins: &mut BTreeMap<String, String>,
+    ) -> Result<(), ProfileError> {
+        let id = PluginInstanceId::new(raw_overlay.id.clone())
+            .map_err(|reason| ProfileError::InvalidEntryId {
+                id: raw_overlay.id.clone(),
+                reason,
+            })?
+            .as_str()
+            .to_string();
+        if !overlay_ids.insert(id.clone()) {
+            return Err(ProfileError::DuplicateEntryId {
+                id,
+                first_origin: origin.to_string(),
+                second_origin: origin.to_string(),
+            });
         }
-        let mut path_ids = Vec::new();
-        for tier in ["official", "third_party"] {
-            let tier_dir = self.plugins_dir.join(tier);
-            if !tier_dir.exists() {
-                continue;
-            }
-            let entries =
-                fs::read_dir(&tier_dir).map_err(|source| ProfileError::LegacyDiscovery {
-                    path: tier_dir.clone(),
-                    source,
-                })?;
-            for entry in entries {
-                let entry = entry.map_err(|source| ProfileError::LegacyDiscovery {
-                    path: tier_dir.clone(),
-                    source,
-                })?;
-                let path = entry.path();
-                if path.is_dir() && path.join("plugin.toml").is_file() {
-                    path_ids.push(format!("{tier}/{}", entry.file_name().to_string_lossy()));
-                }
-            }
-        }
-        path_ids.sort();
-
-        for path_id in path_ids {
-            let id = format!("legacy.{}", path_id.replace(['/', '_'], "."));
-            let grants = if path_id.starts_with("official/") {
-                toml::Value::Table(toml::Table::from_iter([(
-                    "database".to_string(),
-                    toml::Value::String("admin".to_string()),
-                )]))
-            } else {
-                toml::Value::Table(Default::default())
-            };
-            entries.push(self.resolve_entry(
-                EntryDocument {
-                    id,
-                    source: format!("lua:{path_id}"),
-                    enabled: true,
-                    required: false,
-                    config: toml::Value::Table(Default::default()),
-                    grants,
-                },
-                "legacy-discovery",
-            )?);
-        }
-        Ok(ResolvedRuntimeProfile {
-            name: LEGACY_PROFILE.to_string(),
-            entries,
-            legacy: true,
-        })
+        let Some(index) = indexes.get(&id).copied() else {
+            return Err(ProfileError::UnknownOverlayTarget { id });
+        };
+        let overlay = self.resolve_entry(raw_overlay, origin)?;
+        entries[index] = overlay;
+        origins.insert(id, origin.to_string());
+        Ok(())
     }
 
     fn resolve_entry(
@@ -553,6 +522,13 @@ struct ProfileDocument {
     name: String,
     #[serde(default)]
     bundles: Vec<String>,
+    #[serde(default)]
+    overlays: Vec<EntryDocument>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CliOverlayDocument {
+    schema_version: u32,
     #[serde(default)]
     overlays: Vec<EntryDocument>,
 }

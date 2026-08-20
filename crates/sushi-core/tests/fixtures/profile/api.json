@@ -1,15 +1,14 @@
 {
   "schema_version": 1,
   "name": "api",
-  "legacy": false,
   "entries": [
     { "id": "host.core", "source": "builtin:host-core", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:base" },
     { "id": "host.cli", "source": "builtin:host-cli", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:base" },
     { "id": "policy.core", "source": "builtin:policy", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:base" },
     { "id": "identity.core", "source": "builtin:identity", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:api" },
     { "id": "api.core", "source": "builtin:api-core", "enabled": true, "required": true, "config": {}, "grants": {}, "origin": "bundle:api" },
-    { "id": "cms.default", "source": "lua:official/cms", "enabled": true, "required": false, "config": {}, "grants": { "database": "admin" }, "origin": "bundle:official" },
-    { "id": "file-browser.default", "source": "lua:official/file-browser", "enabled": true, "required": false, "config": {}, "grants": {}, "origin": "bundle:official" },
-    { "id": "kv-store.default", "source": "lua:official/kv-store", "enabled": true, "required": false, "config": {}, "grants": { "database": "admin" }, "origin": "bundle:official" }
+    { "id": "cms.default", "source": "lua:official/cms", "enabled": true, "required": false, "config": {}, "grants": { "approved": true, "database": "admin" }, "origin": "bundle:official" },
+    { "id": "file-browser.default", "source": "lua:official/file-browser", "enabled": true, "required": false, "config": { "file_browser": { "deny_symlink": true, "hide_dotfiles": true, "roots": [ { "capabilities": { "can_create_dir": true, "can_create_text": true, "can_delete": true, "can_download": true, "can_edit_text": true, "can_list": true, "can_rename": true, "can_upload": true, "can_view_text": true }, "id": "docs", "path": "httpshared", "title": "Documents" }, { "capabilities": { "can_create_dir": true, "can_create_text": true, "can_delete": true, "can_download": true, "can_edit_text": true, "can_list": true, "can_rename": true, "can_upload": true, "can_view_text": true }, "id": "temp", "path": "temp", "title": "Temporary Documents" } ], "route_prefix": "/app/files", "text_extensions": [ "txt", "md", "markdown", "mdx", "rst", "adoc", "org", "tex", "bib", "json", "jsonl", "ndjson", "toml", "yaml", "yml", "ini", "conf", "cfg", "config", "env", "properties", "editorconfig", "gitignore", "gitattributes", "gitmodules", "csv", "tsv", "log", "lock", "diff", "patch", "lua", "rs", "js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts", "py", "rb", "php", "java", "kt", "kts", "go", "c", "h", "cc", "hh", "cpp", "hpp", "cxx", "hxx", "cs", "meta", "swift", "scala", "sql", "ps1", "bat", "cmd", "zsh", "bash", "fish", "css", "scss", "sass", "less", "html", "htm", "vue", "svelte", "astro", "xml", "svg", "graphql", "gql", "proto", "pem", "pub", "crt", "cer", "key", "asc", "sh" ] } }, "grants": { "approved": true }, "origin": "bundle:official" },
+    { "id": "kv-store.default", "source": "lua:official/kv-store", "enabled": true, "required": false, "config": {}, "grants": { "approved": true, "database": "admin" }, "origin": "bundle:official" }
   ]
 }

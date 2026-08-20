@@ -1,4 +1,6 @@
-use super::{HttpHandler, LuaRuntimeInstance, PluginInstanceId, RegistrationId};
+use super::{
+    CliHandler, HttpHandler, LuaRuntimeInstance, PluginId, PluginInstanceId, RegistrationId,
+};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -17,16 +19,16 @@ pub enum HttpSurface {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RegistrationSource {
     Builtin,
+    Rust,
     Lua,
-    Legacy,
 }
 
 impl RegistrationSource {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Builtin => "builtin",
+            Self::Rust => "rust",
             Self::Lua => "lua",
-            Self::Legacy => "legacy",
         }
     }
 }
@@ -302,6 +304,9 @@ const HOST_RESERVED_HTTP_ROUTES: &[ReservedHttpRoute] = &[
     },
 ];
 
+const HOST_RESERVED_CLI_COMMANDS: &[&str] =
+    &["serve", "plugin", "config", "seed", "inspect", "doctor"];
+
 impl HttpSurface {
     pub fn from_path(path: &str) -> Self {
         if path == "/admin" || path.starts_with("/admin/") {
@@ -442,6 +447,7 @@ pub struct CliCommandSpec {
     pub handler_key: String,
     pub policy_key: Option<String>,
     pub lua_runtime: Option<Arc<LuaRuntimeInstance>>,
+    pub rust_handler: Option<CliHandler>,
 }
 
 impl CliCommandSpec {
@@ -458,6 +464,7 @@ impl CliCommandSpec {
             handler_key: handler_key.into(),
             policy_key: None,
             lua_runtime: None,
+            rust_handler: None,
         }
     }
 
@@ -468,6 +475,11 @@ impl CliCommandSpec {
 
     pub fn with_lua_runtime(mut self, runtime: Arc<LuaRuntimeInstance>) -> Self {
         self.lua_runtime = Some(runtime);
+        self
+    }
+
+    pub fn with_rust_handler(mut self, handler: CliHandler) -> Self {
+        self.rust_handler = Some(handler);
         self
     }
 }
@@ -519,22 +531,33 @@ impl MenuContributionSpec {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateRootSpec {
-    pub plugin_id: String,
+    pub plugin_id: PluginId,
     pub root: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaticRootSpec {
-    pub plugin_id: String,
+    pub plugin_id: PluginId,
     pub root: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransportSpec {
+    pub surface: HttpSurface,
+}
+
+impl TransportSpec {
+    pub const fn new(surface: HttpSurface) -> Self {
+        Self { surface }
+    }
+}
+
 impl StaticRootSpec {
-    pub fn new(plugin_id: impl Into<String>, root: PathBuf) -> Self {
-        Self {
-            plugin_id: plugin_id.into(),
+    pub fn new(plugin_id: impl Into<String>, root: PathBuf) -> Result<Self, String> {
+        Ok(Self {
+            plugin_id: PluginId::new(plugin_id)?,
             root,
-        }
+        })
     }
 }
 
@@ -601,11 +624,11 @@ impl PartialEq for EventSubscriptionSpec {
 impl Eq for EventSubscriptionSpec {}
 
 impl TemplateRootSpec {
-    pub fn new(plugin_id: impl Into<String>, root: PathBuf) -> Self {
-        Self {
-            plugin_id: plugin_id.into(),
+    pub fn new(plugin_id: impl Into<String>, root: PathBuf) -> Result<Self, String> {
+        Ok(Self {
+            plugin_id: PluginId::new(plugin_id)?,
             root,
-        }
+        })
     }
 }
 
@@ -619,6 +642,7 @@ pub struct OwnedRegistration<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CapabilitySnapshot {
+    transports: Vec<OwnedRegistration<TransportSpec>>,
     http_routes: Vec<OwnedRegistration<HttpRouteSpec>>,
     admin_pages: Vec<OwnedRegistration<AdminPageSpec>>,
     cli_commands: Vec<OwnedRegistration<CliCommandSpec>>,
@@ -629,6 +653,16 @@ pub struct CapabilitySnapshot {
 }
 
 impl CapabilitySnapshot {
+    pub fn transports(&self) -> &[OwnedRegistration<TransportSpec>] {
+        &self.transports
+    }
+
+    pub fn has_transport(&self, surface: HttpSurface) -> bool {
+        self.transports
+            .iter()
+            .any(|registration| registration.value.surface == surface)
+    }
+
     pub fn http_routes(&self) -> &[OwnedRegistration<HttpRouteSpec>] {
         &self.http_routes
     }
@@ -655,6 +689,14 @@ impl CapabilitySnapshot {
 
     pub fn event_subscriptions(&self) -> &[OwnedRegistration<EventSubscriptionSpec>] {
         &self.event_subscriptions
+    }
+
+    pub fn registration_ids_for_owner(&self, owner: &PluginInstanceId) -> Vec<RegistrationId> {
+        self.inspect()
+            .into_iter()
+            .filter(|entry| &entry.owner == owner)
+            .map(|entry| entry.registration_id)
+            .collect()
     }
 
     pub fn match_http(
@@ -700,13 +742,24 @@ impl CapabilitySnapshot {
 
     pub fn inspect(&self) -> Vec<CapabilityInspectionEntry> {
         let mut entries = Vec::with_capacity(
-            self.http_routes.len()
+            self.transports.len()
+                + self.http_routes.len()
                 + self.admin_pages.len()
                 + self.cli_commands.len()
                 + self.menu_contributions.len()
                 + self.template_roots.len()
                 + self.static_roots.len()
                 + self.event_subscriptions.len(),
+        );
+        entries.extend(
+            self.transports
+                .iter()
+                .map(|registration| CapabilityInspectionEntry {
+                    key: format!("transport:{}", registration.value.surface.as_str()),
+                    owner: registration.owner.clone(),
+                    source: registration.source,
+                    registration_id: registration.id,
+                }),
         );
         entries.extend(
             self.http_routes
@@ -804,7 +857,7 @@ impl CapabilityRegistry {
     }
 
     pub fn stage(&self, owner: PluginInstanceId) -> StagedRegistrar {
-        self.stage_with_source(owner, RegistrationSource::Legacy)
+        self.stage_with_source(owner, RegistrationSource::Rust)
     }
 
     pub fn stage_with_source(
@@ -851,6 +904,7 @@ impl CapabilityRegistry {
     pub async fn remove_owner(&self, owner: &PluginInstanceId) {
         let _commit_guard = Arc::clone(&self.commit_lock).lock_owned().await;
         let mut next = self.snapshot_sync().as_ref().clone();
+        next.transports.retain(|entry| &entry.owner != owner);
         next.http_routes.retain(|entry| &entry.owner != owner);
         next.admin_pages.retain(|entry| &entry.owner != owner);
         next.cli_commands.retain(|entry| &entry.owner != owner);
@@ -934,6 +988,7 @@ enum CommitMode {
 pub struct StagedRegistrar {
     owner: PluginInstanceId,
     source: RegistrationSource,
+    transports: Vec<TransportSpec>,
     http_routes: Vec<HttpRouteSpec>,
     admin_pages: Vec<AdminPageSpec>,
     cli_commands: Vec<CliCommandSpec>,
@@ -948,6 +1003,7 @@ impl StagedRegistrar {
         Self {
             owner,
             source,
+            transports: Vec::new(),
             http_routes: Vec::new(),
             admin_pages: Vec::new(),
             cli_commands: Vec::new(),
@@ -964,6 +1020,10 @@ impl StagedRegistrar {
 
     pub fn source(&self) -> RegistrationSource {
         self.source
+    }
+
+    pub fn register_transport(&mut self, spec: TransportSpec) {
+        self.transports.push(spec);
     }
 
     pub fn register_http(&mut self, spec: HttpRouteSpec) {
@@ -1043,6 +1103,14 @@ pub enum RegistrationConflict {
         incoming_owner: PluginInstanceId,
     },
     #[error(
+        "CLI command {name} from {registration_source} owner {owner} is reserved for the Host launcher"
+    )]
+    ReservedCliCommand {
+        registration_source: RegistrationSource,
+        name: String,
+        owner: PluginInstanceId,
+    },
+    #[error(
         "menu contribution conflict for {id}: existing owner {existing_owner}, incoming owner {incoming_owner}"
     )]
     MenuContribution {
@@ -1066,6 +1134,14 @@ pub enum RegistrationConflict {
         existing_owner: PluginInstanceId,
         incoming_owner: PluginInstanceId,
     },
+    #[error(
+        "transport surface conflict for {surface}: existing owner {existing_owner}, incoming owner {incoming_owner}"
+    )]
+    Transport {
+        surface: String,
+        existing_owner: PluginInstanceId,
+        incoming_owner: PluginInstanceId,
+    },
 }
 
 fn build_committed_snapshot(
@@ -1073,6 +1149,7 @@ fn build_committed_snapshot(
     staged: StagedRegistrar,
     mode: CommitMode,
 ) -> Result<CapabilitySnapshot, RegistrationConflict> {
+    validate_transports(current, &staged)?;
     validate_http_routes(current, &staged)?;
     validate_admin_pages(current, &staged)?;
     validate_cli_commands(current, &staged)?;
@@ -1083,6 +1160,11 @@ fn build_committed_snapshot(
     let mut next = current.clone();
     match mode {
         CommitMode::Merge => {
+            let transport_keys = staged
+                .transports
+                .iter()
+                .map(|spec| spec.surface)
+                .collect::<BTreeSet<_>>();
             let http_keys = staged
                 .http_routes
                 .iter()
@@ -1119,6 +1201,10 @@ fn build_committed_snapshot(
                 .map(|spec| spec.subscription_id)
                 .collect::<BTreeSet<_>>();
 
+            next.transports.retain(|registration| {
+                !(registration.owner == staged.owner
+                    && transport_keys.contains(&registration.value.surface))
+            });
             next.http_routes.retain(|registration| {
                 !(registration.owner == staged.owner
                     && http_keys.contains(&(
@@ -1150,6 +1236,8 @@ fn build_committed_snapshot(
             });
         }
         CommitMode::ReplaceOwner => {
+            next.transports
+                .retain(|registration| registration.owner != staged.owner);
             next.http_routes
                 .retain(|registration| registration.owner != staged.owner);
             next.admin_pages
@@ -1167,6 +1255,17 @@ fn build_committed_snapshot(
         }
     }
 
+    next.transports.extend(
+        staged
+            .transports
+            .into_iter()
+            .map(|value| OwnedRegistration {
+                id: RegistrationId::next(),
+                owner: staged.owner.clone(),
+                source: staged.source,
+                value,
+            }),
+    );
     next.http_routes.extend(
         staged
             .http_routes
@@ -1309,6 +1408,37 @@ fn validate_http_routes(
             }
         }
         owners.insert(key, staged.owner.clone());
+    }
+    Ok(())
+}
+
+fn validate_transports(
+    current: &CapabilitySnapshot,
+    staged: &StagedRegistrar,
+) -> Result<(), RegistrationConflict> {
+    let owners = current
+        .transports
+        .iter()
+        .map(|entry| (entry.value.surface, entry.owner.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut staged_surfaces = BTreeSet::new();
+    for spec in &staged.transports {
+        if !staged_surfaces.insert(spec.surface) {
+            return Err(RegistrationConflict::Transport {
+                surface: spec.surface.as_str().to_string(),
+                existing_owner: staged.owner.clone(),
+                incoming_owner: staged.owner.clone(),
+            });
+        }
+        if let Some(existing_owner) = owners.get(&spec.surface) {
+            if existing_owner != &staged.owner {
+                return Err(RegistrationConflict::Transport {
+                    surface: spec.surface.as_str().to_string(),
+                    existing_owner: existing_owner.clone(),
+                    incoming_owner: staged.owner.clone(),
+                });
+            }
+        }
     }
     Ok(())
 }
@@ -1470,6 +1600,15 @@ fn validate_cli_commands(
     let mut staged_names = BTreeSet::new();
 
     for spec in &staged.cli_commands {
+        if staged.source != RegistrationSource::Builtin
+            && HOST_RESERVED_CLI_COMMANDS.contains(&spec.name.as_str())
+        {
+            return Err(RegistrationConflict::ReservedCliCommand {
+                registration_source: staged.source,
+                name: spec.name.clone(),
+                owner: staged.owner.clone(),
+            });
+        }
         if let Some(existing_owner) = owners.get(&spec.name) {
             if existing_owner != &staged.owner {
                 return Err(RegistrationConflict::CliCommand {
@@ -1505,7 +1644,7 @@ fn validate_template_roots(
     for spec in &staged.template_roots {
         if !staged_ids.insert(spec.plugin_id.clone()) {
             return Err(RegistrationConflict::TemplateRoot {
-                plugin_id: spec.plugin_id.clone(),
+                plugin_id: spec.plugin_id.to_string(),
                 existing_owner: staged.owner.clone(),
                 incoming_owner: staged.owner.clone(),
             });
@@ -1513,7 +1652,7 @@ fn validate_template_roots(
         if let Some(existing_owner) = owners.get(&spec.plugin_id) {
             if existing_owner != &staged.owner {
                 return Err(RegistrationConflict::TemplateRoot {
-                    plugin_id: spec.plugin_id.clone(),
+                    plugin_id: spec.plugin_id.to_string(),
                     existing_owner: existing_owner.clone(),
                     incoming_owner: staged.owner.clone(),
                 });
@@ -1570,7 +1709,7 @@ fn validate_static_roots(
     for spec in &staged.static_roots {
         if !staged_ids.insert(spec.plugin_id.clone()) {
             return Err(RegistrationConflict::StaticRoot {
-                plugin_id: spec.plugin_id.clone(),
+                plugin_id: spec.plugin_id.to_string(),
                 existing_owner: staged.owner.clone(),
                 incoming_owner: staged.owner.clone(),
             });
@@ -1578,7 +1717,7 @@ fn validate_static_roots(
         if let Some(existing_owner) = owners.get(&spec.plugin_id) {
             if existing_owner != &staged.owner {
                 return Err(RegistrationConflict::StaticRoot {
-                    plugin_id: spec.plugin_id.clone(),
+                    plugin_id: spec.plugin_id.to_string(),
                     existing_owner: existing_owner.clone(),
                     incoming_owner: staged.owner.clone(),
                 });
@@ -1589,6 +1728,9 @@ fn validate_static_roots(
 }
 
 fn sort_snapshot(snapshot: &mut CapabilitySnapshot) {
+    snapshot
+        .transports
+        .sort_by(|left, right| left.value.surface.cmp(&right.value.surface));
     snapshot.http_routes.sort_by(|left, right| {
         (&left.value.surface, &left.value.method, &left.value.path).cmp(&(
             &right.value.surface,

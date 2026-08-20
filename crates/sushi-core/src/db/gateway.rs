@@ -33,7 +33,7 @@ impl DbGateway {
         }
     }
 
-    pub fn with_permission(&self, permission: DbPermission) -> Self {
+    pub(crate) fn with_permission(&self, permission: DbPermission) -> Self {
         Self {
             storage: Arc::clone(&self.storage),
             permission,

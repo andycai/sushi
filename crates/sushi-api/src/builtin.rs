@@ -1,9 +1,47 @@
 use crate::routes::{auth, users};
+use async_trait::async_trait;
 use std::sync::Arc;
-use sushi_core::context::SushiContext;
+use sushi_core::context::{PluginContext, SushiContext};
 use sushi_core::plugin::{DatabasePermission, Permissions};
-use sushi_core::runtime::{ResolvedRuntimeEntry, RuntimePluginSource};
+use sushi_core::runtime::BuiltinPluginFactory;
+use sushi_core::runtime::{HttpSurface, ResolvedRuntimeEntry, RuntimePluginSource, TransportSpec};
 use sushi_core::storage::Storage;
+
+pub struct IdentityFactory;
+
+#[async_trait]
+impl BuiltinPluginFactory for IdentityFactory {
+    fn key(&self) -> &'static str {
+        "identity"
+    }
+
+    async fn activate(
+        &self,
+        ctx: &SushiContext,
+        _plugin_ctx: &PluginContext,
+        entry: &ResolvedRuntimeEntry,
+    ) -> anyhow::Result<()> {
+        activate_identity(ctx, entry).await
+    }
+}
+
+pub struct ApiCoreFactory;
+
+#[async_trait]
+impl BuiltinPluginFactory for ApiCoreFactory {
+    fn key(&self) -> &'static str {
+        "api-core"
+    }
+
+    async fn activate(
+        &self,
+        ctx: &SushiContext,
+        _plugin_ctx: &PluginContext,
+        entry: &ResolvedRuntimeEntry,
+    ) -> anyhow::Result<()> {
+        activate_api_core(ctx, entry).await
+    }
+}
 
 pub async fn activate_identity(
     ctx: &SushiContext,
@@ -31,6 +69,7 @@ pub async fn activate_identity(
 
     let storage: Arc<dyn Storage> = ctx.db.clone();
     let mut staged = ctx.plugins.stage_builtin_activation(entry.id.clone());
+    staged.register_transport(TransportSpec::new(HttpSurface::Api));
     auth::register_builtin_routes(&mut staged, "identity", storage, Arc::clone(&ctx.jwt));
     publish_builtin(ctx, "identity", staged).await
 }

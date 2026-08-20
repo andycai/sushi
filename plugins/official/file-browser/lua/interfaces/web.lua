@@ -3,11 +3,14 @@ local path_utils = require("utils.path")
 
 local M = {}
 
-local LIST_PREFIX = "/app/files/list/"
-local OPEN_PREFIX = "/app/files/open/"
-local SAVE_PREFIX = "/app/files/save/"
-local UPLOAD_PREFIX = "/app/files/upload/"
-local DOWNLOAD_PREFIX = "/app/files/download/"
+local function route_prefix()
+    local config = app.config.get("file_browser") or {}
+    return tostring(config.route_prefix or "/app/files")
+end
+
+local function route(suffix)
+    return route_prefix() .. suffix
+end
 
 local function status_for_error(kind)
     if kind == "permission_denied" then
@@ -140,7 +143,7 @@ function M.new(deps)
     end
 
     function web.list_partial(args)
-        local root_id = parse_root_from_wildcard(args, LIST_PREFIX)
+        local root_id = parse_root_from_wildcard(args, route("/list/"))
         local rel_path = ensure_rel_path(path_utils.read_query_value(args, "path") or "")
 
         local list = list_context(browser, root_id, rel_path)
@@ -156,7 +159,7 @@ function M.new(deps)
     end
 
     function web.open_partial(args)
-        local root_id = parse_root_from_wildcard(args, OPEN_PREFIX)
+        local root_id = parse_root_from_wildcard(args, route("/open/"))
         local rel_path = ensure_rel_path(path_utils.read_query_value(args, "path") or "")
         local root, resolved_root_id = browser.root(root_id)
 
@@ -189,7 +192,7 @@ function M.new(deps)
     end
 
     function web.save_text(args)
-        local root_id = parse_root_from_wildcard(args, SAVE_PREFIX)
+    local root_id = parse_root_from_wildcard(args, route("/save/"))
         local rel_path = ensure_rel_path(path_utils.read_query_value(args, "path") or "")
         local body = (args and args[2]) or ""
 
@@ -283,7 +286,7 @@ function M.new(deps)
     end
 
     function web.upload_file(args)
-        local root_id = parse_root_from_wildcard(args, UPLOAD_PREFIX)
+    local root_id = parse_root_from_wildcard(args, route("/upload/"))
         local dir_path = ensure_rel_path(path_utils.read_query_value(args, "dir") or "")
         local file_name = path_utils.clean_name(path_utils.read_query_value(args, "name") or "")
         local body = (args and args[2]) or ""
@@ -301,7 +304,7 @@ function M.new(deps)
     end
 
     function web.download_file(args)
-        local root_id = parse_root_from_wildcard(args, DOWNLOAD_PREFIX)
+    local root_id = parse_root_from_wildcard(args, route("/download/"))
         local rel_path = ensure_rel_path(path_utils.read_query_value(args, "path") or "")
 
         local payload, kind, message = browser.read_download(root_id, rel_path)
