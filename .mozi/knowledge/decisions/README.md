@@ -4,11 +4,11 @@
 
 ## 规则文件关系
 
-- [仓库根 `AGENTS.md`](../../AGENTS.md) 规定哪些变更必须生成或更新 Agent Note，并指定唯一入口技能。
+- [仓库根 `AGENTS.md`](../../../AGENTS.md) 规定哪些变更必须生成或更新 Agent Note，并指定唯一入口技能。
 - [本目录 `AGENTS.md`](AGENTS.md) 对整个 Notes 树生效，规定取代检查和活跃/归档边界。
 - [`implemented/AGENTS.md`](implemented/AGENTS.md) 只补充已实施记录的事实同步、决策反转和归档规则。
 - [`archived/AGENTS.md`](archived/AGENTS.md) 只补充冻结历史的不可变边界和允许的归档动作。
-- 代理按“仓库根 → Notes 根 → 本 README → 目标生命周期”顺序读取；Markdown 链接用于导航，`AGENTS.md` 的目录作用域决定哪些操作规则自动适用。
+- 代理按“仓库根 → 决策目录根 → 本 README → 目标生命周期”顺序读取；Markdown 链接用于导航，`AGENTS.md` 的目录作用域决定哪些操作规则自动适用。
 
 ## 布局与命名
 

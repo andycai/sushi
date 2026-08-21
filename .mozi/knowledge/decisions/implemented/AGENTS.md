@@ -1,6 +1,6 @@
 # AGENTS.md — 已实施 Agent Note
 
-本文件只对 `.mozi/notes/implemented/` 生效，并继承[仓库根规则](../../../AGENTS.md)和 [Notes 根规则](../AGENTS.md)。[README.md](../README.md) 仍是格式与生命周期合同的唯一权威规范。这些 Agent Note 记录已经交付的决策；使用 `mozi-agent-notes/scripts/validate_agent_notes.py` 检查是否符合 implemented 生命周期的结构要求。
+本文件只对 `.mozi/knowledge/decisions/implemented/` 生效，并继承[仓库根规则](../../../../AGENTS.md)和 [决策目录根规则](../AGENTS.md)。[README.md](../README.md) 仍是格式与生命周期合同的唯一权威规范。这些 Agent Note 记录已经交付的决策；使用 `mozi-agent-notes/scripts/validate_agent_notes.py` 检查是否符合 implemented 生命周期的结构要求。
 
 ## 让已实施 Agent Note 与实际交付保持一致
 

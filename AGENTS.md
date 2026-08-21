@@ -1,38 +1,20 @@
 # 代理初始化
 
-在执行任何操作前，必须按顺序加载 `.mozi/memories/` 下的三层规则体系：
+执行任何操作前，按以下顺序加载项目知识：
 
-1. **GENERAL.md** — 通用行为准则与编码哲学
-2. **PROJECT.md** — 技术栈、架构与项目约定
-3. **LESSONS.md** — 经验教训、偏好与环境红线（动态知识库，含分类文件索引）
+1. [`.mozi/knowledge/README.md`](.mozi/knowledge/README.md)
+2. [`.mozi/knowledge/rules/GENERAL.md`](.mozi/knowledge/rules/GENERAL.md)
+3. [`.mozi/knowledge/rules/PROJECT.md`](.mozi/knowledge/rules/PROJECT.md)
+4. [`.mozi/knowledge/LESSONS.md`](.mozi/knowledge/LESSONS.md) 及其索引的全部活跃分类文件
 
-## 自我纠错（从错误中学习）
+归档教训和其他知识按任务需要读取，不进入默认启动上下文。
 
-**每个错误都是成长的信号。** 遇到以下任一情况，立即执行记录：
+## 自我纠错
 
-| 触发信号 | 示例 |
-|---------|------|
-| 用户纠正输出 | "你错了"、"不对"、"改成..." |
-| 命令执行失败 | 测试失败、编译报错、git 操作失败 |
-| 中途意识到错误 | 方向错了、误解了需求 |
-| 发现更优工作方式 | 换个顺序更快、换个工具更好 |
-
-**过滤条件**：未来 3 个月内可能再次发生才记录。一次性拼写错误当场修正即可。
-
-**执行方式**：
-1. 读取 `.mozi/memories/lessons/` 下对应的分类文件
-2. 按格式 `- **标题：** 发生了什么 -> 正确做法` 追加到文件顶部
-3. 在当前任务中立即应用该教训
-4. 回复 `已记录教训：<标题>`
-
-详细协议见 `Skill: mozi-learn`。
+遇到用户纠正、命令失败、实现缺陷、中途发现错误或可复用的更优做法时，立即使用 `mozi-reflect` 完成过滤、重复诊断、知识路由和当前任务修正。会话结束前再次检查是否遗漏了实际发生且未来可能复现的纠错事件。
 
 ## Agent Notes
 
-本仓库采用 `.mozi/notes/` 记录非平凡变更中的决策、权衡、被否决方案和长期约束。除纯机械编辑和不涉及决策内容的局部编辑外，所有非平凡变更都必须在同一变更中新增或更新至少一份 Agent Note；这是代理行为约定，不接入自动门禁。[`.mozi/notes/README.md`](.mozi/notes/README.md) 是生命周期、分类、Markdown-only 格式和归档合同的唯一权威规范；[`.mozi/notes/AGENTS.md`](.mozi/notes/AGENTS.md) 及生命周期目录中的 `AGENTS.md` 只补充对应作用域的操作约束，不重新定义格式合同。
+除纯机械编辑和不涉及决策内容的局部编辑外，所有非平凡变更都必须在同一变更中新增或更新至少一份 Agent Note；这是代理行为约定，不接入自动门禁。
 
-Agent Note 的唯一生命周期入口是 `mozi-agent-notes`。写入或迁移后运行其 `scripts/validate_agent_notes.py`；归档使用同一技能的 `scripts/archive_agent_note.py`，默认 dry-run，必须显式 `--apply` 才执行移动。
-
-### 结束前检查
-
-**每个会话结束前**，自查是否遗漏了应记录的教训。如有遗漏，立即补记。
+Agent Note 的唯一生命周期入口是 `mozi-agent-notes`，[`.mozi/knowledge/decisions/README.md`](.mozi/knowledge/decisions/README.md) 是其格式与生命周期的唯一权威规范。
